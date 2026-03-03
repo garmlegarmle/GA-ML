@@ -15,6 +15,22 @@ function routePath(pathname: string): string[] {
 const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 const MAX_WRITE_BYTES = 12 * 1024 * 1024;
 
+function isPublicCacheablePath(pathname: string): boolean {
+  return pathname.startsWith('/api/posts') || pathname.startsWith('/api/tags') || pathname.startsWith('/api/media');
+}
+
+function hasPrivateContext(request: Request): boolean {
+  return Boolean(request.headers.get('Authorization') || request.headers.get('Cookie'));
+}
+
+function canStoreInEdgeCache(response: Response): boolean {
+  const cacheControl = String(response.headers.get('Cache-Control') || '').toLowerCase();
+  const isPublic = cacheControl.includes('public');
+  const isNoStore = cacheControl.includes('no-store');
+  const hasSetCookie = response.headers.has('Set-Cookie');
+  return response.ok && isPublic && !isNoStore && !hasSetCookie;
+}
+
 function withSecurityHeaders(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set('X-Content-Type-Options', 'nosniff');
@@ -104,17 +120,58 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const reqId = requestDebugId(request);
     try {
+      const url = new URL(request.url);
+      const method = request.method.toUpperCase();
+      const cacheableRead = method === 'GET' && isPublicCacheablePath(url.pathname) && !hasPrivateContext(request);
+      const cacheKey = new Request(url.toString(), { method: 'GET' });
+      const apiCache = cacheableRead ? await caches.open('ub-api-cache') : null;
+
+      if (cacheableRead && apiCache) {
+        const cached = await apiCache.match(cacheKey);
+        if (cached) {
+          const cachedHeaders = new Headers(cached.headers);
+          cachedHeaders.set('X-UB-Worker-Cache', 'HIT');
+          const cachedResponse = new Response(cached.body, {
+            status: cached.status,
+            statusText: cached.statusText,
+            headers: cachedHeaders
+          });
+          debugLog(env, 'api.cache.hit', {
+            reqId,
+            method,
+            path: url.pathname
+          });
+          return withSecurityHeaders(withCors(request, env, cachedResponse));
+        }
+      }
+
       const response = await handleApi(request, env);
+      const finalHeaders = new Headers(response.headers);
+      if (cacheableRead) {
+        finalHeaders.set('X-UB-Worker-Cache', 'MISS');
+      } else if (method === 'GET' && isPublicCacheablePath(url.pathname)) {
+        finalHeaders.set('X-UB-Worker-Cache', 'BYPASS');
+      }
+      const cacheAwareResponse = new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: finalHeaders
+      });
+
+      if (cacheableRead && apiCache && canStoreInEdgeCache(cacheAwareResponse)) {
+        ctx.waitUntil(apiCache.put(cacheKey, cacheAwareResponse.clone()));
+      }
+
       debugLog(env, 'api.response', {
         reqId,
         method: request.method,
-        path: new URL(request.url).pathname,
-        status: response.status
+        path: url.pathname,
+        status: cacheAwareResponse.status
       });
-      return withSecurityHeaders(withCors(request, env, response));
+      return withSecurityHeaders(withCors(request, env, cacheAwareResponse));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected error';
       debugLog(env, 'api.error', {
