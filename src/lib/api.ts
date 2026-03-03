@@ -26,13 +26,7 @@ async function parseJson(response: Response): Promise<{ data: unknown; nonJsonTe
 async function performRequest(url: string, init?: RequestInit): Promise<{ response: Response; data: unknown; nonJsonText?: string }> {
   const response = await fetch(url, {
     credentials: 'include',
-    cache: 'no-store',
-    ...init,
-    headers: {
-      'Cache-Control': 'no-cache',
-      Pragma: 'no-cache',
-      ...(init?.headers || {})
-    }
+    ...init
   });
 
   const parsed = await parseJson(response);
@@ -193,7 +187,13 @@ export async function deletePost(id: number): Promise<{ ok: true }> {
 }
 
 export async function getSession(): Promise<SessionResponse> {
-  return apiFetch<SessionResponse>('/api/session');
+  return apiFetch<SessionResponse>('/api/session', {
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache'
+    }
+  });
 }
 
 export async function logout(): Promise<{ ok: true }> {

@@ -37,7 +37,7 @@ async function handleListTags(request: Request, env: Env): Promise<Response> {
       },
       200,
       publishedOnly
-        ? { 'Cache-Control': 'public, max-age=120, s-maxage=600, stale-while-revalidate=900' }
+        ? { 'Cache-Control': 'public, max-age=120, s-maxage=900, stale-while-revalidate=1800' }
         : { 'Cache-Control': 'no-store' }
     );
   }
@@ -62,7 +62,7 @@ async function handleListTags(request: Request, env: Env): Promise<Response> {
     },
     200,
     publishedOnly
-      ? { 'Cache-Control': 'public, max-age=120, s-maxage=600, stale-while-revalidate=900' }
+      ? { 'Cache-Control': 'public, max-age=120, s-maxage=900, stale-while-revalidate=1800' }
       : { 'Cache-Control': 'no-store' }
   );
 }

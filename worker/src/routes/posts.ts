@@ -221,10 +221,10 @@ async function listPosts(request: Request, env: Env): Promise<Response> {
       ? { 'Cache-Control': 'no-store' }
       : q
         ? {
-            'Cache-Control': 'public, max-age=20, s-maxage=60, stale-while-revalidate=120'
+            'Cache-Control': 'public, max-age=15, s-maxage=60, stale-while-revalidate=120'
           }
         : {
-            'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
+            'Cache-Control': 'public, max-age=45, s-maxage=240, stale-while-revalidate=480'
           };
 
   return ok(
@@ -304,6 +304,9 @@ async function getPostBySlug(request: Request, env: Env, slugRaw: string): Promi
       );
     }
   }
+
+  // Keep detail endpoint uncached to preserve unique-view counting consistency.
+  responseHeaders.set('Cache-Control', 'no-store');
 
   const media = row.cover_image_id
     ? await env.DB.prepare('SELECT * FROM media WHERE id = ? LIMIT 1').bind(row.cover_image_id).first()
