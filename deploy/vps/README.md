@@ -28,7 +28,7 @@ Keep these things separate from HSE:
 
 - Docker project name: `utility-box`
 - Docker network: `utility_box_net`
-- Web port: `127.0.0.1:3100`
+- Web port: `3100` (host-level, but keep it blocked externally with UFW)
 - Future API port: `127.0.0.1:8100`
 - Future DB: separate PostgreSQL database/user
 - Future uploads: `/opt/utility-box/storage/uploads`
