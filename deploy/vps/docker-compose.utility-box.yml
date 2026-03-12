@@ -1,0 +1,23 @@
+services:
+  utility-box-web:
+    container_name: utility-box-web
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.web
+    restart: unless-stopped
+    env_file:
+      - ./env/utility-box.web.env
+    ports:
+      - "127.0.0.1:3100:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - utility_box_net
+
+networks:
+  utility_box_net:
+    name: utility_box_net

@@ -13,6 +13,7 @@ vite.config.d.ts
 .env.local
 .env.*.local
 .wrangler/
+deploy/vps/env/*.env
 
 # Local AI/private operation notes (do not commit)
 CLAUDE_LOCAL_SECRETS.md

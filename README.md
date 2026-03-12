@@ -6,6 +6,8 @@ Cloudflare-native stack:
 - Database: Cloudflare D1
 - Media: Cloudflare R2
 
+VPS migration prep is available in `deploy/vps/` and `VPS_MIGRATION.md`.
+
 ## Content Source Of Truth
 - Code/layout: GitHub repository
 - Runtime posts/cards/tags: D1 (`posts`, `tags`, `post_tags`)
