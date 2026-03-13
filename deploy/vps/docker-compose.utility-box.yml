@@ -1,4 +1,30 @@
 services:
+  utility-box-db:
+    container_name: utility-box-db
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - ./env/utility-box.db.env
+    volumes:
+      - utility_box_pgdata:/var/lib/postgresql/data
+    networks:
+      - utility_box_net
+
+  utility-box-api:
+    container_name: utility-box-api
+    build:
+      context: ../..
+      dockerfile: deploy/vps/Dockerfile.api
+    restart: unless-stopped
+    env_file:
+      - ./env/utility-box.api.env
+    depends_on:
+      - utility-box-db
+    volumes:
+      - utility_box_uploads:/data/uploads
+    networks:
+      - utility_box_net
+
   utility-box-web:
     container_name: utility-box-web
     build:
@@ -7,6 +33,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./env/utility-box.web.env
+    depends_on:
+      - utility-box-api
     ports:
       - "3100:80"
     healthcheck:
@@ -21,3 +49,7 @@ services:
 networks:
   utility_box_net:
     name: utility_box_net
+
+volumes:
+  utility_box_pgdata:
+  utility_box_uploads:

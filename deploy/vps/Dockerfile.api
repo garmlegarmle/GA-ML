@@ -1,0 +1,7 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY server/package*.json /app/
+RUN npm install --omit=dev
+COPY server /app
+ENV NODE_ENV=production
+CMD ["node", "src/app.js"]

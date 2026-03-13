@@ -1,0 +1,662 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import express from 'express';
+import multer from 'multer';
+import { getConfig } from './config.js';
+import {
+  clamp,
+  dedupeTags,
+  jsonError,
+  jsonOk,
+  normalizeLang,
+  normalizeSection,
+  normalizeStatus,
+  nowIso,
+  parseCardRank,
+  parseDateOrNull,
+  parseIntSafe,
+  slugify,
+  toExcerpt
+} from './validators.js';
+import {
+  SESSION_COOKIE,
+  OAUTH_STATE_COOKIE,
+  createPopupHtml,
+  createSignedValue,
+  getAdminSession,
+  isAdminRequest,
+  isAllowedAdmin,
+  makeClearCookie,
+  makeSetCookie,
+  randomState,
+  safeRedirectPath,
+  verifySignedValue
+} from './auth.js';
+import {
+  cleanupUnusedTag,
+  createPool,
+  ensureSchema,
+  ensureSeedPages,
+  getMediaById,
+  getMediaVariants,
+  getPostTags,
+  getPostTagsMap,
+  listDistinctTags,
+  listTagCountsBySection,
+  mapPostRow,
+  replacePostTags,
+  softDeletePost,
+  touchViewCount
+} from './db.js';
+import {
+  buildMediaUrls,
+  buildStorageKey,
+  detectMediaKind,
+  extensionFromMime,
+  resolveStoragePath,
+  saveBufferToKey,
+  variantMimeType,
+  writeImageVariants
+} from './media.js';
+
+const GH_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
+const GH_TOKEN_URL = 'https://github.com/login/oauth/access_token';
+const GH_USER_URL = 'https://api.github.com/user';
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
+const config = getConfig();
+const pool = createPool(config);
+
+function withSecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+}
+
+function sanitizeOrigin(value) {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return '*';
+  }
+}
+
+async function createOAuthState(payload) {
+  return createSignedValue({ ...payload, issuedAt: Date.now() }, config.adminSessionSecret);
+}
+
+async function decodeOAuthState(value) {
+  const parsed = verifySignedValue(value, config.adminSessionSecret);
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (!parsed.state || !parsed.redirectPath || !parsed.issuedAt) return null;
+  const issuedAt = Number(parsed.issuedAt);
+  if (!Number.isFinite(issuedAt)) return null;
+  if (Date.now() - issuedAt > 10 * 60 * 1000) return null;
+  return {
+    state: String(parsed.state),
+    redirectPath: safeRedirectPath(String(parsed.redirectPath)),
+    targetOrigin: String(parsed.targetOrigin || '*'),
+    issuedAt
+  };
+}
+
+function requireAdmin(req, res) {
+  if (!isAdminRequest(req, config)) {
+    jsonError(res, 401, 'Admin authentication required');
+    return false;
+  }
+  return true;
+}
+
+function cacheHeadersForList(isAdmin, statusFilter, hasSearch) {
+  if (isAdmin || statusFilter === 'all' || statusFilter === 'draft') {
+    return { 'Cache-Control': 'no-store' };
+  }
+  if (hasSearch) {
+    return { 'Cache-Control': 'public, max-age=15, s-maxage=60, stale-while-revalidate=120' };
+  }
+  return { 'Cache-Control': 'public, max-age=45, s-maxage=240, stale-while-revalidate=480' };
+}
+
+async function bootstrap() {
+  await fs.mkdir(config.mediaRoot, { recursive: true });
+  await ensureSchema(pool);
+  await ensureSeedPages(pool);
+}
+
+const app = express();
+app.set('trust proxy', true);
+app.use((req, res, next) => {
+  withSecurityHeaders(res);
+  next();
+});
+app.use(express.json({ limit: '2mb' }));
+
+app.get('/health', (_req, res) => {
+  jsonOk(res, { ok: true, service: 'utility-box-api' });
+});
+
+app.get('/api/auth', async (req, res) => {
+  if (!config.githubClientId) {
+    return res.status(500).send('Missing GITHUB_CLIENT_ID');
+  }
+  const redirectPath = safeRedirectPath(req.query.redirect);
+  const targetOriginParam = req.query.origin || req.get('origin') || config.siteOrigin || '*';
+  const targetOrigin = targetOriginParam === '*' ? '*' : sanitizeOrigin(String(targetOriginParam));
+  const state = randomState();
+  const signedState = await createOAuthState({ state, redirectPath, targetOrigin });
+  const redirectOrigin = targetOrigin !== '*' ? targetOrigin : `${req.protocol}://${req.get('host')}`;
+  const redirectUri = `${redirectOrigin}/api/callback`;
+  const authUrl = new URL(GH_AUTHORIZE_URL);
+  authUrl.searchParams.set('client_id', config.githubClientId);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('scope', config.githubOauthScope || 'read:user');
+  authUrl.searchParams.set('state', signedState);
+  res.setHeader('Cache-Control', 'no-store');
+  res.redirect(authUrl.toString());
+});
+
+app.get('/api/callback', async (req, res) => {
+  if (!config.githubClientId || !config.githubClientSecret) {
+    return res.status(500).send('Missing GitHub OAuth env vars');
+  }
+  const code = String(req.query.code || '');
+  const state = String(req.query.state || '');
+  const oauthError = String(req.query.error || '');
+  const statePayload = await decodeOAuthState(state);
+  const targetOrigin = statePayload?.targetOrigin || '*';
+  const redirectPath = statePayload?.redirectPath || '/en/';
+  if (oauthError) {
+    return res.status(400).type('html').send(createPopupHtml({ ok: false, message: oauthError, targetOrigin, redirectPath }));
+  }
+  if (!statePayload) {
+    return res.status(403).type('html').send(createPopupHtml({ ok: false, message: 'Invalid OAuth state', targetOrigin, redirectPath }));
+  }
+  if (!code) {
+    return res.status(400).type('html').send(createPopupHtml({ ok: false, message: 'Missing OAuth code', targetOrigin, redirectPath }));
+  }
+
+  const callbackOrigin = statePayload.targetOrigin && statePayload.targetOrigin !== '*' ? statePayload.targetOrigin : `${req.protocol}://${req.get('host')}`;
+  const redirectUri = `${callbackOrigin}/api/callback`;
+
+  const tokenResponse = await fetch(GH_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: new URLSearchParams({
+      client_id: config.githubClientId,
+      client_secret: config.githubClientSecret,
+      code,
+      redirect_uri: redirectUri
+    })
+  });
+  const tokenJson = await tokenResponse.json().catch(() => null);
+  const accessToken = tokenJson?.access_token;
+  if (!tokenResponse.ok || !accessToken) {
+    return res.status(502).type('html').send(createPopupHtml({ ok: false, message: 'Token exchange failed', targetOrigin, redirectPath }));
+  }
+
+  const userResponse = await fetch(GH_USER_URL, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${accessToken}`,
+      'User-Agent': 'utility-box-vps-api'
+    }
+  });
+  const userJson = await userResponse.json().catch(() => null);
+  const username = String(userJson?.login || '');
+  if (!userResponse.ok || !username) {
+    return res.status(502).type('html').send(createPopupHtml({ ok: false, message: 'Failed to load user profile', targetOrigin, redirectPath }));
+  }
+  if (!isAllowedAdmin(username, config)) {
+    res.setHeader('Set-Cookie', makeClearCookie(OAUTH_STATE_COOKIE, config));
+    return res.status(403).type('html').send(
+      createPopupHtml({
+        ok: false,
+        message: `User is not allowed (${username}). Set ADMIN_GITHUB_USER to this username.`,
+        targetOrigin,
+        redirectPath
+      })
+    );
+  }
+
+  const sessionValue = createSignedValue(
+    {
+      username,
+      token: accessToken,
+      exp: Date.now() + 1000 * 60 * 60 * 12
+    },
+    config.adminSessionSecret
+  );
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.append('Set-Cookie', makeSetCookie(SESSION_COOKIE, sessionValue, 60 * 60 * 12, config));
+  res.append('Set-Cookie', makeClearCookie(OAUTH_STATE_COOKIE, config));
+  res.type('html').send(createPopupHtml({ ok: true, message: 'ok', targetOrigin, redirectPath }));
+});
+
+app.get('/api/session', (req, res) => {
+  const session = getAdminSession(req, config);
+  res.setHeader('Cache-Control', 'no-store');
+  jsonOk(res, {
+    ok: true,
+    authenticated: Boolean(session),
+    isAdmin: Boolean(session),
+    username: session?.username || null
+  });
+});
+
+app.post('/api/logout', (req, res) => {
+  res.setHeader('Set-Cookie', makeClearCookie(SESSION_COOKIE, config));
+  res.setHeader('Cache-Control', 'no-store');
+  jsonOk(res, { ok: true });
+});
+
+app.get('/api/posts', async (req, res, next) => {
+  try {
+    const isAdmin = isAdminRequest(req, config);
+    const statusRaw = String(req.query.status || '').trim().toLowerCase();
+    const statusFilter = isAdmin && statusRaw === 'all' ? 'all' : isAdmin && statusRaw === 'draft' ? 'draft' : 'published';
+    const lang = normalizeLang(req.query.lang || 'en');
+    const sectionRaw = req.query.section ? normalizeSection(req.query.section) : null;
+    const tagFilter = String(req.query.tag || '').trim().toLowerCase();
+    const q = String(req.query.q || '').trim();
+    const page = clamp(parseIntSafe(req.query.page, 1) || 1, 1, 10000);
+    const limit = clamp(parseIntSafe(req.query.limit, 12) || 12, 1, 50);
+    const offset = (page - 1) * limit;
+
+    const binds = [lang];
+    const where = ['p.is_deleted = FALSE', `p.lang = $${binds.length}`];
+
+    if (sectionRaw) {
+      binds.push(sectionRaw);
+      where.push(`p.section = $${binds.length}`);
+    }
+    if (statusFilter !== 'all') {
+      binds.push(statusFilter);
+      where.push(`p.status = $${binds.length}`);
+    }
+    if (q) {
+      const pattern = `%${q}%`;
+      binds.push(pattern, pattern, pattern);
+      const base = binds.length - 2;
+      where.push(`(p.title ILIKE $${base} OR p.excerpt ILIKE $${base + 1} OR p.content_md ILIKE $${base + 2})`);
+    }
+    if (tagFilter) {
+      binds.push(tagFilter, tagFilter);
+      const base = binds.length - 1;
+      where.push(`EXISTS (
+        SELECT 1 FROM post_tags fpt
+        JOIN tags ft ON ft.id = fpt.tag_id
+        WHERE fpt.post_id = p.id
+          AND (LOWER(ft.slug) = $${base} OR LOWER(ft.name) = $${base + 1})
+      )`);
+    }
+
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM posts p ${whereSql}`, binds);
+
+    const listBinds = [...binds, limit, offset];
+    const rows = await pool.query(
+      `SELECT p.* FROM posts p ${whereSql}
+       ORDER BY COALESCE(p.published_at, p.created_at) DESC, p.id DESC
+       LIMIT $${listBinds.length - 1} OFFSET $${listBinds.length}`,
+      listBinds
+    );
+
+    const tagMap = await getPostTagsMap(pool, rows.rows.map((row) => Number(row.id)));
+    const items = rows.rows.map((row) => mapPostRow(row, tagMap.get(Number(row.id)) || [], req));
+    Object.entries(cacheHeadersForList(isAdmin, statusFilter, Boolean(q))).forEach(([k, v]) => res.setHeader(k, v));
+    jsonOk(res, {
+      ok: true,
+      items,
+      page,
+      limit,
+      total: Number(countResult.rows[0]?.total || 0)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/posts/:slug', async (req, res, next) => {
+  try {
+    const isAdmin = isAdminRequest(req, config);
+    const slug = slugify(decodeURIComponent(req.params.slug || ''));
+    if (!slug) return jsonError(res, 400, 'Invalid slug');
+    const lang = normalizeLang(req.query.lang || 'en');
+    const sectionRaw = req.query.section ? normalizeSection(req.query.section) : null;
+    const binds = [slug, lang];
+    const where = ['slug = $1', 'lang = $2', 'is_deleted = FALSE'];
+    if (sectionRaw) {
+      binds.push(sectionRaw);
+      where.push(`section = $${binds.length}`);
+    }
+    if (!isAdmin) where.push(`status = 'published'`);
+    const rows = await pool.query(
+      `SELECT * FROM posts WHERE ${where.join(' AND ')} ORDER BY COALESCE(published_at, created_at) DESC, id DESC LIMIT 1`,
+      binds
+    );
+    const row = rows.rows[0];
+    if (!row) return jsonError(res, 404, 'Post not found');
+    const tags = await getPostTags(pool, Number(row.id));
+    let updatedViewCount = Number(row.view_count || 0);
+    if (!isAdmin && row.status === 'published') {
+      const viewCookieName = `ub_post_view_${row.id}`;
+      if (!String(req.headers.cookie || '').includes(`${viewCookieName}=1`)) {
+        await touchViewCount(pool, Number(row.id));
+        updatedViewCount += 1;
+        res.append('Set-Cookie', `${viewCookieName}=1; Path=/; Secure; SameSite=Lax; Max-Age=${60 * 60 * 24 * 365}`);
+      }
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    const post = mapPostRow({ ...row, view_count: updatedViewCount }, tags, req);
+    jsonOk(res, { ok: true, post, tags, cover: post.cover, media: [] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/posts', async (req, res, next) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    const payload = req.body || {};
+    const title = String(payload.title || '').trim();
+    const content = String(payload.content_md || '').trim();
+    if (!title) return jsonError(res, 400, 'title is required');
+    if (!content) return jsonError(res, 400, 'content_md is required');
+    const lang = normalizeLang(payload.lang || 'en');
+    const section = normalizeSection(payload.section || 'blog');
+    const slug = slugify(String(payload.slug || title));
+    if (!slug) return jsonError(res, 400, 'slug is invalid');
+    const status = normalizeStatus(payload.status || 'draft');
+    const excerpt = String(payload.excerpt || '').trim() || toExcerpt(content.replace(/[#*_`>\-\n]/g, ' '));
+    const publishedAt = status === 'published' ? parseDateOrNull(payload.published_at) || nowIso() : null;
+    const pairSlug = payload.pair_slug ? slugify(String(payload.pair_slug)) : null;
+    const cardTitle = String(payload.card?.title || title).trim() || title;
+    const cardCategory = String(payload.card?.category || section).trim() || section;
+    const cardTag = String(payload.card?.tag || '').trim() || null;
+    const cardRank = parseCardRank(payload.card?.rank);
+    const cardImageId = parseIntSafe(payload.card?.image_id, null);
+    const metaTitle = String(payload.meta?.title || '').trim() || null;
+    const metaDescription = String(payload.meta?.description || '').trim() || null;
+    const ogTitle = metaTitle || title;
+    const ogDescription = metaDescription || excerpt || null;
+    const schemaTypeRaw = String(payload.schema_type || '').trim();
+    const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
+
+    const existing = await pool.query(
+      'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE LIMIT 1',
+      [slug, lang, section]
+    );
+    if (existing.rows[0]) return jsonError(res, 409, 'Post with same slug/lang/section already exists');
+
+    const insert = await pool.query(
+      `INSERT INTO posts (
+        slug, title, excerpt, content_md, status, cover_image_id, published_at,
+        lang, section, pair_slug, created_at, updated_at,
+        card_title, card_category, card_tag, card_rank, card_image_id,
+        meta_title, meta_description, og_title, og_description, og_image_url, schema_type
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+      ) RETURNING id`,
+      [
+        slug, title, excerpt, content, status, null, publishedAt, lang, section, pairSlug, nowIso(), nowIso(),
+        cardTitle, cardCategory, cardTag, cardRank, cardImageId, metaTitle, metaDescription,
+        ogTitle, ogDescription, null, schemaType
+      ]
+    );
+    const postId = Number(insert.rows[0].id);
+    const tags = dedupeTags(payload.tags || []);
+    if (tags.length) await replacePostTags(pool, postId, tags);
+    jsonOk(res, { ok: true, id: postId, slug });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/posts/:id', async (req, res, next) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    const postId = parseIntSafe(req.params.id);
+    if (!postId) return jsonError(res, 400, 'Invalid post id');
+    const currentResult = await pool.query('SELECT * FROM posts WHERE id = $1 AND is_deleted = FALSE LIMIT 1', [postId]);
+    const current = currentResult.rows[0];
+    if (!current) return jsonError(res, 404, 'Post not found');
+
+    const payload = req.body || {};
+    const title = payload.title !== undefined ? String(payload.title || '').trim() : current.title;
+    const content = payload.content_md !== undefined ? String(payload.content_md || '').trim() : current.content_md;
+    if (!title) return jsonError(res, 400, 'title is required');
+    if (!content) return jsonError(res, 400, 'content_md is required');
+    const lang = payload.lang !== undefined ? normalizeLang(payload.lang) : current.lang;
+    const section = payload.section !== undefined ? normalizeSection(payload.section) : current.section;
+    const slug = payload.slug !== undefined ? slugify(String(payload.slug || title)) : current.slug;
+    if (!slug) return jsonError(res, 400, 'slug is invalid');
+    const status = payload.status !== undefined ? normalizeStatus(payload.status) : current.status;
+    const excerpt = payload.excerpt !== undefined
+      ? String(payload.excerpt || '').trim() || toExcerpt(content.replace(/[#*_`>\-\n]/g, ' '))
+      : current.excerpt;
+    const publishedAt = payload.published_at !== undefined
+      ? parseDateOrNull(payload.published_at)
+      : status === 'published'
+        ? (current.published_at ? new Date(current.published_at).toISOString() : nowIso())
+        : null;
+    const pairSlug = payload.pair_slug !== undefined ? (payload.pair_slug ? slugify(String(payload.pair_slug)) : null) : current.pair_slug;
+    const cardTitle = payload.card?.title !== undefined ? String(payload.card.title || '').trim() || title : current.card_title || title;
+    const cardCategory = payload.card?.category !== undefined ? String(payload.card.category || '').trim() || section : current.card_category || section;
+    const cardTag = payload.card?.tag !== undefined ? String(payload.card.tag || '').trim() || null : current.card_tag;
+    const cardRank = payload.card?.rank !== undefined ? parseCardRank(payload.card.rank) : current.card_rank;
+    const cardImageId = payload.card?.image_id !== undefined ? parseIntSafe(payload.card.image_id, null) : current.card_image_id;
+    const metaTitle = payload.meta?.title !== undefined ? String(payload.meta.title || '').trim() || null : current.meta_title;
+    const metaDescription = payload.meta?.description !== undefined ? String(payload.meta.description || '').trim() || null : current.meta_description;
+    const ogTitle = metaTitle || title;
+    const ogDescription = metaDescription || excerpt || null;
+    const schemaTypeRaw = payload.schema_type !== undefined ? String(payload.schema_type || '').trim() : current.schema_type || '';
+    const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
+
+    const existing = await pool.query(
+      'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE AND id != $4 LIMIT 1',
+      [slug, lang, section, postId]
+    );
+    if (existing.rows[0]) return jsonError(res, 409, 'Another post with same slug/lang/section exists');
+
+    await pool.query(
+      `UPDATE posts SET
+         slug=$1, title=$2, excerpt=$3, content_md=$4, status=$5, cover_image_id=$6,
+         published_at=$7, lang=$8, section=$9, pair_slug=$10, updated_at=$11,
+         card_title=$12, card_category=$13, card_tag=$14, card_rank=$15, card_image_id=$16,
+         meta_title=$17, meta_description=$18, og_title=$19, og_description=$20, og_image_url=$21, schema_type=$22
+       WHERE id = $23`,
+      [
+        slug, title, excerpt, content, status, current.cover_image_id, publishedAt, lang, section, pairSlug, nowIso(),
+        cardTitle, cardCategory, cardTag, cardRank, cardImageId,
+        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, postId
+      ]
+    );
+    if (payload.tags !== undefined) {
+      await replacePostTags(pool, postId, dedupeTags(payload.tags || []));
+    }
+    jsonOk(res, { ok: true, id: postId, slug, section, lang, updated_at: nowIso() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/posts/:id', async (req, res, next) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    const postId = parseIntSafe(req.params.id);
+    if (!postId) return jsonError(res, 400, 'Invalid post id');
+    const result = await softDeletePost(pool, postId);
+    if (!result.rowCount) return jsonError(res, 404, 'Post not found');
+    jsonOk(res, { ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/tags', async (req, res, next) => {
+  try {
+    const lang = normalizeLang(req.query.lang || 'en');
+    const section = req.query.section ? normalizeSection(req.query.section) : undefined;
+    const includeCounts = String(req.query.counts || '').trim() === '1';
+    const isAdmin = isAdminRequest(req, config);
+    const publishedOnly = !isAdmin;
+
+    if (includeCounts && section) {
+      const items = await listTagCountsBySection(pool, { lang, section, publishedOnly });
+      if (publishedOnly) res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=900, stale-while-revalidate=1800');
+      else res.setHeader('Cache-Control', 'no-store');
+      return jsonOk(res, { ok: true, items });
+    }
+
+    const items = await listDistinctTags(pool, { lang, publishedOnly });
+    if (publishedOnly) res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=900, stale-while-revalidate=1800');
+    else res.setHeader('Cache-Control', 'no-store');
+    jsonOk(res, { ok: true, items });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/tags/:tag', async (req, res, next) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    const targetSlug = slugify(decodeURIComponent(req.params.tag || ''));
+    if (!targetSlug) return jsonError(res, 400, 'Invalid tag');
+    const lang = normalizeLang(req.query.lang || 'en');
+    const tagResult = await pool.query('SELECT id, name, slug FROM tags WHERE slug = $1 LIMIT 1', [targetSlug]);
+    const tag = tagResult.rows[0];
+    if (!tag) return jsonError(res, 404, 'Tag not found');
+    await pool.query(
+      `DELETE FROM post_tags
+       WHERE tag_id = $1
+         AND post_id IN (SELECT id FROM posts WHERE lang = $2 AND is_deleted = FALSE)`,
+      [tag.id, lang]
+    );
+    await cleanupUnusedTag(pool, Number(tag.id));
+    jsonOk(res, { ok: true, deleted: { id: Number(tag.id), name: tag.name, slug: tag.slug } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/upload', upload.single('file'), async (req, res, next) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    const file = req.file;
+    const altRaw = String(req.body.alt || '').trim();
+    if (!file) return jsonError(res, 400, 'file is required');
+    const mimeType = file.mimetype || 'application/octet-stream';
+    const allowed = [/^image\//i, /^video\//i, /^application\/pdf$/i].some((pattern) => pattern.test(mimeType));
+    if (!allowed) return jsonError(res, 415, 'Unsupported file type');
+    if (/^image\//i.test(mimeType) && !altRaw) return jsonError(res, 400, 'alt is required for image uploads');
+
+    const kind = detectMediaKind(mimeType);
+    const originalKey = buildStorageKey(mimeType);
+    const originalPath = await saveBufferToKey(config, originalKey, file.buffer);
+    let width = null;
+    let height = null;
+    let variants = [];
+    if (kind === 'image') {
+      const parsed = path.parse(originalKey);
+      const keyBaseNoExt = path.posix.join(parsed.dir, parsed.name);
+      const variantResult = await writeImageVariants(config, keyBaseNoExt, file.buffer);
+      width = variantResult.width;
+      height = variantResult.height;
+      variants = variantResult.variants;
+    }
+
+    const mediaInsert = await pool.query(
+      `INSERT INTO media (r2_key, kind, width, height, alt, mime_type, size_bytes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
+      [originalKey, kind, width, height, altRaw || file.originalname || null, mimeType, file.size]
+    );
+    const mediaId = Number(mediaInsert.rows[0].id);
+
+    for (const variant of variants) {
+      await pool.query(
+        `INSERT INTO media_variants (media_id, variant, r2_key, width, height, format)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [mediaId, variant.variant, variant.key, variant.width, variant.height, variant.format]
+      );
+    }
+
+    const urls = buildMediaUrls({ request: req, mediaId, variantNames: variants.map((item) => item.variant) });
+    jsonOk(res, {
+      ok: true,
+      mediaId,
+      keys: {
+        original: originalKey,
+        ...Object.fromEntries(variants.map((item) => [item.variant, item.key]))
+      },
+      urls,
+      variants: variants.map((item) => ({ variant: item.variant, key: item.key, width: item.width, format: item.format }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/media/:id', async (req, res, next) => {
+  try {
+    const mediaId = parseIntSafe(req.params.id);
+    if (!mediaId) return jsonError(res, 400, 'Invalid media id');
+    const media = await getMediaById(pool, mediaId);
+    if (!media) return jsonError(res, 404, 'Media not found');
+    const variants = await getMediaVariants(pool, mediaId);
+    const urls = buildMediaUrls({ request: req, mediaId, variantNames: variants.map((variant) => variant.variant) });
+    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=1800, stale-while-revalidate=3600');
+    jsonOk(res, { ok: true, media, variants, urls });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/media/:id/file', async (req, res, next) => {
+  try {
+    const mediaId = parseIntSafe(req.params.id);
+    if (!mediaId) return jsonError(res, 400, 'Invalid media id');
+    const media = await getMediaById(pool, mediaId);
+    if (!media) return jsonError(res, 404, 'Media not found');
+    const requestedVariant = String(req.query.variant || '').trim();
+    let key = media.r2_key;
+    let mimeType = media.mime_type || 'application/octet-stream';
+    if (requestedVariant) {
+      const variants = await getMediaVariants(pool, mediaId);
+      const found = variants.find((variant) => variant.variant === requestedVariant);
+      if (found?.r2_key) {
+        key = found.r2_key;
+        mimeType = variantMimeType(found.format, mimeType);
+      }
+    }
+    const filePath = resolveStoragePath(config, key);
+    const buffer = await fs.readFile(filePath).catch(() => null);
+    if (!buffer) return jsonError(res, 404, 'Media object not found');
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.use((err, _req, res, _next) => {
+  const message = err instanceof Error ? err.message : 'Unexpected error';
+  if (err?.code === 'LIMIT_FILE_SIZE') {
+    return jsonError(res, 413, 'File size exceeds 10MB limit');
+  }
+  console.error('[utility-box-api]', err);
+  jsonError(res, 500, message);
+});
+
+await bootstrap();
+app.listen(config.port, () => {
+  console.log(`[utility-box-api] listening on :${config.port}`);
+});

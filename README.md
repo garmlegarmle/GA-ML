@@ -1,12 +1,15 @@
 # Utility Box
 
-Cloudflare-native stack:
-- Frontend: React + Vite (static build to `dist`)
-- API: Cloudflare Worker (`/api/*`)
-- Database: Cloudflare D1
-- Media: Cloudflare R2
+Current production stack:
+- Frontend: React + Vite
+- Public domain: VPS behind Cloudflare
+- Runtime API: Cloudflare Worker today, VPS-native API scaffold now included for cutover
+- Database today: Cloudflare D1
+- Media today: Cloudflare R2
 
 VPS migration prep is available in `deploy/vps/` and `VPS_MIGRATION.md`.
+The new VPS backend scaffold lives under `server/`.
+Published content can be imported into the VPS PostgreSQL API with `npm --prefix server run import:published`.
 
 ## Content Source Of Truth
 - Code/layout: GitHub repository
@@ -17,8 +20,10 @@ The app does not read runtime content from MDX/JSON files at runtime.
 
 ## Scripts
 - `npm run dev` - Vite dev server
+- `npm run dev:api` - VPS-native API dev server
 - `npm run dev:worker` - Worker dev server via Wrangler
 - `npm run dev:all` - run frontend + worker together
+- `npm run dev:vps` - run frontend + VPS-native API together
 - `npm run build` - build frontend to `dist`
 - `npm run check` - TypeScript check
 

@@ -9,27 +9,29 @@ Move `Utility Box` away from Cloudflare Pages hosting into a VPS-based deploymen
 - Cloudflare stays in front for DNS, TLS, WAF, and cache
 - `Utility Box` runs as its own deployment root under `/opt/utility-box`
 - `HSE_PWA` remains isolated in `/opt/hse`
-- Utility Box uses its own Docker project, network, env, logs, and later its own database
+- Utility Box uses its own Docker project, network, env, logs, database, and upload volume
 
 ## Migration phases
 
 ### Phase 1
 
-Move the frontend only.
+Move the frontend and API onto the VPS while keeping Worker rollback available.
 
-- Deploy the React/Vite frontend to the VPS on `127.0.0.1:3100`
-- Use host Nginx to route `www.utility-box.org` to that container
-- Keep `/api` proxied to the existing Cloudflare Worker
-- This removes Cloudflare Pages from the critical path without rewriting the backend yet
+- Deploy the React/Vite frontend to the VPS on host port `3100`
+- Run a dedicated `utility-box-api` Node service inside the same Compose project
+- Run a dedicated `utility-box-db` PostgreSQL service inside the same Compose project
+- Use host Nginx to route `www.utility-box.org` to the frontend container
+- Point the frontend `/api` proxy to `http://utility-box-api:8200`
+- Keep the Worker available only as rollback during verification
 
 ### Phase 2
 
-Move the API and data services.
+Import runtime content into PostgreSQL and decommission Cloudflare runtime services.
 
-- Replace the Worker with a VPS-native API on `127.0.0.1:8100`
-- Replace D1 with PostgreSQL
-- Replace R2-backed uploads with local storage or object storage, depending on ops preference
-- Update the frontend reverse proxy so `/api` points to the local API
+- Import existing posts/tags/media metadata from the current runtime source
+- Verify admin login, CRUD, uploads, and image delivery against the VPS API
+- Remove dependency on `api.utility-box.org`
+- Retire D1/R2/Worker once VPS API is the single source of truth
 
 ## Non-negotiable separation from HSE
 
@@ -45,14 +47,17 @@ Move the API and data services.
 - Compose project: `utility-box`
 - Container prefix: `utility-box-*`
 - Network: `utility_box_net`
-- Web loopback port: `3100`
-- Future API loopback port: `8100`
+- Web host port: `3100`
+- API container port: `8200`
 
 ## Required server work
 
 1. Create `/opt/utility-box/*` directories
 2. Clone the repo into `/opt/utility-box/app`
-3. Add the env file at `deploy/vps/env/utility-box.web.env`
+3. Add env files at:
+   - `deploy/vps/env/utility-box.db.env`
+   - `deploy/vps/env/utility-box.api.env`
+   - `deploy/vps/env/utility-box.web.env`
 4. Run `deploy/vps/scripts/preflight-utility-box.sh`
 5. Deploy with `deploy/vps/scripts/deploy-utility-box.sh`
 6. Add the provided Nginx server block
@@ -61,13 +66,12 @@ Move the API and data services.
 ## Why this is safe
 
 - HSE stays untouched
-- Utility Box binds only to `127.0.0.1:3100`
-- The phase 1 cutover has no shared DB or filesystem writes
+- Utility Box has its own Docker project, database volume, and upload volume
+- The web service is the only host-exposed Utility Box port
 - Rollback is just DNS + container stop
 
 ## What still needs implementation later
 
-- Native VPS API service
-- PostgreSQL migration from D1 data
-- Upload pipeline for VPS storage
-- Session/auth backend without Worker runtime
+- Published/draft content import into PostgreSQL
+- Final cutover from Worker OAuth/session to VPS OAuth/session only
+- Optional object-storage offload if uploads outgrow the VPS volume

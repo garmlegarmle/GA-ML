@@ -13,6 +13,8 @@ fi
 echo "[2/5] Checking required files"
 for path in \
   "$ROOT_DIR/app/deploy/vps/docker-compose.utility-box.yml" \
+  "$ROOT_DIR/app/deploy/vps/env/utility-box.db.env" \
+  "$ROOT_DIR/app/deploy/vps/env/utility-box.api.env" \
   "$ROOT_DIR/app/deploy/vps/env/utility-box.web.env" \
   "$ROOT_DIR/app/deploy/vps/nginx/utility-box.host.nginx.conf"
 do
