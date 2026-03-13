@@ -66,6 +66,7 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
 const config = getConfig();
 const pool = createPool(config);
+const publicBaseUrl = config.mediaPublicBaseUrl || config.siteOrigin || '';
 
 function withSecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -309,7 +310,7 @@ app.get('/api/posts', async (req, res, next) => {
     );
 
     const tagMap = await getPostTagsMap(pool, rows.rows.map((row) => Number(row.id)));
-    const items = rows.rows.map((row) => mapPostRow(row, tagMap.get(Number(row.id)) || [], req));
+    const items = rows.rows.map((row) => mapPostRow(row, tagMap.get(Number(row.id)) || [], req, publicBaseUrl));
     Object.entries(cacheHeadersForList(isAdmin, statusFilter, Boolean(q))).forEach(([k, v]) => res.setHeader(k, v));
     jsonOk(res, {
       ok: true,
@@ -354,7 +355,7 @@ app.get('/api/posts/:slug', async (req, res, next) => {
       }
     }
     res.setHeader('Cache-Control', 'no-store');
-    const post = mapPostRow({ ...row, view_count: updatedViewCount }, tags, req);
+    const post = mapPostRow({ ...row, view_count: updatedViewCount }, tags, req, publicBaseUrl);
     jsonOk(res, { ok: true, post, tags, cover: post.cover, media: [] });
   } catch (error) {
     next(error);
@@ -588,7 +589,12 @@ app.post('/api/upload', upload.single('file'), async (req, res, next) => {
       );
     }
 
-    const urls = buildMediaUrls({ request: req, mediaId, variantNames: variants.map((item) => item.variant) });
+    const urls = buildMediaUrls({
+      request: req,
+      mediaId,
+      variantNames: variants.map((item) => item.variant),
+      publicBaseUrl
+    });
     jsonOk(res, {
       ok: true,
       mediaId,
@@ -611,7 +617,12 @@ app.get('/api/media/:id', async (req, res, next) => {
     const media = await getMediaById(pool, mediaId);
     if (!media) return jsonError(res, 404, 'Media not found');
     const variants = await getMediaVariants(pool, mediaId);
-    const urls = buildMediaUrls({ request: req, mediaId, variantNames: variants.map((variant) => variant.variant) });
+    const urls = buildMediaUrls({
+      request: req,
+      mediaId,
+      variantNames: variants.map((variant) => variant.variant),
+      publicBaseUrl
+    });
     res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=1800, stale-while-revalidate=3600');
     jsonOk(res, { ok: true, media, variants, urls });
   } catch (error) {

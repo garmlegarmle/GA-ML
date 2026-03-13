@@ -154,17 +154,19 @@ export async function getMediaVariants(pool, mediaId) {
   return rows.rows;
 }
 
-function requestOrigin(request) {
+function requestOrigin(request, publicOrigin = '') {
+  if (publicOrigin) {
+    return { origin: publicOrigin };
+  }
   const forwardedProto = String(request.get('x-forwarded-proto') || '').split(',')[0].trim();
   const forwardedHost = String(request.get('x-forwarded-host') || '').split(',')[0].trim();
   const protocol = forwardedProto || request.protocol;
   const host = forwardedHost || request.get('host');
-  return { protocol, host };
+  return { origin: `${protocol}://${host}` };
 }
 
-export function mapPostRow(row, tags, request) {
-  const { protocol, host } = requestOrigin(request);
-  const origin = `${protocol}://${host}`;
+export function mapPostRow(row, tags, request, publicOrigin = '') {
+  const { origin } = requestOrigin(request, publicOrigin);
   const coverUrl = row.cover_image_id ? `${origin}/api/media/${row.cover_image_id}/file` : null;
   const cardImageUrl = row.card_image_id ? `${origin}/api/media/${row.card_image_id}/file` : null;
   const rankValue = row.card_rank ? `#${row.card_rank}` : null;
