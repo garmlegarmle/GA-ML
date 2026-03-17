@@ -4,7 +4,7 @@ import { normalizeLang, normalizeSection, normalizeStatus, parseCardRank, parseD
 
 const config = getConfig();
 const pool = createPool(config);
-const sourceBase = String(process.env.SOURCE_API_BASE || 'https://www.utility-box.org/api').replace(/\/$/, '');
+const sourceBase = String(process.env.SOURCE_API_BASE || 'https://www.ga-ml.com/api').replace(/\/$/, '');
 const langs = ['en', 'ko'];
 const sections = ['blog', 'tools', 'games', 'pages'];
 const limit = 100;

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.utility-box.org/sitemap.xml
+Sitemap: https://www.ga-ml.com/sitemap.xml
