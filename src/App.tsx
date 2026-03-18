@@ -4,12 +4,13 @@ import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { AdminDock } from './components/AdminDock';
 import { AdminLoginModal } from './components/AdminLoginModal';
+import { AdminPasswordModal } from './components/AdminPasswordModal';
 import { EntryCard } from './components/EntryCard';
 import { PageManagerModal } from './components/PageManagerModal';
 import { PostEditorModal } from './components/PostEditorModal';
 import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
-import { getPostBySlug, getSession, listPosts, listTagCounts, login, logout } from './lib/api';
+import { changeAdminPassword, getPostBySlug, getSession, listPosts, listTagCounts, login, logout } from './lib/api';
 import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
 import type { PostItem, PostSaveSnapshot, SiteLang, SiteSection } from './types';
 
@@ -80,6 +81,76 @@ function sortPostsByNewest(list: PostItem[]): PostItem[] {
     if (diff !== 0) return diff;
     return b.id - a.id;
   });
+}
+
+function slugifyValue(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function buildCopyTitle(title: string, lang: SiteLang): string {
+  const suffix = lang === 'ko' ? '복사본' : 'Copy';
+  return `${String(title || '').trim()} ${suffix}`.trim();
+}
+
+function buildCopySlug(sourceSlug: string, existingSlugs: Iterable<string>): string {
+  const used = new Set(Array.from(existingSlugs, (slug) => String(slug || '').trim().toLowerCase()).filter(Boolean));
+  const base = `${slugifyValue(sourceSlug) || 'post'}-copy`;
+  if (!used.has(base)) return base;
+
+  let index = 2;
+  while (used.has(`${base}-${index}`)) {
+    index += 1;
+  }
+  return `${base}-${index}`;
+}
+
+async function listAllSectionSlugs(lang: SiteLang, section: SiteSection): Promise<Set<string>> {
+  const slugs = new Set<string>();
+  const limit = 100;
+  let page = 1;
+  let totalPages = 1;
+
+  while (page <= totalPages) {
+    const response = await listPosts({ lang, section, status: 'all', page, limit });
+    for (const item of response.items || []) {
+      if (item.slug) slugs.add(item.slug);
+    }
+    totalPages = Math.max(1, Math.ceil(Number(response.total || 0) / limit));
+    if (!response.items?.length) break;
+    page += 1;
+  }
+
+  return slugs;
+}
+
+function buildCopySeed(post: PostItem, slug: string): PostItem {
+  const now = new Date().toISOString();
+  const title = buildCopyTitle(post.title, post.lang);
+  const derivedTag = post.tags.join(', ');
+
+  return {
+    ...post,
+    id: 0,
+    slug,
+    title,
+    status: 'draft',
+    published_at: null,
+    created_at: now,
+    updated_at: now,
+    pair_slug: null,
+    view_count: 0,
+    card: {
+      ...post.card,
+      title,
+      tag: derivedTag || 'Tag'
+    }
+  };
 }
 
 function renderTitleWithHiddenLoginTrigger(
@@ -185,6 +256,7 @@ function HomePage({
   requestAdmin,
   openCreate,
   openPageManager,
+  openPasswordChange,
   refreshKey,
   savedPost
 }: {
@@ -192,6 +264,7 @@ function HomePage({
   requestAdmin: () => void;
   openCreate: (section: SiteSection, post?: PostItem, forcedLang?: SiteLang) => void;
   openPageManager: () => void;
+  openPasswordChange: () => void;
   refreshKey: number;
   savedPost: PostSaveSnapshot | null;
 }) {
@@ -413,6 +486,7 @@ function HomePage({
           }}
           onWrite={() => openCreate(selectedCategory === 'all' ? 'blog' : selectedCategory)}
           onManagePages={openPageManager}
+          onChangePassword={openPasswordChange}
         />
       ) : null}
     </SiteShell>
@@ -424,6 +498,7 @@ function SectionListPage({
   requestAdmin,
   openCreate,
   openPageManager,
+  openPasswordChange,
   refreshKey,
   savedPost
 }: {
@@ -431,6 +506,7 @@ function SectionListPage({
   requestAdmin: () => void;
   openCreate: (section: SiteSection, post?: PostItem, forcedLang?: SiteLang) => void;
   openPageManager: () => void;
+  openPasswordChange: () => void;
   refreshKey: number;
   savedPost: PostSaveSnapshot | null;
 }) {
@@ -602,6 +678,7 @@ function SectionListPage({
           }}
           onWrite={() => openCreate(section)}
           onManagePages={openPageManager}
+          onChangePassword={openPasswordChange}
         />
       ) : null}
     </SiteShell>
@@ -613,6 +690,7 @@ function DetailPage({
   requestAdmin,
   openCreate,
   openPageManager,
+  openPasswordChange,
   refreshKey,
   savedPost
 }: {
@@ -620,6 +698,7 @@ function DetailPage({
   requestAdmin: () => void;
   openCreate: (section: SiteSection, post?: PostItem, forcedLang?: SiteLang) => void;
   openPageManager: () => void;
+  openPasswordChange: () => void;
   refreshKey: number;
   savedPost: PostSaveSnapshot | null;
 }) {
@@ -913,6 +992,7 @@ function DetailPage({
           onWrite={() => openCreate(section)}
           onManagePages={openPageManager}
           onEditCurrent={post ? () => openCreate(section, post) : undefined}
+          onChangePassword={openPasswordChange}
         />
       ) : null}
     </SiteShell>
@@ -935,6 +1015,7 @@ function AppInner() {
   const [savedPost, setSavedPost] = useState<PostSaveSnapshot | null>(null);
   const [pageManagerOpen, setPageManagerOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const currentLang = useMemo(() => {
     const first = location.pathname.split('/').filter(Boolean)[0];
@@ -976,6 +1057,26 @@ function AppInner() {
     setPageManagerOpen(true);
   }, [admin.isAdmin]);
 
+  const openCopy = useCallback(
+    async (post: PostItem) => {
+      if (!admin.isAdmin) return;
+
+      const existingSlugs = await listAllSectionSlugs(post.lang, post.section);
+      const nextSlug = buildCopySlug(post.slug, existingSlugs);
+      const seed = buildCopySeed(post, nextSlug);
+
+      setPageManagerOpen(false);
+      setEditorState({
+        open: true,
+        mode: 'create',
+        initialPost: seed,
+        defaultLang: post.lang,
+        defaultSection: post.section
+      });
+    },
+    [admin.isAdmin]
+  );
+
   return (
     <>
       <Routes>
@@ -988,6 +1089,7 @@ function AppInner() {
               requestAdmin={requestAdmin}
               openCreate={openCreate}
               openPageManager={openPageManager}
+              openPasswordChange={() => setPasswordOpen(true)}
               refreshKey={refreshKey}
               savedPost={savedPost}
             />
@@ -1001,6 +1103,7 @@ function AppInner() {
               requestAdmin={requestAdmin}
               openCreate={openCreate}
               openPageManager={openPageManager}
+              openPasswordChange={() => setPasswordOpen(true)}
               refreshKey={refreshKey}
               savedPost={savedPost}
             />
@@ -1014,6 +1117,7 @@ function AppInner() {
               requestAdmin={requestAdmin}
               openCreate={openCreate}
               openPageManager={openPageManager}
+              openPasswordChange={() => setPasswordOpen(true)}
               refreshKey={refreshKey}
               savedPost={savedPost}
             />
@@ -1063,6 +1167,7 @@ function AppInner() {
           setPageManagerOpen(false);
           openCreate(post.section, post, post.lang);
         }}
+        onCopy={openCopy}
         onChanged={() => {
           setRefreshKey((prev) => prev + 1);
         }}
@@ -1076,6 +1181,15 @@ function AppInner() {
           await login(username, password);
           await refresh();
           navigate(`${location.pathname}${location.search}`, { replace: true });
+        }}
+      />
+
+      <AdminPasswordModal
+        open={passwordOpen}
+        lang={currentLang}
+        onClose={() => setPasswordOpen(false)}
+        onSubmit={async (currentPassword, newPassword) => {
+          await changeAdminPassword(currentPassword, newPassword);
         }}
       />
     </>

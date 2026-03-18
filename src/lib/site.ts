@@ -33,6 +33,9 @@ export type UiTextKey =
   | 'admin.password'
   | 'admin.cancel'
   | 'admin.submit'
+  | 'admin.changePassword'
+  | 'admin.currentPassword'
+  | 'admin.newPassword'
   | 'admin.editCurrent'
   | 'admin.write'
   | 'admin.pageManager'
@@ -70,6 +73,9 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'admin.password': 'Password',
     'admin.cancel': 'Cancel',
     'admin.submit': 'Login',
+    'admin.changePassword': 'change password',
+    'admin.currentPassword': 'Current password',
+    'admin.newPassword': 'New password',
     'admin.editCurrent': 'edit current post',
     'admin.write': 'write post',
     'admin.pageManager': 'page manager',
@@ -106,6 +112,9 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'admin.password': '비밀번호',
     'admin.cancel': '취소',
     'admin.submit': '로그인',
+    'admin.changePassword': '비밀번호 변경',
+    'admin.currentPassword': '현재 비밀번호',
+    'admin.newPassword': '새 비밀번호',
     'admin.editCurrent': '현재 글 수정',
     'admin.write': '글쓰기',
     'admin.pageManager': '페이지 관리',

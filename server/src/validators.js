@@ -59,8 +59,26 @@ export function clamp(input, min, max) {
   return Math.max(min, Math.min(max, input));
 }
 
+export function toPlainText(value) {
+  return String(value || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h1|h2|h3|h4|h5|h6|blockquote|section|article)>/gi, '\n')
+    .replace(/<li\b[^>]*>/gi, '- ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function toExcerpt(value, maxLength = 180) {
-  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  const clean = toPlainText(value);
   if (clean.length <= maxLength) return clean;
   return `${clean.slice(0, maxLength - 3)}...`;
 }

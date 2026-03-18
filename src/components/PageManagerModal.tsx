@@ -9,13 +9,14 @@ interface PageManagerModalProps {
   onClose: () => void;
   onCreate: (section: SiteSection, lang: SiteLang) => void;
   onEdit: (post: PostItem) => void;
+  onCopy: (post: PostItem) => Promise<void> | void;
   onChanged: () => void;
 }
 
 type SectionFilter = SiteSection | 'all';
 type StatusFilter = 'all' | 'draft' | 'published';
 
-export function PageManagerModal({ open, defaultLang, onClose, onCreate, onEdit, onChanged }: PageManagerModalProps) {
+export function PageManagerModal({ open, defaultLang, onClose, onCreate, onEdit, onCopy, onChanged }: PageManagerModalProps) {
   const [lang, setLang] = useState<SiteLang>(defaultLang);
   const [section, setSection] = useState<SectionFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('all');
@@ -64,8 +65,15 @@ export function PageManagerModal({ open, defaultLang, onClose, onCreate, onEdit,
     };
   }, [lang, open, section, status]);
 
-  const publishedCount = useMemo(() => items.filter((item) => item.status === 'published').length, [items]);
-  const draftCount = useMemo(() => items.filter((item) => item.status === 'draft').length, [items]);
+  const countableItems = useMemo(
+    () => (section === 'all' ? items.filter((item) => item.section !== 'pages') : items),
+    [items, section]
+  );
+  const publishedCount = useMemo(
+    () => countableItems.filter((item) => item.status === 'published').length,
+    [countableItems]
+  );
+  const draftCount = useMemo(() => countableItems.filter((item) => item.status === 'draft').length, [countableItems]);
 
   if (!open) return null;
 
@@ -116,6 +124,18 @@ export function PageManagerModal({ open, defaultLang, onClose, onCreate, onEdit,
     }
   }
 
+  async function handleCopy(post: PostItem) {
+    setBusyId(post.id);
+    setError('');
+    try {
+      await onCopy(post);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to copy post');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="admin-modal" role="dialog" aria-modal="true" aria-label="Page manager">
       <div className="admin-modal__backdrop" onClick={onClose} />
@@ -124,7 +144,8 @@ export function PageManagerModal({ open, defaultLang, onClose, onCreate, onEdit,
           <div>
             <h2>Page Manager</h2>
             <p className="admin-status-note">
-              total {items.length} / published {publishedCount} / draft {draftCount}
+              total {countableItems.length} / published {publishedCount} / draft {draftCount}
+              {section === 'all' ? ' (pages excluded)' : ''}
             </p>
           </div>
           <button type="button" className="admin-modal__close" onClick={onClose} aria-label="Close">
@@ -206,6 +227,18 @@ export function PageManagerModal({ open, defaultLang, onClose, onCreate, onEdit,
                         >
                           edit
                         </button>
+                        {post.section !== 'pages' ? (
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--secondary"
+                            disabled={busyId === post.id}
+                            onClick={() => {
+                              void handleCopy(post);
+                            }}
+                          >
+                            copy
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="admin-btn admin-btn--secondary"

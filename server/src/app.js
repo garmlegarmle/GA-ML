@@ -20,24 +20,21 @@ import {
 } from './validators.js';
 import {
   SESSION_COOKIE,
-  OAUTH_STATE_COOKIE,
-  createPopupHtml,
   createSignedValue,
   getAdminSession,
+  hashPassword,
   isAdminRequest,
   isAllowedAdmin,
   makeClearCookie,
   makeSetCookie,
-  randomState,
-  safeRedirectPath,
-  verifyAdminPassword,
-  verifySignedValue
+  verifyPasswordHash
 } from './auth.js';
 import {
   cleanupUnusedTag,
   createPool,
   ensureSchema,
   ensureSeedPages,
+  getAppSetting,
   getMediaById,
   getMediaVariants,
   getPostTags,
@@ -45,7 +42,9 @@ import {
   listDistinctTags,
   listTagCountsBySection,
   mapPostRow,
+  normalizeDerivedPostCardFields,
   replacePostTags,
+  setAppSetting,
   softDeletePost,
   touchViewCount
 } from './db.js';
@@ -60,9 +59,6 @@ import {
   writeImageVariants
 } from './media.js';
 
-const GH_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
-const GH_TOKEN_URL = 'https://github.com/login/oauth/access_token';
-const GH_USER_URL = 'https://api.github.com/user';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
 const config = getConfig();
@@ -74,34 +70,6 @@ function withSecurityHeaders(res) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-}
-
-function sanitizeOrigin(value) {
-  try {
-    const url = new URL(value);
-    return `${url.protocol}//${url.host}`;
-  } catch {
-    return '*';
-  }
-}
-
-async function createOAuthState(payload) {
-  return createSignedValue({ ...payload, issuedAt: Date.now() }, config.adminSessionSecret);
-}
-
-async function decodeOAuthState(value) {
-  const parsed = verifySignedValue(value, config.adminSessionSecret);
-  if (!parsed || typeof parsed !== 'object') return null;
-  if (!parsed.state || !parsed.redirectPath || !parsed.issuedAt) return null;
-  const issuedAt = Number(parsed.issuedAt);
-  if (!Number.isFinite(issuedAt)) return null;
-  if (Date.now() - issuedAt > 10 * 60 * 1000) return null;
-  return {
-    state: String(parsed.state),
-    redirectPath: safeRedirectPath(String(parsed.redirectPath)),
-    targetOrigin: String(parsed.targetOrigin || '*'),
-    issuedAt
-  };
 }
 
 function requireAdmin(req, res) {
@@ -126,6 +94,11 @@ async function bootstrap() {
   await fs.mkdir(config.mediaRoot, { recursive: true });
   await ensureSchema(pool);
   await ensureSeedPages(pool);
+  await normalizeDerivedPostCardFields(pool);
+  const currentHash = await getAppSetting(pool, 'admin_password_hash');
+  if (!currentHash && config.adminLoginPassword) {
+    await setAppSetting(pool, 'admin_password_hash', hashPassword(config.adminLoginPassword));
+  }
 }
 
 const app = express();
@@ -144,13 +117,17 @@ app.post('/api/login', async (req, res) => {
   const username = String(req.body?.username || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
 
-  if (!config.adminLoginUser || !config.adminLoginPassword) {
+  if (!config.adminLoginUser) {
     return jsonError(res, 500, 'Admin login is not configured');
   }
   if (!username || !password) {
     return jsonError(res, 400, 'username and password are required');
   }
-  if (!isAllowedAdmin(username, config) || !verifyAdminPassword(password, config)) {
+  const storedHash = await getAppSetting(pool, 'admin_password_hash');
+  if (!storedHash) {
+    return jsonError(res, 500, 'Admin password is not configured');
+  }
+  if (!isAllowedAdmin(username, config) || !verifyPasswordHash(password, storedHash)) {
     return jsonError(res, 401, 'Invalid username or password');
   }
 
@@ -173,107 +150,6 @@ app.post('/api/login', async (req, res) => {
   });
 });
 
-app.get('/api/auth', async (req, res) => {
-  if (!config.githubClientId) {
-    return res.status(410).send('GitHub OAuth login is disabled');
-  }
-  const redirectPath = safeRedirectPath(req.query.redirect);
-  const targetOriginParam = req.query.origin || req.get('origin') || config.siteOrigin || '*';
-  const targetOrigin = targetOriginParam === '*' ? '*' : sanitizeOrigin(String(targetOriginParam));
-  const state = randomState();
-  const signedState = await createOAuthState({ state, redirectPath, targetOrigin });
-  const redirectOrigin = targetOrigin !== '*' ? targetOrigin : `${req.protocol}://${req.get('host')}`;
-  const redirectUri = `${redirectOrigin}/api/callback`;
-  const authUrl = new URL(GH_AUTHORIZE_URL);
-  authUrl.searchParams.set('client_id', config.githubClientId);
-  authUrl.searchParams.set('redirect_uri', redirectUri);
-  authUrl.searchParams.set('scope', config.githubOauthScope || 'read:user');
-  authUrl.searchParams.set('state', signedState);
-  res.setHeader('Cache-Control', 'no-store');
-  res.redirect(authUrl.toString());
-});
-
-app.get('/api/callback', async (req, res) => {
-  if (!config.githubClientId || !config.githubClientSecret) {
-    return res.status(500).send('Missing GitHub OAuth env vars');
-  }
-  const code = String(req.query.code || '');
-  const state = String(req.query.state || '');
-  const oauthError = String(req.query.error || '');
-  const statePayload = await decodeOAuthState(state);
-  const targetOrigin = statePayload?.targetOrigin || '*';
-  const redirectPath = statePayload?.redirectPath || '/en/';
-  if (oauthError) {
-    return res.status(400).type('html').send(createPopupHtml({ ok: false, message: oauthError, targetOrigin, redirectPath }));
-  }
-  if (!statePayload) {
-    return res.status(403).type('html').send(createPopupHtml({ ok: false, message: 'Invalid OAuth state', targetOrigin, redirectPath }));
-  }
-  if (!code) {
-    return res.status(400).type('html').send(createPopupHtml({ ok: false, message: 'Missing OAuth code', targetOrigin, redirectPath }));
-  }
-
-  const callbackOrigin = statePayload.targetOrigin && statePayload.targetOrigin !== '*' ? statePayload.targetOrigin : `${req.protocol}://${req.get('host')}`;
-  const redirectUri = `${callbackOrigin}/api/callback`;
-
-  const tokenResponse = await fetch(GH_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams({
-      client_id: config.githubClientId,
-      client_secret: config.githubClientSecret,
-      code,
-      redirect_uri: redirectUri
-    })
-  });
-  const tokenJson = await tokenResponse.json().catch(() => null);
-  const accessToken = tokenJson?.access_token;
-  if (!tokenResponse.ok || !accessToken) {
-    return res.status(502).type('html').send(createPopupHtml({ ok: false, message: 'Token exchange failed', targetOrigin, redirectPath }));
-  }
-
-  const userResponse = await fetch(GH_USER_URL, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${accessToken}`,
-      'User-Agent': 'utility-box-vps-api'
-    }
-  });
-  const userJson = await userResponse.json().catch(() => null);
-  const username = String(userJson?.login || '');
-  if (!userResponse.ok || !username) {
-    return res.status(502).type('html').send(createPopupHtml({ ok: false, message: 'Failed to load user profile', targetOrigin, redirectPath }));
-  }
-  if (!isAllowedAdmin(username, config)) {
-    res.setHeader('Set-Cookie', makeClearCookie(OAUTH_STATE_COOKIE, config));
-    return res.status(403).type('html').send(
-      createPopupHtml({
-        ok: false,
-        message: `User is not allowed (${username}). Set ADMIN_GITHUB_USER to this username.`,
-        targetOrigin,
-        redirectPath
-      })
-    );
-  }
-
-  const sessionValue = createSignedValue(
-    {
-      username,
-      token: accessToken,
-      exp: Date.now() + 1000 * 60 * 60 * 12
-    },
-    config.adminSessionSecret
-  );
-
-  res.setHeader('Cache-Control', 'no-store');
-  res.append('Set-Cookie', makeSetCookie(SESSION_COOKIE, sessionValue, 60 * 60 * 12, config));
-  res.append('Set-Cookie', makeClearCookie(OAUTH_STATE_COOKIE, config));
-  res.type('html').send(createPopupHtml({ ok: true, message: 'ok', targetOrigin, redirectPath }));
-});
-
 app.get('/api/session', (req, res) => {
   const session = getAdminSession(req, config);
   res.setHeader('Cache-Control', 'no-store');
@@ -283,6 +159,30 @@ app.get('/api/session', (req, res) => {
     isAdmin: Boolean(session),
     username: session?.username || null
   });
+});
+
+app.post('/api/admin/password', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const currentPassword = String(req.body?.currentPassword || '');
+  const nextPassword = String(req.body?.newPassword || '');
+
+  if (!currentPassword || !nextPassword) {
+    return jsonError(res, 400, 'currentPassword and newPassword are required');
+  }
+  if (nextPassword.length < 10) {
+    return jsonError(res, 400, 'New password must be at least 10 characters');
+  }
+
+  const storedHash = await getAppSetting(pool, 'admin_password_hash');
+  if (!storedHash) {
+    return jsonError(res, 500, 'Admin password is not configured');
+  }
+  if (!verifyPasswordHash(currentPassword, storedHash)) {
+    return jsonError(res, 401, 'Current password is incorrect');
+  }
+
+  await setAppSetting(pool, 'admin_password_hash', hashPassword(nextPassword));
+  return jsonOk(res, { ok: true });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -409,12 +309,13 @@ app.post('/api/posts', async (req, res, next) => {
     const slug = slugify(String(payload.slug || title));
     if (!slug) return jsonError(res, 400, 'slug is invalid');
     const status = normalizeStatus(payload.status || 'draft');
-    const excerpt = String(payload.excerpt || '').trim() || toExcerpt(content.replace(/[#*_`>\-\n]/g, ' '));
+    const tags = dedupeTags(payload.tags || []);
+    const excerpt = String(payload.excerpt || '').trim() || toExcerpt(content);
     const publishedAt = status === 'published' ? parseDateOrNull(payload.published_at) || nowIso() : null;
     const pairSlug = payload.pair_slug ? slugify(String(payload.pair_slug)) : null;
-    const cardTitle = String(payload.card?.title || title).trim() || title;
     const cardCategory = String(payload.card?.category || section).trim() || section;
-    const cardTag = String(payload.card?.tag || '').trim() || null;
+    const cardTitle = title;
+    const cardTag = tags.join(', ') || null;
     const cardRank = parseCardRank(payload.card?.rank);
     const cardImageId = parseIntSafe(payload.card?.image_id, null);
     const metaTitle = String(payload.meta?.title || '').trim() || null;
@@ -446,7 +347,6 @@ app.post('/api/posts', async (req, res, next) => {
       ]
     );
     const postId = Number(insert.rows[0].id);
-    const tags = dedupeTags(payload.tags || []);
     if (tags.length) await replacePostTags(pool, postId, tags);
     jsonOk(res, { ok: true, id: postId, slug });
   } catch (error) {
@@ -473,8 +373,9 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const slug = payload.slug !== undefined ? slugify(String(payload.slug || title)) : current.slug;
     if (!slug) return jsonError(res, 400, 'slug is invalid');
     const status = payload.status !== undefined ? normalizeStatus(payload.status) : current.status;
+    const tags = payload.tags !== undefined ? dedupeTags(payload.tags || []) : await getPostTags(pool, postId);
     const excerpt = payload.excerpt !== undefined
-      ? String(payload.excerpt || '').trim() || toExcerpt(content.replace(/[#*_`>\-\n]/g, ' '))
+      ? String(payload.excerpt || '').trim() || toExcerpt(content)
       : current.excerpt;
     const publishedAt = payload.published_at !== undefined
       ? parseDateOrNull(payload.published_at)
@@ -482,9 +383,9 @@ app.put('/api/posts/:id', async (req, res, next) => {
         ? (current.published_at ? new Date(current.published_at).toISOString() : nowIso())
         : null;
     const pairSlug = payload.pair_slug !== undefined ? (payload.pair_slug ? slugify(String(payload.pair_slug)) : null) : current.pair_slug;
-    const cardTitle = payload.card?.title !== undefined ? String(payload.card.title || '').trim() || title : current.card_title || title;
     const cardCategory = payload.card?.category !== undefined ? String(payload.card.category || '').trim() || section : current.card_category || section;
-    const cardTag = payload.card?.tag !== undefined ? String(payload.card.tag || '').trim() || null : current.card_tag;
+    const cardTitle = title;
+    const cardTag = tags.join(', ') || null;
     const cardRank = payload.card?.rank !== undefined ? parseCardRank(payload.card.rank) : current.card_rank;
     const cardImageId = payload.card?.image_id !== undefined ? parseIntSafe(payload.card.image_id, null) : current.card_image_id;
     const metaTitle = payload.meta?.title !== undefined ? String(payload.meta.title || '').trim() || null : current.meta_title;
@@ -514,7 +415,7 @@ app.put('/api/posts/:id', async (req, res, next) => {
       ]
     );
     if (payload.tags !== undefined) {
-      await replacePostTags(pool, postId, dedupeTags(payload.tags || []));
+      await replacePostTags(pool, postId, tags);
     }
     jsonOk(res, { ok: true, id: postId, slug, section, lang, updated_at: nowIso() });
   } catch (error) {

@@ -212,6 +212,16 @@ export async function login(username: string, password: string): Promise<Session
   });
 }
 
+export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>('/api/admin/password', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ currentPassword, newPassword })
+  });
+}
+
 export async function uploadMedia(file: File, alt?: string): Promise<UploadResponse> {
   const form = new FormData();
   form.append('file', file);

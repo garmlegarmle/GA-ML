@@ -11,6 +11,7 @@ interface AdminDockProps {
   onWrite: () => void;
   onManagePages?: () => void;
   onEditCurrent?: () => void;
+  onChangePassword?: () => void;
 }
 
 export function AdminDock({
@@ -21,7 +22,8 @@ export function AdminDock({
   onLogout,
   onWrite,
   onManagePages,
-  onEditCurrent
+  onEditCurrent,
+  onChangePassword
 }: AdminDockProps) {
   const [open, setOpen] = useState(false);
 
@@ -57,6 +59,11 @@ export function AdminDock({
               {onManagePages ? (
                 <button type="button" className="admin-menu__item" role="menuitem" onClick={onManagePages}>
                   {t(lang, 'admin.pageManager')}
+                </button>
+              ) : null}
+              {onChangePassword ? (
+                <button type="button" className="admin-menu__item" role="menuitem" onClick={onChangePassword}>
+                  {t(lang, 'admin.changePassword')}
                 </button>
               ) : null}
               <button type="button" className="admin-menu__item" role="menuitem" onClick={onLogout}>

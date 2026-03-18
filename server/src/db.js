@@ -39,6 +39,44 @@ export async function ensureSeedPages(pool) {
   }
 }
 
+export async function normalizeDerivedPostCardFields(pool) {
+  await pool.query(
+    `WITH tag_lists AS (
+      SELECT p.id AS post_id, NULLIF(string_agg(t.name, ', ' ORDER BY LOWER(t.name)), '') AS card_tag
+      FROM posts p
+      LEFT JOIN post_tags pt ON pt.post_id = p.id
+      LEFT JOIN tags t ON t.id = pt.tag_id
+      WHERE p.is_deleted = FALSE
+      GROUP BY p.id
+    )
+    UPDATE posts p
+    SET
+      card_title = p.title,
+      card_tag = tag_lists.card_tag,
+      updated_at = CASE
+        WHEN p.card_title IS DISTINCT FROM p.title OR p.card_tag IS DISTINCT FROM tag_lists.card_tag THEN NOW()
+        ELSE p.updated_at
+      END
+    FROM tag_lists
+    WHERE p.id = tag_lists.post_id
+      AND (p.card_title IS DISTINCT FROM p.title OR p.card_tag IS DISTINCT FROM tag_lists.card_tag)`
+  );
+}
+
+export async function getAppSetting(pool, key) {
+  const result = await pool.query('SELECT value FROM app_settings WHERE key = $1 LIMIT 1', [key]);
+  return result.rows[0]?.value || null;
+}
+
+export async function setAppSetting(pool, key, value) {
+  await pool.query(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [key, value]
+  );
+}
+
 export async function upsertTags(pool, tags) {
   const out = [];
   for (const tag of tags) {
@@ -171,6 +209,8 @@ export function mapPostRow(row, tags, request, publicOrigin = '') {
   const cardImageUrl = row.card_image_id ? `${origin}/api/media/${row.card_image_id}/file` : null;
   const rankValue = row.card_rank ? `#${row.card_rank}` : null;
   const resolvedOgImageUrl = row.og_image_url || cardImageUrl || coverUrl || null;
+  const joinedTags = tags.map((tag) => String(tag || '').trim()).filter(Boolean).join(', ');
+  const storedCardTag = String(row.card_tag || '').trim();
   return {
     id: Number(row.id),
     slug: row.slug,
@@ -200,7 +240,7 @@ export function mapPostRow(row, tags, request, publicOrigin = '') {
     card: {
       title: row.card_title || row.title,
       category: row.card_category || row.section,
-      tag: row.card_tag || tags[0] || 'Tag',
+      tag: storedCardTag && storedCardTag.toLowerCase() !== 'tag' ? storedCardTag : joinedTags || 'Tag',
       rank: rankValue,
       rankNumber: row.card_rank ? Number(row.card_rank) : null,
       imageId: row.card_image_id ? Number(row.card_image_id) : null,

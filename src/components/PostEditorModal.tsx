@@ -107,6 +107,23 @@ function normalizeBodyHtml(rawHtml: string): string {
   return doc.body.innerHTML;
 }
 
+function toPlainText(rawHtml: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(String(rawHtml || ''), 'text/html');
+  doc.querySelectorAll('script, style').forEach((node) => node.remove());
+  doc.querySelectorAll('br').forEach((node) => node.replaceWith(doc.createTextNode('\n')));
+  doc.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6, blockquote, section, article').forEach((node) => {
+    node.append(doc.createTextNode('\n'));
+  });
+  return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function toExcerptText(rawHtml: string, maxLength = 180): string {
+  const clean = toPlainText(rawHtml);
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, maxLength - 3)}...`;
+}
+
 function moveCaretAfter(node: Node): void {
   const selection = window.getSelection();
   if (!selection) return;
@@ -132,6 +149,23 @@ function applyImageAlignment(image: HTMLImageElement, align: 'left' | 'center' |
     image.style.marginLeft = 'auto';
     image.style.marginRight = 'auto';
   }
+}
+
+function createEditorImage(doc: Document, url: string, alt: string): HTMLImageElement {
+  const image = doc.createElement('img');
+  image.className = 'editor-inline-image';
+  image.src = url;
+  image.alt = alt;
+  image.style.maxWidth = '100%';
+  image.style.height = 'auto';
+  applyImageAlignment(image, 'center');
+  return image;
+}
+
+function createEditorParagraph(doc: Document): HTMLParagraphElement {
+  const paragraph = doc.createElement('p');
+  paragraph.innerHTML = '<br>';
+  return paragraph;
 }
 
 function isNearRightEdge(image: HTMLImageElement, clientX: number): boolean {
@@ -172,19 +206,12 @@ export function PostEditorModal({
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState('');
 
-  const [cardTitle, setCardTitle] = useState(initialPost?.card.title || initialPost?.title || '');
   const [cardCategory, setCardCategory] = useState(initialPost?.card.category || initialPost?.section || defaultSection);
-  const [selectedCardTags, setSelectedCardTags] = useState<string[]>(
-    parseTagInput(initialPost?.card.tag || (initialPost?.tags || []).join(', '))
-  );
-  const [cardTagDraft, setCardTagDraft] = useState('');
   const [cardRank, setCardRank] = useState(stripRank(initialPost?.card.rank));
   const [cardImageId, setCardImageId] = useState<number | null>(initialPost?.card.imageId ?? null);
   const [cardImageUrl, setCardImageUrl] = useState(initialPost?.card.imageUrl || '');
   const [cardImageAlt, setCardImageAlt] = useState('');
-  const [cardTitleTouched, setCardTitleTouched] = useState(false);
   const [cardCategoryTouched, setCardCategoryTouched] = useState(false);
-  const [cardTagsTouched, setCardTagsTouched] = useState(false);
   const [cardRankTouched, setCardRankTouched] = useState(false);
   const [bodyImageAlt, setBodyImageAlt] = useState('');
   const [internalLinkQuery, setInternalLinkQuery] = useState('');
@@ -222,10 +249,7 @@ export function PostEditorModal({
     setAvailableTags(initialPost?.tags || []);
     setTagDraft('');
 
-    setCardTitle(initialPost?.card.title || initialPost?.title || '');
     setCardCategory(initialPost?.card.category || initialPost?.section || defaultSection);
-    setSelectedCardTags(parseTagInput(initialPost?.card.tag || (initialPost?.tags || []).join(', ')));
-    setCardTagDraft('');
     setCardRank(stripRank(initialPost?.card.rank));
     setCardImageId(initialPost?.card.imageId ?? null);
     setCardImageUrl(initialPost?.card.imageUrl || '');
@@ -233,12 +257,8 @@ export function PostEditorModal({
     setBodyImageAlt('');
     setInternalLinkQuery('');
     setInternalLinkResults([]);
-    setCardTitleTouched(Boolean(initialPost?.card.title && initialPost.card.title !== (initialPost.title || '')));
     setCardCategoryTouched(
       Boolean(initialPost?.card.category && initialPost.card.category !== (initialPost.section || defaultSection))
-    );
-    setCardTagsTouched(
-      Boolean(parseTagInput(initialPost?.card.tag || '').join(',') !== parseTagInput((initialPost?.tags || []).join(',')).join(','))
     );
     setCardRankTouched(Boolean(stripRank(initialPost?.card.rank)));
 
@@ -295,9 +315,7 @@ export function PostEditorModal({
       try {
         const response = await listTags({ lang });
         if (canceled) return;
-        setAvailableTags((prev) =>
-          dedupeTagList([...prev, ...(response.items || []), ...selectedTags, ...selectedCardTags])
-        );
+        setAvailableTags((prev) => dedupeTagList([...prev, ...(response.items || []), ...selectedTags]));
       } catch {
         // Keep current local tag cache only.
       }
@@ -307,13 +325,7 @@ export function PostEditorModal({
     return () => {
       canceled = true;
     };
-  }, [lang, open, selectedCardTags, selectedTags]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (cardTitleTouched) return;
-    setCardTitle(title);
-  }, [cardTitleTouched, open, title]);
+  }, [lang, open, selectedTags]);
 
   useEffect(() => {
     if (!open) return;
@@ -323,26 +335,20 @@ export function PostEditorModal({
 
   useEffect(() => {
     if (!open) return;
-    if (cardTagsTouched) return;
-    setSelectedCardTags(selectedTags);
-  }, [cardTagsTouched, open, selectedTags]);
-
-  useEffect(() => {
-    if (!open) return;
     if (mode !== 'create') return;
     if (cardRankTouched) return;
     let canceled = false;
 
     async function assignDefaultRank() {
       try {
-        const response = await listPosts({
-          lang,
-          status: 'published',
-          page: 1,
-          limit: 1
-        });
+        const responses = await Promise.all([
+          listPosts({ lang, section: 'blog', status: 'published', page: 1, limit: 1 }),
+          listPosts({ lang, section: 'tools', status: 'published', page: 1, limit: 1 }),
+          listPosts({ lang, section: 'games', status: 'published', page: 1, limit: 1 })
+        ]);
         if (canceled) return;
-        setCardRank(String((response.total || 0) + 1));
+        const total = responses.reduce((sum, response) => sum + Number(response.total || 0), 0);
+        setCardRank(String(total + 1));
       } catch {
         if (canceled) return;
         setCardRank('1');
@@ -467,13 +473,20 @@ export function PostEditorModal({
   function setSelectedImageAlign(align: 'left' | 'center' | 'right') {
     const image = selectedImageRef.current;
     if (!image) return;
+    if (image.closest('.editor-image-row')) return;
     applyImageAlignment(image, align);
   }
 
   function deleteSelectedImage() {
     const image = selectedImageRef.current;
     if (!image) return;
+    const row = image.closest('.editor-image-row');
     image.remove();
+    if (row && row.querySelectorAll('img.editor-inline-image').length === 0) {
+      const paragraph = createEditorParagraph(document);
+      row.replaceWith(paragraph);
+      moveCaretAfter(paragraph);
+    }
     selectedImageRef.current = null;
   }
 
@@ -505,29 +518,11 @@ export function PostEditorModal({
       const key = clean.toLowerCase();
       setAvailableTags((prev) => prev.filter((tag) => tag.trim().toLowerCase() !== key));
       setSelectedTags((prev) => prev.filter((tag) => tag.trim().toLowerCase() !== key));
-      setSelectedCardTags((prev) => prev.filter((tag) => tag.trim().toLowerCase() !== key));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete tag');
     } finally {
       setLoading(false);
     }
-  }
-
-  function addCardTag(raw: string) {
-    const next = parseTagInput(raw);
-    if (next.length === 0) return;
-
-    setCardTagsTouched(true);
-    setSelectedCardTags((prev) => dedupeTagList([...prev, ...next]));
-    setAvailableTags((prev) => dedupeTagList([...prev, ...next]));
-    setCardTagDraft('');
-  }
-
-  function removeCardTag(raw: string) {
-    const key = String(raw || '').trim().toLowerCase();
-    if (!key) return;
-    setCardTagsTouched(true);
-    setSelectedCardTags((prev) => prev.filter((item) => item.trim().toLowerCase() !== key));
   }
 
   function insertInternalLink(post: PostItem) {
@@ -547,6 +542,17 @@ export function PostEditorModal({
     return prompted || fallbackLabel || 'image';
   }
 
+  function resolveMultiImageAltPrefix(files: File[]): string {
+    const prefix = bodyImageAlt.trim();
+    if (prefix) return prefix;
+    const fallback = files[0]?.name.replace(/\.[^.]+$/, '') || 'image';
+    const prompted =
+      window
+        .prompt('Image alt prefix is recommended for multi-image upload. Leave blank to use a generic label.', fallback)
+        ?.trim() || '';
+    return prompted || fallback || 'image';
+  }
+
   async function uploadAndInsertBodyImage(file: File) {
     const alt = resolveImageAlt(bodyImageAlt, file.name.replace(/\.[^.]+$/, ''));
 
@@ -556,22 +562,60 @@ export function PostEditorModal({
     try {
       const result = await uploadMedia(file, alt);
       const url = result.urls.original || result.urls.thumb_webp;
-
-      const image = document.createElement('img');
-      image.className = 'editor-inline-image';
-      image.src = url;
-      image.alt = alt;
-      image.style.maxWidth = '100%';
-      image.style.height = 'auto';
-      applyImageAlignment(image, 'center');
+      const image = createEditorImage(document, url, alt);
       insertNodeAtCursor(image);
-
-      const paragraph = document.createElement('p');
-      paragraph.innerHTML = '<br>';
-      insertNodeAtCursor(paragraph);
+      insertNodeAtCursor(createEditorParagraph(document));
 
       selectedImageRef.current = image;
       setBodyImageAlt(alt);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Image upload failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function uploadAndInsertBodyImages(files: FileList | File[]) {
+    const nextFiles = Array.from(files || []).filter(Boolean);
+    if (nextFiles.length === 0) return;
+    if (nextFiles.length === 1) {
+      await uploadAndInsertBodyImage(nextFiles[0]);
+      return;
+    }
+
+    const altPrefix = resolveMultiImageAltPrefix(nextFiles);
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const uploaded = await Promise.all(
+        nextFiles.map(async (file, index) => {
+          const alt = `${altPrefix} ${index + 1}`;
+          const result = await uploadMedia(file, alt);
+          return {
+            alt,
+            url: result.urls.original || result.urls.thumb_webp
+          };
+        })
+      );
+
+      const row = document.createElement('div');
+      row.className = 'editor-image-row';
+      row.style.setProperty('--editor-image-columns', String(Math.min(uploaded.length, 4)));
+
+      for (const item of uploaded) {
+        const image = createEditorImage(document, item.url, item.alt);
+        image.style.width = '100%';
+        image.style.marginLeft = '0';
+        image.style.marginRight = '0';
+        row.appendChild(image);
+      }
+
+      insertNodeAtCursor(row);
+      insertNodeAtCursor(createEditorParagraph(document));
+      selectedImageRef.current = row.querySelector('img.editor-inline-image') as HTMLImageElement | null;
+      setBodyImageAlt(altPrefix);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Image upload failed');
     } finally {
@@ -611,17 +655,17 @@ export function PostEditorModal({
     }
 
     const parsedTags = dedupeTagList(selectedTags);
-    const parsedCardTags = dedupeTagList(selectedCardTags);
-    const normalizedExcerpt = excerpt.trim() || null;
+    const normalizedExcerpt = excerpt.trim() || toExcerptText(html) || null;
     const rankNumber = parseRankNumber(cardRank.trim());
     const normalizedMetaTitle = metaTitle.trim() || null;
-    const normalizedMetaDescription = metaDescription.trim() || null;
+    const normalizedMetaDescription = metaDescription.trim() || normalizedExcerpt;
     const ogTitle = normalizedMetaTitle || normalizedTitle;
     const ogDescription = normalizedMetaDescription || normalizedExcerpt || null;
     const ogImage = cardImageUrl || null;
+    const derivedCardTag = parsedTags.join(', ');
 
     const snapshot: PostSaveSnapshot = {
-      id: initialPost?.id || 0,
+      id: mode === 'edit' ? initialPost?.id || 0 : 0,
       slug: normalizedSlug,
       title: normalizedTitle,
       excerpt: normalizedExcerpt,
@@ -641,9 +685,9 @@ export function PostEditorModal({
       },
       schemaType,
       card: {
-        title: cardTitle.trim() || normalizedTitle,
+        title: normalizedTitle,
         category: cardCategory.trim() || section,
-        tag: parsedCardTags.join(', ') || parsedTags.join(', ') || 'Tag',
+        tag: derivedCardTag || 'Tag',
         rank: rankNumber ? `#${rankNumber}` : null,
         rankNumber,
         imageId: cardImageId,
@@ -666,9 +710,9 @@ export function PostEditorModal({
       },
       schema_type: schemaType,
       card: {
-        title: snapshot.card.title,
+        title: normalizedTitle,
         category: snapshot.card.category,
-        tag: parsedCardTags.join(', ') || parsedTags.join(', ') || '',
+        tag: derivedCardTag,
         rank: rankNumber ? String(rankNumber) : '',
         image_id: cardImageId
       }
@@ -746,24 +790,25 @@ export function PostEditorModal({
             </label>
 
             <label>
-              Excerpt
+              Excerpt (optional)
               <input value={excerpt} onChange={(event) => setExcerpt(event.target.value)} placeholder="Short summary" />
+              <span className="list-tags">Leave blank to generate a summary from the body.</span>
             </label>
 
             <div className="admin-card-settings">
               <h3>SEO</h3>
               <label>
-                Meta Title
+                Meta Title (optional)
                 <input
                   value={metaTitle}
                   maxLength={60}
                   onChange={(event) => setMetaTitle(event.target.value)}
                   placeholder="Meta title (max 60)"
                 />
-                <span className="list-tags">{metaTitle.length}/60</span>
+                <span className="list-tags">{metaTitle.length}/60. Blank uses the post title.</span>
               </label>
               <label>
-                Meta Description
+                Meta Description (optional)
                 <textarea
                   value={metaDescription}
                   maxLength={160}
@@ -771,7 +816,8 @@ export function PostEditorModal({
                   placeholder="Meta description (155-160)"
                 />
                 <span className="list-tags">
-                  {metaDescription.length}/160 {metaDescription.length >= 155 && metaDescription.length <= 160 ? '(ideal)' : ''}
+                  {metaDescription.length}/160 {metaDescription.length >= 155 && metaDescription.length <= 160 ? '(ideal)' : ''}{' '}
+                  Blank uses the final excerpt.
                 </span>
               </label>
               <label>
@@ -875,17 +921,6 @@ export function PostEditorModal({
 
             <div className="admin-card-settings">
               <h3>Card Settings</h3>
-              <label>
-                Card Title
-                <input
-                  value={cardTitle}
-                  onChange={(event) => {
-                    setCardTitleTouched(true);
-                    setCardTitle(event.target.value);
-                  }}
-                  placeholder="Card title"
-                />
-              </label>
               <div className="admin-inline-grid">
                 <label>
                   Card Category
@@ -910,65 +945,7 @@ export function PostEditorModal({
                   />
                 </label>
               </div>
-
-              <div className="notice-tag-builder">
-                <p className="notice-tag-builder__label">Card Tags</p>
-                <div className="notice-tag-builder__chips">
-                  {selectedCardTags.map((tag) => (
-                    <button
-                      key={`card-tag-${tag.toLowerCase()}`}
-                      type="button"
-                      className="notice-tag-chip"
-                      onClick={() => removeCardTag(tag)}
-                    >
-                      {tag} x
-                    </button>
-                  ))}
-                  {selectedCardTags.length === 0 ? <span className="list-tags">No card tags selected.</span> : null}
-                </div>
-                <div className="notice-tag-builder__input-row">
-                  <input
-                    value={cardTagDraft}
-                    onChange={(event) => setCardTagDraft(event.target.value)}
-                    placeholder="Type card tag and press Enter"
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ',') {
-                        event.preventDefault();
-                        addCardTag(cardTagDraft);
-                      }
-                    }}
-                  />
-                  <button type="button" className="admin-btn admin-btn--secondary" onClick={() => addCardTag(cardTagDraft)}>
-                    add
-                  </button>
-                </div>
-                <div className="notice-tag-builder__suggestions">
-                  {availableTags
-                    .filter(
-                      (tag) =>
-                        !selectedCardTags.some((picked) => picked.trim().toLowerCase() === tag.trim().toLowerCase())
-                    )
-                    .slice(0, 30)
-                    .map((tag) => (
-                      <span key={`card-suggestion-${tag.toLowerCase()}`} className="notice-tag-suggestion-wrap">
-                        <button type="button" className="notice-tag-suggestion" onClick={() => addCardTag(tag)}>
-                          {tag}
-                        </button>
-                        <button
-                          type="button"
-                          className="notice-tag-delete"
-                          onClick={() => {
-                            void removeTagEverywhere(tag);
-                          }}
-                          aria-label={`Delete tag ${tag}`}
-                        >
-                          x
-                        </button>
-                      </span>
-                    ))}
-                  {availableTags.length === 0 ? <span className="list-tags">No saved tags yet.</span> : null}
-                </div>
-              </div>
+              <p className="list-tags">Card title and card tag follow the post title and tag list automatically.</p>
 
               <div className="admin-inline-grid">
                 <label>
@@ -1059,12 +1036,12 @@ export function PostEditorModal({
                   Right
                 </button>
                 <label className="editor-toolbar__label">
-                  Image Alt
+                  Image Alt Prefix
                   <input
                     className="editor-toolbar__alt"
                     value={bodyImageAlt}
                     onChange={(event) => setBodyImageAlt(event.target.value)}
-                    placeholder="Required alt text"
+                    placeholder="Used for uploads, numbered for multi-image rows"
                   />
                 </label>
                 <label className="editor-toolbar__upload">
@@ -1072,10 +1049,10 @@ export function PostEditorModal({
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     hidden
                     onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (file) await uploadAndInsertBodyImage(file);
+                      if (event.target.files?.length) await uploadAndInsertBodyImages(event.target.files);
                       event.currentTarget.value = '';
                     }}
                   />
@@ -1136,7 +1113,7 @@ export function PostEditorModal({
                 <button type="button" onClick={deleteSelectedImage}>
                   Delete image
                 </button>
-                <span className="list-tags">Drag image edge to resize</span>
+                <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
               </div>
             </div>
 

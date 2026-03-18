@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import { parse as parseCookieHeader, serialize as serializeCookie } from 'cookie';
 
 export const SESSION_COOKIE = 'ub_admin_session';
-export const OAUTH_STATE_COOKIE = 'ub_admin_oauth_state';
 
 function toBase64Url(input) {
   return Buffer.from(input).toString('base64url');
@@ -68,14 +67,6 @@ export function makeClearCookie(name, config) {
   });
 }
 
-export function randomState(length = 32) {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const bytes = crypto.randomBytes(length);
-  let out = '';
-  for (const byte of bytes) out += alphabet[byte % alphabet.length];
-  return out;
-}
-
 function safeEqualText(left, right) {
   const a = crypto.createHash('sha256').update(String(left || '')).digest();
   const b = crypto.createHash('sha256').update(String(right || '')).digest();
@@ -86,16 +77,17 @@ export function isAllowedAdmin(username, config) {
   return Boolean(config.adminLoginUser) && String(username || '').toLowerCase() === config.adminLoginUser;
 }
 
-export function verifyAdminPassword(password, config) {
-  if (!config.adminLoginPassword) return false;
-  return safeEqualText(password, config.adminLoginPassword);
+export function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const derived = crypto.scryptSync(String(password || ''), salt, 64).toString('hex');
+  return `scrypt$${salt}$${derived}`;
 }
 
-export function safeRedirectPath(input) {
-  if (!input || typeof input !== 'string') return '/en/';
-  if (!input.startsWith('/')) return '/en/';
-  if (input.startsWith('//')) return '/en/';
-  return input;
+export function verifyPasswordHash(password, storedHash) {
+  const value = String(storedHash || '');
+  const [scheme, salt, digest] = value.split('$');
+  if (scheme !== 'scrypt' || !salt || !digest) return false;
+  const derived = crypto.scryptSync(String(password || ''), salt, 64).toString('hex');
+  return safeEqualText(derived, digest);
 }
 
 export function hasAdminBearer(req, config) {
@@ -123,35 +115,4 @@ export function getAdminSession(req, config) {
 
 export function isAdminRequest(req, config) {
   return hasAdminBearer(req, config) || Boolean(getAdminSession(req, config));
-}
-
-export function createPopupHtml({ ok, message, redirectPath = '/en/', targetOrigin = '*' }) {
-  const payload = JSON.stringify({
-    type: 'ub-admin-auth-success',
-    ok,
-    message,
-    redirectPath,
-    targetOrigin
-  }).replace(/</g, '\\u003c');
-
-  return `<!doctype html>
-<html>
-  <head><meta charset="utf-8"><title>Admin Auth</title></head>
-  <body>
-    <script>
-      (function () {
-        var payload = ${payload};
-        if (window.opener) {
-          try {
-            window.opener.postMessage(payload, payload.targetOrigin || '*');
-          } catch (_) {
-            window.opener.postMessage(payload, '*');
-          }
-        }
-        setTimeout(function () { window.close(); }, 120);
-      })();
-    </script>
-    <p>${ok ? 'Authentication complete.' : 'Authentication failed.'}</p>
-  </body>
-</html>`;
 }
