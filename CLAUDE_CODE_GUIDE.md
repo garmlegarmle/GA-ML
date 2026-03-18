@@ -49,10 +49,11 @@
 
 ## 6) 배포 절차
 ### VPS 배포
-1. `main` 브랜치 푸시
+1. 배포하려는 브랜치 푸시
 2. 서버에서:
-   - `cd /opt/utility-box/app && git pull --ff-only`
-   - `docker compose -f deploy/vps/docker-compose.utility-box.yml --project-name utility-box up -d --build utility-box-api utility-box-web`
+   - `sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box <branch-name>`
+
+브랜치를 생성을 나눠서 계속 작업하는 경우에도, 배포 시점에 현재 작업 브랜치 이름을 두 번째 인자로 넘기면 서버 체크아웃과 upstream이 그 브랜치로 맞춰집니다.
 
 ## 7) 운영 체크리스트
 1. `https://www.ga-ml.com/en/`, `/ko/` 진입 확인

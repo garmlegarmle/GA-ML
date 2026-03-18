@@ -6,9 +6,9 @@
   --border: #000000;
   --accent: #000000;
   --container: 1180px;
-  --card-width: 272px;
-  --card-height: 348px;
-  --card-media-height: 268px;
+  --card-width: 264px;
+  --card-height: 340px;
+  --card-media-height: 260px;
 }
 
 * {

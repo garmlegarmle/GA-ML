@@ -98,6 +98,12 @@ sh /opt/utility-box/app/deploy/vps/scripts/preflight-utility-box.sh /opt/utility
 sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box
 ```
 
+If you want production to follow the branch you are actively working on, pass that branch name as the second argument:
+
+```bash
+sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box codex/v2.0
+```
+
 8. If you need to bootstrap from an existing public API, import published content:
 
 ```bash
