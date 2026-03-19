@@ -9,6 +9,8 @@ interface EntryCardProps {
   showDraftBadge?: boolean;
 }
 
+const DEFAULT_CARD_IMAGE_URL = '/card-1.png';
+
 function rankText(post: PostItem, fallback: number): string {
   if (post.card.rank) return post.card.rank;
   if (post.card.rankNumber) return `#${post.card.rankNumber}`;
@@ -42,7 +44,7 @@ export function EntryCard({ post, href, lang, showDraftBadge = false }: EntryCar
   const rank = rankText(post, 1);
   const rankDigits = rank.replace(/\D/g, '').length;
   const rankClass = rankDigits >= 3 || rank.length >= 4 ? 'entry-card__rank entry-card__rank--compact' : 'entry-card__rank';
-  const image = post.card.imageUrl || post.cover?.url || '';
+  const image = post.card.imageUrl || DEFAULT_CARD_IMAGE_URL;
   const categoryText = displayCategory(post.card.category, post, lang);
   const tagText = displayTag(post.card.tag, tags, lang);
 
@@ -50,11 +52,7 @@ export function EntryCard({ post, href, lang, showDraftBadge = false }: EntryCar
     <article className="entry-card">
       <Link className="entry-card__link" to={targetHref}>
         <div className="entry-card__media">
-          {image ? (
-            <img className="entry-card__image" src={image} alt={cardTitle} loading="lazy" decoding="async" />
-          ) : (
-            <div className="entry-card__placeholder">{t(lang, 'card.placeholder')}</div>
-          )}
+          <img className="entry-card__image" src={image} alt={cardTitle} loading="lazy" decoding="async" />
         </div>
         <div className="entry-card__info">
           <p className="entry-card__meta">
