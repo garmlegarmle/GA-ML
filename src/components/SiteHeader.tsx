@@ -5,6 +5,8 @@ import type { SiteLang, SiteSection } from '../types';
 interface SiteHeaderProps {
   lang: SiteLang;
   active?: 'home' | SiteSection;
+  languageTogglePath?: string;
+  languageToggleState?: { languageSwitch?: boolean; fallbackPath?: string } | null;
 }
 
 const nav: Array<{ key: SiteSection; to: string }> = [
@@ -13,9 +15,9 @@ const nav: Array<{ key: SiteSection; to: string }> = [
   { key: 'blog', to: 'blog' }
 ];
 
-export function SiteHeader({ lang, active }: SiteHeaderProps) {
+export function SiteHeader({ lang, active, languageTogglePath, languageToggleState }: SiteHeaderProps) {
   const location = useLocation();
-  const togglePath = getLanguageTogglePath(location.pathname, lang);
+  const togglePath = languageTogglePath || getLanguageTogglePath(location.pathname, lang);
   const isAboutPage = new RegExp(`^/${lang}/pages/about/?$`).test(location.pathname);
 
   return (
@@ -36,7 +38,13 @@ export function SiteHeader({ lang, active }: SiteHeaderProps) {
               {sectionNavLabel(item.key, lang)}
             </Link>
           ))}
-          <Link className="lang-toggle" to={togglePath} rel="alternate" hrefLang={lang === 'ko' ? 'en' : 'ko'}>
+          <Link
+            className="lang-toggle"
+            to={togglePath}
+            state={languageToggleState || undefined}
+            rel="alternate"
+            hrefLang={lang === 'ko' ? 'en' : 'ko'}
+          >
             {t(lang, 'nav.langToggle')}
           </Link>
         </nav>

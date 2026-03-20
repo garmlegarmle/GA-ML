@@ -29,6 +29,11 @@ interface EditorState {
   defaultSection: SiteSection;
 }
 
+interface LanguageToggleState {
+  languageSwitch?: boolean;
+  fallbackPath?: string;
+}
+
 function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
   return {
     id: snapshot.id,
@@ -154,6 +159,48 @@ function buildCopySeed(post: PostItem, slug: string): PostItem {
   };
 }
 
+const VIEW_COUNT_EXCLUDED_PAGE_SLUGS = new Set(['about', 'contact', 'privacy-policy']);
+
+function shouldShowViewCount(post: Pick<PostItem, 'section' | 'slug'>): boolean {
+  return !(post.section === 'pages' && VIEW_COUNT_EXCLUDED_PAGE_SLUGS.has(post.slug));
+}
+
+function formatViewCount(value: number, lang: SiteLang): string {
+  return new Intl.NumberFormat(lang === 'ko' ? 'ko-KR' : 'en-US').format(Math.max(0, Number(value || 0)));
+}
+
+function oppositeLang(lang: SiteLang): SiteLang {
+  return lang === 'ko' ? 'en' : 'ko';
+}
+
+function buildSectionFallbackPath(lang: SiteLang, section: SiteSection | null): string {
+  if (!section || section === 'pages') return `/${lang}/`;
+  return `/${lang}/${section}/`;
+}
+
+function buildDetailLanguageToggle(
+  lang: SiteLang,
+  section: SiteSection | null,
+  slug: string,
+  pairSlug: string | null | undefined
+): { path: string; state: LanguageToggleState } {
+  const targetLang = oppositeLang(lang);
+  const fallbackPath = buildSectionFallbackPath(targetLang, section);
+  const targetSlug = String(pairSlug || slug || '').trim();
+
+  if (!section || !targetSlug) {
+    return {
+      path: fallbackPath,
+      state: { languageSwitch: true, fallbackPath }
+    };
+  }
+
+  return {
+    path: `/${targetLang}/${section}/${targetSlug}/`,
+    state: { languageSwitch: true, fallbackPath }
+  };
+}
+
 function renderTitleWithHiddenLoginTrigger(
   title: string,
   enabled: boolean,
@@ -232,15 +279,19 @@ function useAdminSession() {
 function SiteShell({
   lang,
   active,
+  languageTogglePath,
+  languageToggleState,
   children
 }: {
   lang: SiteLang;
   active: 'home' | SiteSection;
+  languageTogglePath?: string;
+  languageToggleState?: LanguageToggleState | null;
   children: React.ReactNode;
 }) {
   return (
     <div className="site-shell">
-      <SiteHeader lang={lang} active={active} />
+      <SiteHeader lang={lang} active={active} languageTogglePath={languageTogglePath} languageToggleState={languageToggleState} />
       <main>{children}</main>
       <SiteFooter lang={lang} />
     </div>
@@ -704,6 +755,8 @@ function DetailPage({
   savedPost: PostSaveSnapshot | null;
 }) {
   const params = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const lang = normalizeLang(params.lang);
   const section = normalizeSection(params.section || '') as SiteSection | null;
   const slug = String(params.slug || '');
@@ -715,6 +768,13 @@ function DetailPage({
   const [previousPost, setPreviousPost] = useState<PostItem | null>(null);
   const [nextPost, setNextPost] = useState<PostItem | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<PostItem[]>([]);
+  const languageToggle = useMemo(
+    () => buildDetailLanguageToggle(lang, section, slug, post?.pair_slug),
+    [lang, post?.pair_slug, section, slug]
+  );
+  const locationState = location.state as LanguageToggleState | null;
+  const languageSwitchFallback =
+    locationState?.languageSwitch && locationState.fallbackPath ? locationState.fallbackPath : null;
 
   useEffect(() => {
     let canceled = false;
@@ -734,8 +794,13 @@ function DetailPage({
         setPost(response.post);
       } catch (err) {
         if (canceled) return;
+        const message = err instanceof Error ? err.message : 'Failed to load post';
+        if (message === 'Post not found' && languageSwitchFallback) {
+          navigate(languageSwitchFallback, { replace: true });
+          return;
+        }
         setPost(null);
-        setError(err instanceof Error ? err.message : 'Failed to load post');
+        setError(message);
       } finally {
         if (!canceled) setLoading(false);
       }
@@ -745,7 +810,7 @@ function DetailPage({
     return () => {
       canceled = true;
     };
-  }, [isValidSection, lang, refreshKey, section, slug]);
+  }, [isValidSection, lang, languageSwitchFallback, navigate, refreshKey, section, slug]);
 
   useEffect(() => {
     if (!savedPost) return;
@@ -896,7 +961,12 @@ function DetailPage({
   if (!isValidSection || !section) return <Navigate to={`/${lang}/`} replace />;
 
   return (
-    <SiteShell lang={lang} active={section}>
+    <SiteShell
+      lang={lang}
+      active={section}
+      languageTogglePath={languageToggle.path}
+      languageToggleState={languageToggle.state}
+    >
       <article className="page-section">
         <div className="container detail-layout">
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
@@ -940,8 +1010,13 @@ function DetailPage({
                       {post.updated_at && post.updated_at !== post.created_at
                         ? ` | ${t(lang, 'detail.updated')}: ${new Date(post.updated_at).toLocaleDateString()}`
                         : ''}
+                      {shouldShowViewCount(post) ? ` | ${t(lang, 'detail.views')}: ${formatViewCount(post.view_count, lang)}` : ''}
                     </p>
                   </>
+                ) : shouldShowViewCount(post) ? (
+                  <p className="detail-layout__date">
+                    {t(lang, 'detail.views')}: {formatViewCount(post.view_count, lang)}
+                  </p>
                 ) : null}
                 <div className="detail-layout__title-row">
                   <h1>

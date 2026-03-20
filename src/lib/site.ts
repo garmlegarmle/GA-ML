@@ -23,6 +23,7 @@ export type UiTextKey =
   | 'detail.next'
   | 'detail.created'
   | 'detail.updated'
+  | 'detail.views'
   | 'detail.related'
   | 'detail.tagFallback'
   | 'admin.menu'
@@ -63,6 +64,7 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'detail.next': 'Next >',
     'detail.created': 'Created',
     'detail.updated': 'Updated',
+    'detail.views': 'Views',
     'detail.related': 'Related posts',
     'detail.tagFallback': 'tag',
     'admin.menu': 'Admin menu',
@@ -102,6 +104,7 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'detail.next': '다음글 >',
     'detail.created': '작성일',
     'detail.updated': '수정일',
+    'detail.views': '조회수',
     'detail.related': '관련 글',
     'detail.tagFallback': '태그',
     'admin.menu': '관리자 메뉴',

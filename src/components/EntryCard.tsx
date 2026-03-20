@@ -36,11 +36,18 @@ function displayTag(rawTag: string | null | undefined, tags: string[], lang: Sit
   return raw;
 }
 
+function titleClassName(title: string): string {
+  const length = [...String(title || '')].length;
+  if (length >= 46) return 'entry-card__title entry-card__title--tight';
+  if (length >= 28) return 'entry-card__title entry-card__title--compact';
+  return 'entry-card__title';
+}
+
 export function EntryCard({ post, href, lang, showDraftBadge = false }: EntryCardProps) {
   const targetHref = href || `/${lang}/${post.section}/${post.slug}/`;
   const cardTitle = post.card.title || post.title;
   const tags = Array.isArray(post.tags) ? post.tags : [];
-  const titleClass = cardTitle.length >= 18 ? 'entry-card__title entry-card__title--compact' : 'entry-card__title';
+  const titleClass = titleClassName(cardTitle);
   const rank = rankText(post, 1);
   const rankDigits = rank.replace(/\D/g, '').length;
   const rankClass = rankDigits >= 3 || rank.length >= 4 ? 'entry-card__rank entry-card__rank--compact' : 'entry-card__rank';

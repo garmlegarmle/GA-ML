@@ -66,6 +66,7 @@ const pool = createPool(config);
 const publicBaseUrl = config.mediaPublicBaseUrl || config.siteOrigin || '';
 const SITEMAP_LANGS = ['en', 'ko'];
 const SITEMAP_SECTIONS = ['tools', 'games', 'blog'];
+const VIEW_COUNT_EXCLUDED_PAGE_SLUGS = new Set(['about', 'contact', 'privacy-policy']);
 
 function withSecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -108,6 +109,13 @@ function trackLatest(map, key, dateValue) {
   if (!previous || previous < dateValue) {
     map.set(key, dateValue);
   }
+}
+
+function shouldTrackViewCount(row) {
+  return !(
+    row.section === 'pages' &&
+    VIEW_COUNT_EXCLUDED_PAGE_SLUGS.has(String(row.slug || '').trim().toLowerCase())
+  );
 }
 
 function renderSitemapXml(entries) {
@@ -390,7 +398,7 @@ app.get('/api/posts/:slug', async (req, res, next) => {
     if (!row) return jsonError(res, 404, 'Post not found');
     const tags = await getPostTags(pool, Number(row.id));
     let updatedViewCount = Number(row.view_count || 0);
-    if (!isAdmin && row.status === 'published') {
+    if (!isAdmin && row.status === 'published' && shouldTrackViewCount(row)) {
       const viewCookieName = `ub_post_view_${row.id}`;
       if (!String(req.headers.cookie || '').includes(`${viewCookieName}=1`)) {
         await touchViewCount(pool, Number(row.id));
