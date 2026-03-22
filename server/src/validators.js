@@ -12,6 +12,18 @@ export function slugify(value) {
     .replace(/^-|-$/g, '');
 }
 
+export function slugifyTag(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .trim()
+    .replace(/['"`]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 export function normalizeLang(value, fallback = 'en') {
   const raw = String(value || fallback).trim().toLowerCase();
   if (raw === 'ko' || raw === 'kr') return 'ko';

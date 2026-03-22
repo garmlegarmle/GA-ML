@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
-import { nowIso, slugify } from './validators.js';
+import { nowIso, slugifyTag } from './validators.js';
 
 const { Pool } = pg;
 
@@ -82,7 +82,7 @@ export async function upsertTags(pool, tags) {
   for (const tag of tags) {
     const name = String(tag || '').trim();
     if (!name) continue;
-    const slug = slugify(name);
+    const slug = slugifyTag(name);
     if (!slug) continue;
     await pool.query(
       `INSERT INTO tags (name, slug)

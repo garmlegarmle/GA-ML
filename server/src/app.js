@@ -16,6 +16,7 @@ import {
   parseDateOrNull,
   parseIntSafe,
   slugify,
+  slugifyTag,
   toExcerpt
 } from './validators.js';
 import {
@@ -316,7 +317,9 @@ app.get('/api/posts', async (req, res, next) => {
     const statusFilter = isAdmin && statusRaw === 'all' ? 'all' : isAdmin && statusRaw === 'draft' ? 'draft' : 'published';
     const lang = normalizeLang(req.query.lang || 'en');
     const sectionRaw = req.query.section ? normalizeSection(req.query.section) : null;
-    const tagFilter = String(req.query.tag || '').trim().toLowerCase();
+    const tagFilterRaw = String(req.query.tag || '').trim();
+    const tagFilter = tagFilterRaw.toLowerCase();
+    const tagFilterSlug = slugifyTag(tagFilterRaw);
     const q = String(req.query.q || '').trim();
     const page = clamp(parseIntSafe(req.query.page, 1) || 1, 1, 10000);
     const limit = clamp(parseIntSafe(req.query.limit, 12) || 12, 1, 50);
@@ -340,7 +343,7 @@ app.get('/api/posts', async (req, res, next) => {
       where.push(`(p.title ILIKE $${base} OR p.excerpt ILIKE $${base + 1} OR p.content_md ILIKE $${base + 2})`);
     }
     if (tagFilter) {
-      binds.push(tagFilter, tagFilter);
+      binds.push(tagFilterSlug || tagFilter, tagFilter);
       const base = binds.length - 1;
       where.push(`EXISTS (
         SELECT 1 FROM post_tags fpt

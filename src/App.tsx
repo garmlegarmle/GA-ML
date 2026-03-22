@@ -703,7 +703,7 @@ function SectionListPage({
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
 
-          <div className="listing-grid listing-grid--four">
+          <div className="listing-grid listing-grid--four listing-grid--center">
             {posts.map((post) => (
               <EntryCard
                 key={post.id}
