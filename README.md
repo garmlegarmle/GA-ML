@@ -7,7 +7,7 @@ Current production stack:
 - Database: VPS PostgreSQL
 - Media: VPS local storage (`/opt/utility-box/storage/uploads`)
 
-VPS migration prep is available in `deploy/vps/` and `VPS_MIGRATION.md`.
+VPS migration prep is available in `deploy/vps/` and `docs/operations/VPS_MIGRATION.md`.
 The production backend lives under `server/`.
 
 ## Content Source Of Truth
@@ -37,7 +37,7 @@ Server env (`deploy/vps/env/utility-box.api.env`):
 - `ADMIN_LOGIN_PASSWORD` (bootstrap value; password changes are then stored in DB)
 - optional: `ADMIN_TOKEN`, `MEDIA_PUBLIC_BASE_URL`
 
-Agent handoff/runbook: see `CLAUDE_CODE_GUIDE.md`.
+Agent handoff/runbook: see `docs/agent/CLAUDE_CODE_GUIDE.md`.
 
 ## Operations Checklist
 1. Deploy API + web containers on VPS.
@@ -74,4 +74,4 @@ Cloudflare Dashboard hardening to add:
 ## Security Notes
 - Never commit real secret values into the repository.
 - Use local-only files (`.env.local`, `CLAUDE_LOCAL_SECRETS.md`) and VPS env files.
-- Local secret template: `CLAUDE_LOCAL_SECRETS.example.md`.
+- Local secret template: `docs/agent/CLAUDE_LOCAL_SECRETS.example.md`.

@@ -11,7 +11,7 @@ import { PostEditorModal } from './components/PostEditorModal';
 import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
 import { trackPageView } from './lib/analytics';
-import { changeAdminPassword, getPostBySlug, getSession, listPosts, listTagCounts, login, logout } from './lib/api';
+import { changeAdminPassword, getPostBySlug, getSession, listPosts, login, logout } from './lib/api';
 import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
 import type { PostItem, PostSaveSnapshot, SiteLang, SiteSection } from './types';
 
@@ -568,9 +568,7 @@ function SectionListPage({
   const isValidSection = Boolean(section);
 
   const [posts, setPosts] = useState<PostItem[]>([]);
-  const [tagCounts, setTagCounts] = useState<Array<{ name: string; count: number }>>([]);
   const [selectedTag, setSelectedTag] = useState('');
-  const [sectionTotal, setSectionTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -582,40 +580,23 @@ function SectionListPage({
     async function load() {
       if (!isValidSection || !section) {
         setPosts([]);
-        setTagCounts([]);
-        setSectionTotal(0);
         setLoading(false);
         return;
       }
 
       try {
-        const [response, totals, tags] = await Promise.all([
-          listPosts({
-            lang,
-            section,
-            status: admin.isAdmin ? 'all' : 'published',
-            tag: selectedTag || undefined,
-            limit: 120,
-            page: 1
-          }),
-          listPosts({
-            lang,
-            section,
-            status: admin.isAdmin ? 'all' : 'published',
-            limit: 1,
-            page: 1
-          }),
-          listTagCounts({ lang, section })
-        ]);
+        const response = await listPosts({
+          lang,
+          section,
+          status: admin.isAdmin ? 'all' : 'published',
+          limit: 120,
+          page: 1
+        });
         if (canceled) return;
         setPosts(response.items);
-        setSectionTotal(Number(totals.total || 0));
-        setTagCounts(Array.isArray(tags.items) ? tags.items : []);
       } catch (err) {
         if (canceled) return;
         setPosts([]);
-        setTagCounts([]);
-        setSectionTotal(0);
         setError(err instanceof Error ? err.message : 'Failed to load posts');
       } finally {
         if (!canceled) setLoading(false);
@@ -626,7 +607,7 @@ function SectionListPage({
     return () => {
       canceled = true;
     };
-  }, [admin.isAdmin, isValidSection, lang, refreshKey, section, selectedTag]);
+  }, [admin.isAdmin, isValidSection, lang, refreshKey, section]);
 
   useEffect(() => {
     setSelectedTag('');
@@ -648,6 +629,32 @@ function SectionListPage({
   }, [admin.isAdmin, isValidSection, lang, savedPost, section, selectedTag]);
 
   const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
+  const sectionTotal = posts.length;
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of posts) {
+      const seen = new Set<string>();
+      for (const rawTag of item.tags || []) {
+        const tag = String(rawTag || '').trim();
+        if (!tag) continue;
+        const key = tag.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      }
+    }
+
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  }, [posts]);
+  const visiblePosts = useMemo(() => {
+    if (!selectedTag) return posts;
+    const key = selectedTag.trim().toLowerCase();
+    return posts.filter((item) =>
+      item.tags.some((tag) => String(tag || '').trim().toLowerCase() === key)
+    );
+  }, [posts, selectedTag]);
 
   if (!isValidSection || !section) {
     return <Navigate to={`/${lang}/`} replace />;
@@ -704,7 +711,7 @@ function SectionListPage({
           {error ? <p>{error}</p> : null}
 
           <div className="listing-grid listing-grid--four listing-grid--center">
-            {posts.map((post) => (
+            {visiblePosts.map((post) => (
               <EntryCard
                 key={post.id}
                 post={post}
@@ -715,7 +722,7 @@ function SectionListPage({
             ))}
           </div>
 
-          {!loading && posts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
+          {!loading && visiblePosts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
         </div>
       </section>
 
