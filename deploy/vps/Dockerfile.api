@@ -7,6 +7,8 @@ COPY server/package*.json /app/
 RUN npm install --omit=dev
 COPY server /app
 COPY web_backend_bundle /app/web_backend_bundle
-RUN python3 -m pip install --no-cache-dir -r /app/web_backend_bundle/requirements.txt
-ENV NODE_ENV=production
+RUN python3 -m venv /opt/trend-analyzer-venv \
+  && /opt/trend-analyzer-venv/bin/pip install --no-cache-dir -r /app/web_backend_bundle/requirements.txt
+ENV NODE_ENV=production \
+  TREND_ANALYZER_PYTHON_BIN=/opt/trend-analyzer-venv/bin/python
 CMD ["node", "src/app.js"]
