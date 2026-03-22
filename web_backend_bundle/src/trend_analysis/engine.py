@@ -86,6 +86,7 @@ class TrendAnalysisEngine:
 
         rows: list[dict[str, object]] = []
         for as_of_date, row in feature_frame.iterrows():
+            indicator_row = indicator_frame.loc[as_of_date]
             feature_values = {
                 key: (None if pd.isna(value) else float(value))
                 for key, value in row.items()
@@ -115,6 +116,25 @@ class TrendAnalysisEngine:
                     "volume_confirmation_score": component_scores.volume_confirmation.score,
                     "transition_risk_score": component_scores.transition_risk.score,
                     "composite_trend_score": component_scores.composite_trend_score,
+                    "ema20": None if pd.isna(indicator_row["ema20"]) else float(indicator_row["ema20"]),
+                    "ema50": None if pd.isna(indicator_row["ema50"]) else float(indicator_row["ema50"]),
+                    "sma200": None if pd.isna(indicator_row["sma200"]) else float(indicator_row["sma200"]),
+                    "ichimoku_tenkan": None
+                    if pd.isna(indicator_row["ichimoku_tenkan"])
+                    else float(indicator_row["ichimoku_tenkan"]),
+                    "ichimoku_kijun": None
+                    if pd.isna(indicator_row["ichimoku_kijun"])
+                    else float(indicator_row["ichimoku_kijun"]),
+                    "ichimoku_cloud_a": None
+                    if pd.isna(indicator_row["ichimoku_cloud_a"])
+                    else float(indicator_row["ichimoku_cloud_a"]),
+                    "ichimoku_cloud_b": None
+                    if pd.isna(indicator_row["ichimoku_cloud_b"])
+                    else float(indicator_row["ichimoku_cloud_b"]),
+                    "macd_line": None if pd.isna(indicator_row["macd_line"]) else float(indicator_row["macd_line"]),
+                    "macd_signal": None if pd.isna(indicator_row["macd_signal"]) else float(indicator_row["macd_signal"]),
+                    "macd_hist": None if pd.isna(indicator_row["macd_hist"]) else float(indicator_row["macd_hist"]),
+                    "rsi": None if pd.isna(indicator_row["rsi"]) else float(indicator_row["rsi"]),
                 }
             )
         return pd.DataFrame(rows)

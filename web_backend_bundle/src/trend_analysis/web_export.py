@@ -158,17 +158,28 @@ class WebAnalysisExporter:
             chart_rows.append(
                 {
                     "date": pd.Timestamp(row["as_of_date"]).date().isoformat(),
-                    "open": float(row["open"]),
-                    "high": float(row["high"]),
-                    "low": float(row["low"]),
-                    "close": float(row["close"]),
-                    "volume": float(row["volume"]),
+                    "open": self._safe_float(row["open"]),
+                    "high": self._safe_float(row["high"]),
+                    "low": self._safe_float(row["low"]),
+                    "close": self._safe_float(row["close"]),
+                    "volume": self._safe_float(row["volume"]),
                     "trend_state_label": str(row["trend_state_label"]),
                     "regime_label": str(row["regime_label"]),
-                    "trend_strength_score": float(row["trend_strength_score"]),
-                    "transition_risk_score": float(row["transition_risk_score"]),
-                    "confidence_score": float(row["confidence_score"]),
-                    "composite_trend_score": float(row["composite_trend_score"]),
+                    "trend_strength_score": self._safe_float(row["trend_strength_score"]),
+                    "transition_risk_score": self._safe_float(row["transition_risk_score"]),
+                    "confidence_score": self._safe_float(row["confidence_score"]),
+                    "composite_trend_score": self._safe_float(row["composite_trend_score"]),
+                    "ema20": self._safe_float(row.get("ema20")),
+                    "ema50": self._safe_float(row.get("ema50")),
+                    "sma200": self._safe_float(row.get("sma200")),
+                    "ichimoku_tenkan": self._safe_float(row.get("ichimoku_tenkan")),
+                    "ichimoku_kijun": self._safe_float(row.get("ichimoku_kijun")),
+                    "ichimoku_cloud_a": self._safe_float(row.get("ichimoku_cloud_a")),
+                    "ichimoku_cloud_b": self._safe_float(row.get("ichimoku_cloud_b")),
+                    "macd_line": self._safe_float(row.get("macd_line")),
+                    "macd_signal": self._safe_float(row.get("macd_signal")),
+                    "macd_hist": self._safe_float(row.get("macd_hist")),
+                    "rsi": self._safe_float(row.get("rsi")),
                 }
             )
 
@@ -207,6 +218,12 @@ class WebAnalysisExporter:
             "component_scores": current_result["component_scores"],
         }
         return payload
+
+    @staticmethod
+    def _safe_float(value: Any) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        return float(value)
 
     def _render_summary(self, payload: dict[str, Any], artifacts: WebExportArtifacts) -> str:
         current = payload["current_state"]

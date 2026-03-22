@@ -1411,6 +1411,13 @@ body.is-resizing-editor-image {
   line-height: 1.5;
 }
 
+.trend-tool-form__hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(17, 20, 23, 0.74);
+}
+
 .trend-tool-form__error {
   margin: 0;
   color: #9d2f36;
@@ -1446,6 +1453,12 @@ body.is-resizing-editor-image {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.trend-tool-downloads__note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .trend-tool-downloads__link {
@@ -1513,12 +1526,36 @@ body.is-resizing-editor-image {
   color: #0f766e;
 }
 
+.trend-tool-legend__item--sky {
+  color: #0284c7;
+}
+
 .trend-tool-legend__item--blue {
   color: #1d4ed8;
 }
 
-.trend-tool-legend__item--amber {
-  color: #d97706;
+.trend-tool-legend__item--ink {
+  color: #111827;
+}
+
+.trend-tool-legend__item--gold {
+  color: #ca8a04;
+}
+
+.trend-tool-legend__item--red {
+  color: #dc2626;
+}
+
+.trend-tool-legend__item--sand {
+  color: #93884f;
+}
+
+.trend-tool-legend__item--orange {
+  color: #f97316;
+}
+
+.trend-tool-legend__item--violet {
+  color: #7c3aed;
 }
 
 .trend-tool-result {
@@ -1533,41 +1570,81 @@ body.is-resizing-editor-image {
   align-items: flex-end;
 }
 
-.trend-tool-score-grid {
+.trend-tool-range-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.trend-tool-score-card {
+.trend-tool-range-card {
   border: 1px solid var(--border);
   background: var(--bg);
   padding: 14px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
-.trend-tool-score-card span {
+.trend-tool-range-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.trend-tool-range-card__head span {
   font-size: 12px;
   line-height: 1.2;
 }
 
-.trend-tool-score-card strong {
-  font-size: 24px;
+.trend-tool-range-card__head strong {
+  font-size: 22px;
   line-height: 1;
   font-weight: 600;
 }
 
-.trend-tool-score-card--low {
-  background: #f5f5f5;
+.trend-tool-range-track {
+  position: relative;
+  height: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(90deg, #ece9de 0%, #efe9d2 50%, #dff1e8 100%);
 }
 
-.trend-tool-score-card--mid {
-  background: #fff4d8;
+.trend-tool-range-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(17, 20, 23, 0.12);
 }
 
-.trend-tool-score-card--high {
-  background: #dff4ea;
+.trend-tool-range-marker {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border);
+  background: var(--text);
+  transform: translate(-50%, -50%);
+}
+
+.trend-tool-range-scale {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.trend-tool-range-scale span:nth-child(2) {
+  text-align: center;
+}
+
+.trend-tool-range-scale span:nth-child(3) {
+  text-align: right;
+}
+
+.trend-tool-range-meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .trend-tool-analysis-grid {
@@ -1749,7 +1826,7 @@ body.is-resizing-editor-image {
   }
 
   .trend-tool-form__controls,
-  .trend-tool-score-grid,
+  .trend-tool-range-grid,
   .trend-tool-analysis-grid,
   .trend-tool-metric-list {
     grid-template-columns: 1fr;

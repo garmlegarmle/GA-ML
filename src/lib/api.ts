@@ -236,12 +236,9 @@ export async function uploadMedia(file: File, alt?: string): Promise<UploadRespo
   });
 }
 
-export async function analyzeTrendCsv(file: File, ticker?: string): Promise<TrendAnalysisResponse> {
+export async function analyzeTrendCsv(file: File): Promise<TrendAnalysisResponse> {
   const form = new FormData();
   form.append('file', file);
-  if (ticker) {
-    form.append('ticker', ticker);
-  }
 
   return apiFetch<TrendAnalysisResponse>('/api/tools/trend-analyzer/analyze', {
     method: 'POST',

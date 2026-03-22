@@ -99,6 +99,17 @@ export interface TrendCandle {
   transition_risk_score: number;
   confidence_score: number;
   composite_trend_score?: number;
+  ema20?: number | null;
+  ema50?: number | null;
+  sma200?: number | null;
+  ichimoku_tenkan?: number | null;
+  ichimoku_kijun?: number | null;
+  ichimoku_cloud_a?: number | null;
+  ichimoku_cloud_b?: number | null;
+  macd_line?: number | null;
+  macd_signal?: number | null;
+  macd_hist?: number | null;
+  rsi?: number | null;
 }
 
 export interface TrendPayload {
