@@ -1,5 +1,8 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import express from 'express';
 import multer from 'multer';
 import { getConfig } from './config.js';
@@ -62,6 +65,7 @@ import {
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
+const execFileAsync = promisify(execFile);
 const config = getConfig();
 const pool = createPool(config);
 const publicBaseUrl = config.mediaPublicBaseUrl || config.siteOrigin || '';
@@ -150,6 +154,66 @@ function cacheHeadersForList(isAdmin, statusFilter, hasSearch) {
     return { 'Cache-Control': 'public, max-age=15, s-maxage=60, stale-while-revalidate=120' };
   }
   return { 'Cache-Control': 'public, max-age=45, s-maxage=240, stale-while-revalidate=480' };
+}
+
+function normalizeTrendTicker(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9._-]/g, '');
+}
+
+function isCsvUpload(file) {
+  const mimeType = String(file?.mimetype || '').toLowerCase();
+  const originalName = String(file?.originalname || '').toLowerCase();
+  return (
+    mimeType === 'text/csv' ||
+    mimeType === 'application/csv' ||
+    mimeType === 'application/vnd.ms-excel' ||
+    mimeType === 'text/plain' ||
+    originalName.endsWith('.csv')
+  );
+}
+
+async function analyzeTrendCsvUpload(file, ticker) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ga-ml-trend-upload-'));
+  const originalName = String(file.originalname || 'upload.csv').replace(/[^a-z0-9._-]/gi, '_');
+  const tempCsvPath = path.join(tempDir, originalName.endsWith('.csv') ? originalName : `${originalName}.csv`);
+
+  try {
+    await fs.writeFile(tempCsvPath, file.buffer);
+    const args = [
+      config.trendAnalyzerScript,
+      tempCsvPath,
+      '--date-column',
+      'date',
+      '--window-bars',
+      '200'
+    ];
+
+    if (config.trendAnalyzerBestParamsCsv) {
+      args.push('--best-params-csv', config.trendAnalyzerBestParamsCsv);
+    } else {
+      args.push('--use-default-config');
+    }
+    if (ticker) {
+      args.push('--ticker', ticker);
+    }
+
+    const { stdout, stderr } = await execFileAsync(config.trendAnalyzerPythonBin, args, {
+      timeout: config.trendAnalyzerTimeoutMs,
+      maxBuffer: 4 * 1024 * 1024
+    });
+
+    const payload = JSON.parse(String(stdout || '').trim() || '{}');
+    if (!payload?.meta || !payload?.current_state || !Array.isArray(payload?.chart_200d?.candles)) {
+      const detail = String(stderr || '').trim();
+      throw new Error(detail || 'Trend analyzer returned an invalid payload');
+    }
+    return payload;
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 async function bootstrap() {
@@ -576,6 +640,21 @@ app.get('/api/tags', async (req, res, next) => {
     if (publishedOnly) res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=900, stale-while-revalidate=1800');
     else res.setHeader('Cache-Control', 'no-store');
     jsonOk(res, { ok: true, items });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/tools/trend-analyzer/analyze', upload.single('file'), async (req, res, next) => {
+  try {
+    const file = req.file;
+    if (!file) return jsonError(res, 400, 'file is required');
+    if (!isCsvUpload(file)) return jsonError(res, 415, 'Only CSV uploads are supported');
+
+    const ticker = normalizeTrendTicker(req.body?.ticker);
+    const payload = await analyzeTrendCsvUpload(file, ticker || undefined);
+    res.setHeader('Cache-Control', 'no-store');
+    jsonOk(res, { ok: true, payload });
   } catch (error) {
     next(error);
   }

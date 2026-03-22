@@ -89,22 +89,13 @@ class WebAnalysisExporter:
         output_dir = Path(output_dir).expanduser().resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        raw_frame = pd.read_csv(csv_path)
-        normalized_date_column = date_column.strip()
-        if normalized_date_column != "date" and normalized_date_column in raw_frame.columns:
-            raw_frame = raw_frame.rename(columns={normalized_date_column: "date"})
-
-        ticker_label = ticker or self._infer_ticker(csv_path)
-        current_result = self.engine.analyze_csv(csv_path, date_column=normalized_date_column)
-        history_df = self.engine.build_history_frame(raw_frame, date_column="date")
-        history_df["as_of_date"] = pd.to_datetime(history_df["as_of_date"])
-        chart_df = history_df.tail(window_bars).copy()
-
-        payload = self._build_payload(
-            ticker=ticker_label,
-            current_result=current_result.to_dict(),
-            chart_df=chart_df,
+        payload, chart_df = self.build_payload_from_csv(
+            csv_path=csv_path,
+            date_column=date_column,
+            ticker=ticker,
+            window_bars=window_bars,
         )
+        ticker_label = str(payload["meta"]["ticker"])
 
         artifacts = WebExportArtifacts(
             output_dir=output_dir,
@@ -116,6 +107,31 @@ class WebAnalysisExporter:
         artifacts.summary_md.write_text(self._render_summary(payload, artifacts), encoding="utf-8")
         self._render_chart(chart_df, ticker_label, artifacts.chart_png)
         return artifacts
+
+    def build_payload_from_csv(
+        self,
+        csv_path: str | Path,
+        date_column: str = "date",
+        ticker: str | None = None,
+        window_bars: int = 200,
+    ) -> tuple[dict[str, Any], pd.DataFrame]:
+        csv_path = Path(csv_path).expanduser().resolve()
+        raw_frame = pd.read_csv(csv_path)
+        normalized_date_column = date_column.strip()
+        if normalized_date_column != "date" and normalized_date_column in raw_frame.columns:
+            raw_frame = raw_frame.rename(columns={normalized_date_column: "date"})
+
+        ticker_label = ticker or self._infer_ticker(csv_path)
+        current_result = self.engine.analyze_csv(csv_path, date_column=normalized_date_column)
+        history_df = self.engine.build_history_frame(raw_frame, date_column="date")
+        history_df["as_of_date"] = pd.to_datetime(history_df["as_of_date"])
+        chart_df = history_df.tail(window_bars).copy()
+        payload = self._build_payload(
+            ticker=ticker_label,
+            current_result=current_result.to_dict(),
+            chart_df=chart_df,
+        )
+        return payload, chart_df
 
     def _build_payload(
         self,

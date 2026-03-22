@@ -29,3 +29,8 @@ CLAUDE_LOCAL_NOTES.md
 __pycache__/
 *.pyc
 web_backend_bundle/out/
+.matplotlib-cache/
+.venv-trend-check/
+
+# Local nested repos / desktop app workspaces
+external-repos/

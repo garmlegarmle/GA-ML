@@ -1329,6 +1329,11 @@ body.is-resizing-editor-image {
   padding: 20px;
 }
 
+.trend-tool-form {
+  display: grid;
+  gap: 16px;
+}
+
 .trend-tool-form__field {
   display: grid;
   gap: 10px;
@@ -1355,10 +1360,61 @@ body.is-resizing-editor-image {
   text-transform: uppercase;
 }
 
+.trend-tool-upload-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.trend-tool-file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.trend-tool-file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.trend-tool-file-button span {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.trend-tool-file-name {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: rgba(17, 20, 23, 0.74);
+  word-break: break-word;
+}
+
+.trend-tool-form__footer {
+  display: grid;
+  gap: 10px;
+}
+
 .trend-tool-form__note,
 .trend-tool-status {
   margin: 0;
   font-size: 13px;
+  line-height: 1.5;
+}
+
+.trend-tool-form__error {
+  margin: 0;
+  color: #9d2f36;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -1380,6 +1436,35 @@ body.is-resizing-editor-image {
 
 .trend-tool-panel {
   padding: 20px;
+}
+
+.trend-tool-panel--info {
+  background: #f8f3e2;
+}
+
+.trend-tool-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trend-tool-downloads__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  background: var(--text);
+  color: var(--bg);
+  text-decoration: none;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.trend-tool-downloads__link--ghost {
+  background: var(--bg);
+  color: var(--text);
 }
 
 .trend-tool-panel__head {
@@ -1493,6 +1578,12 @@ body.is-resizing-editor-image {
   margin: 0;
   font-size: 16px;
   line-height: 1.7;
+}
+
+.trend-tool-tag-line {
+  margin: 14px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .trend-tool-metric-list {
@@ -1662,6 +1753,14 @@ body.is-resizing-editor-image {
   .trend-tool-analysis-grid,
   .trend-tool-metric-list {
     grid-template-columns: 1fr;
+  }
+
+  .trend-tool-upload-row {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-tool-downloads {
+    flex-direction: column;
   }
 
   .trend-tool-panel__head {

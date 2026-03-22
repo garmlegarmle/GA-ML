@@ -4,6 +4,7 @@ import type {
   SessionResponse,
   TagCountResponse,
   TagListResponse,
+  TrendAnalysisResponse,
   UploadResponse
 } from '../types';
 
@@ -230,6 +231,19 @@ export async function uploadMedia(file: File, alt?: string): Promise<UploadRespo
   }
 
   return apiFetch<UploadResponse>('/api/upload', {
+    method: 'POST',
+    body: form
+  });
+}
+
+export async function analyzeTrendCsv(file: File, ticker?: string): Promise<TrendAnalysisResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  if (ticker) {
+    form.append('ticker', ticker);
+  }
+
+  return apiFetch<TrendAnalysisResponse>('/api/tools/trend-analyzer/analyze', {
     method: 'POST',
     body: form
   });

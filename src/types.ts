@@ -86,6 +86,61 @@ export interface TagCountResponse {
   items: TagCountItem[];
 }
 
+export interface TrendCandle {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  trend_state_label?: string;
+  regime_label?: string;
+  trend_strength_score: number;
+  transition_risk_score: number;
+  confidence_score: number;
+  composite_trend_score?: number;
+}
+
+export interface TrendPayload {
+  meta: {
+    ticker: string;
+    as_of_date: string;
+    config_source?: string;
+    best_direction_family?: string | null;
+    window_bars: number;
+    window_start: string | null;
+    window_end: string | null;
+  };
+  current_state: {
+    trend_state_label: string;
+    trend_state_label_ko: string;
+    regime_label_internal?: string;
+    trend_strength_score: number;
+    trend_conviction_score: number;
+    transition_risk_score: number;
+    transition_risk_label: string;
+    confidence_score: number;
+    direction_score?: number;
+    momentum_score?: number;
+    volatility_regime_score?: number;
+    volume_confirmation_score?: number;
+    tags?: string[];
+    summary_text: string;
+    interpretation_text_ko: string;
+  };
+  chart_200d: {
+    candles: TrendCandle[];
+  };
+  raw_feature_snapshot?: Record<string, number | null>;
+  indicator_snapshot?: Record<string, number | null>;
+  component_scores?: Record<string, unknown>;
+}
+
+export interface TrendAnalysisResponse {
+  ok: true;
+  payload: TrendPayload;
+}
+
 export interface PostSaveSnapshot {
   id: number;
   slug: string;
