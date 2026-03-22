@@ -27,9 +27,42 @@ import styles from 'holdem/components/table/TableScreen.module.css';
 
 interface TableScreenProps {
   layoutMode?: 'fullscreen' | 'embedded';
+  lang?: 'en' | 'ko';
+  playerName?: string;
+  onPlayerNameChange?: (value: string) => void;
+  onTournamentStart?: (playerName: string) => void;
 }
 
-export function TableScreen({ layoutMode = 'fullscreen' }: TableScreenProps) {
+const START_COPY = {
+  en: {
+    mode: 'Single-table tournament',
+    title: "No-Limit Texas Hold'em",
+    subtitle: 'Nine players, 10,000 starting chips, blind levels every 8 hands.',
+    inputLabel: 'Player name',
+    inputPlaceholder: 'Enter your display name',
+    start: 'Start game',
+    enterName: 'Enter your name to start the tournament.',
+    confirm: 'Review table',
+  },
+  ko: {
+    mode: '싱글 테이블 토너먼트',
+    title: '노리밋 텍사스 홀덤',
+    subtitle: '플레이어 9명, 시작 스택 10,000칩, 8핸드마다 블라인드 상승',
+    inputLabel: '플레이어 이름',
+    inputPlaceholder: '표시할 이름을 입력하세요',
+    start: '게임 시작',
+    enterName: '토너먼트를 시작하려면 이름을 입력하세요.',
+    confirm: '테이블 확인',
+  },
+} as const;
+
+export function TableScreen({
+  layoutMode = 'fullscreen',
+  lang = 'ko',
+  playerName = '',
+  onPlayerNameChange,
+  onTournamentStart,
+}: TableScreenProps) {
   const [showBotProfileIntro, setShowBotProfileIntro] = useState(false);
   const game = useGameStore((state) => state.game);
   const startTournament = useGameStore((state) => state.startTournament);
@@ -46,10 +79,21 @@ export function TableScreen({ layoutMode = 'fullscreen' }: TableScreenProps) {
   const totalPot = selectTotalPot(game);
   const smallBlindSeatIndex = selectSmallBlindSeatIndex(game);
   const bigBlindSeatIndex = selectBigBlindSeatIndex(game);
+  const copy = START_COPY[lang];
+  const normalizedPlayerName = playerName.replace(/\s+/g, ' ').trim().slice(0, 24);
 
   useEffect(() => {
     setShowBotProfileIntro(false);
   }, [game.ui.lastSeed]);
+
+  function handleStartConfirm() {
+    if (!normalizedPlayerName) {
+      return;
+    }
+
+    startTournament(normalizedPlayerName);
+    onTournamentStart?.(normalizedPlayerName);
+  }
 
   return (
     <div
@@ -160,11 +204,29 @@ export function TableScreen({ layoutMode = 'fullscreen' }: TableScreenProps) {
       {!game.ui.started && !showBotProfileIntro && (
         <div className={styles.startOverlay}>
           <div className={styles.startCard}>
-            <span className={styles.startEyebrow}>싱글 테이블 토너먼트</span>
-            <h1 className={styles.startTitle}>노리밋 텍사스 홀덤</h1>
-            <p className={styles.startCopy}>플레이어 9명, 시작 스택 10,000칩, 8핸드마다 블라인드 상승</p>
-            <button className={styles.startButton} onClick={() => setShowBotProfileIntro(true)}>
-              게임 시작
+            <span className={styles.startEyebrow}>{copy.mode}</span>
+            <h1 className={styles.startTitle}>{copy.title}</h1>
+            <p className={styles.startCopy}>{copy.subtitle}</p>
+            <label className={styles.startField}>
+              <span className={styles.startFieldLabel}>{copy.inputLabel}</span>
+              <input
+                className={styles.startInput}
+                type="text"
+                value={playerName}
+                maxLength={24}
+                placeholder={copy.inputPlaceholder}
+                onChange={(event) => onPlayerNameChange?.(event.target.value)}
+              />
+            </label>
+            {!normalizedPlayerName ? (
+              <p className={styles.startHint}>{copy.enterName}</p>
+            ) : null}
+            <button
+              className={styles.startButton}
+              disabled={!normalizedPlayerName}
+              onClick={() => setShowBotProfileIntro(true)}
+            >
+              {copy.confirm}
             </button>
           </div>
         </div>
@@ -173,7 +235,7 @@ export function TableScreen({ layoutMode = 'fullscreen' }: TableScreenProps) {
       {!game.ui.started && showBotProfileIntro && (
         <BotProfileIntro
           onBack={() => setShowBotProfileIntro(false)}
-          onConfirm={startTournament}
+          onConfirm={handleStartConfirm}
         />
       )}
 

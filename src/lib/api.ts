@@ -1,4 +1,7 @@
 import type {
+  HoldemCompleteResponse,
+  HoldemPlayResponse,
+  HoldemStatsResponse,
   PostDetailResponse,
   PostListResponse,
   SessionResponse,
@@ -243,6 +246,50 @@ export async function analyzeTrendCsv(file: File): Promise<TrendAnalysisResponse
   return apiFetch<TrendAnalysisResponse>('/api/tools/trend-analyzer/analyze', {
     method: 'POST',
     body: form
+  });
+}
+
+export async function getHoldemStats(playerName?: string): Promise<HoldemStatsResponse> {
+  const query = new URLSearchParams();
+  if (playerName) {
+    query.set('playerName', playerName);
+  }
+
+  return apiFetch<HoldemStatsResponse>(
+    `/api/games/texas-holdem-tournament/stats${query.toString() ? `?${query.toString()}` : ''}`,
+    {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache'
+      }
+    }
+  );
+}
+
+export async function recordHoldemPlayStart(playerName: string): Promise<HoldemPlayResponse> {
+  return apiFetch<HoldemPlayResponse>('/api/games/texas-holdem-tournament/play', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ playerName })
+  });
+}
+
+export async function recordHoldemCompletion(body: {
+  playerName: string;
+  finalPlace: number;
+  levelReached: number;
+  handNumber: number;
+  playerWon: boolean;
+}): Promise<HoldemCompleteResponse> {
+  return apiFetch<HoldemCompleteResponse>('/api/games/texas-holdem-tournament/complete', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify(body)
   });
 }
 

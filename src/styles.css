@@ -1568,6 +1568,33 @@ body.is-resizing-editor-image {
   gap: 20px;
 }
 
+.holdem-game-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.holdem-game-summary__card {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  background: #fffef8;
+}
+
+.holdem-game-summary__label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.holdem-game-summary__value {
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 500;
+}
+
 .holdem-game-head {
   display: grid;
   gap: 8px;
@@ -1592,6 +1619,69 @@ body.is-resizing-editor-image {
 
 .holdem-game-shell--embedded .holdem-game-stage {
   min-height: 900px;
+}
+
+.holdem-game-sync-note {
+  margin: -6px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.holdem-game-leaderboard {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  background: #fffef8;
+  padding: 18px;
+}
+
+.holdem-game-leaderboard__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.holdem-game-leaderboard__head h2,
+.holdem-game-leaderboard__head span,
+.holdem-game-leaderboard__empty {
+  margin: 0;
+}
+
+.holdem-game-leaderboard__head h2 {
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+
+.holdem-game-leaderboard__head span,
+.holdem-game-leaderboard__empty {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.holdem-game-leaderboard__table {
+  display: grid;
+  gap: 0;
+}
+
+.holdem-game-leaderboard__row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1.5fr) 120px 110px 110px 150px;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  align-items: center;
+  font-size: 14px;
+}
+
+.holdem-game-leaderboard__row--head {
+  border-top: 0;
+  padding-top: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .trend-tool-downloads__link {
@@ -2470,6 +2560,16 @@ body.is-resizing-editor-image {
 }
 
 @media (max-width: 860px) {
+  .holdem-game-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .holdem-game-leaderboard__row {
+    grid-template-columns: 70px minmax(0, 1.2fr) 90px 80px 80px 110px;
+    gap: 10px;
+    font-size: 13px;
+  }
+
   .admin-inline-grid {
     grid-template-columns: 1fr;
   }
@@ -2484,6 +2584,24 @@ body.is-resizing-editor-image {
 }
 
 @media (max-width: 560px) {
+  .holdem-game-leaderboard {
+    padding: 14px;
+  }
+
+  .holdem-game-leaderboard__head {
+    display: grid;
+    gap: 6px;
+  }
+
+  .holdem-game-leaderboard__row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+  }
+
+  .holdem-game-leaderboard__row--head {
+    display: none;
+  }
+
   .editor-surface .editor-image-row {
     grid-template-columns: 1fr;
   }

@@ -4,6 +4,7 @@ import pg from 'pg';
 import { nowIso, slugifyTag } from './validators.js';
 
 const { Pool } = pg;
+const GAME_LEADERBOARD_LIMIT = 10;
 
 export function createPool(config) {
   return new Pool({
@@ -363,6 +364,152 @@ export async function cleanupUnusedTag(pool, tagId) {
   const remains = await pool.query('SELECT COUNT(*)::int AS count FROM post_tags WHERE tag_id = $1', [tagId]);
   if (!Number(remains.rows[0]?.count || 0)) {
     await pool.query('DELETE FROM tags WHERE id = $1', [tagId]);
+  }
+}
+
+export async function incrementGamePlayCount(pool, { gameSlug, playerName }) {
+  const result = await pool.query(
+    `INSERT INTO game_play_counts (game_slug, player_name, play_count, created_at, updated_at)
+     VALUES ($1, $2, 1, NOW(), NOW())
+     ON CONFLICT (game_slug, player_name)
+     DO UPDATE SET play_count = game_play_counts.play_count + 1, updated_at = NOW()
+     RETURNING play_count`,
+    [gameSlug, playerName]
+  );
+
+  return Number(result.rows[0]?.play_count || 0);
+}
+
+export async function getGamePlaySummary(pool, { gameSlug, playerName = null }) {
+  const totalResult = await pool.query(
+    `SELECT COALESCE(SUM(play_count), 0)::int AS total_plays
+     FROM game_play_counts
+     WHERE game_slug = $1`,
+    [gameSlug]
+  );
+
+  let playerPlays = 0;
+  if (playerName) {
+    const playerResult = await pool.query(
+      `SELECT play_count
+       FROM game_play_counts
+       WHERE game_slug = $1 AND player_name = $2
+       LIMIT 1`,
+      [gameSlug, playerName]
+    );
+    playerPlays = Number(playerResult.rows[0]?.play_count || 0);
+  }
+
+  return {
+    totalPlays: Number(totalResult.rows[0]?.total_plays || 0),
+    playerPlays
+  };
+}
+
+export async function listGameLeaderboard(pool, { gameSlug, limit = GAME_LEADERBOARD_LIMIT }) {
+  const result = await pool.query(
+    `SELECT
+       id,
+       player_name,
+       final_place,
+       level_reached,
+       hand_number,
+       player_won,
+       created_at,
+       ROW_NUMBER() OVER (
+         ORDER BY
+           CASE WHEN player_won THEN 1 ELSE 0 END DESC,
+           final_place ASC,
+           level_reached DESC,
+           hand_number DESC,
+           created_at ASC,
+           id ASC
+       )::int AS leaderboard_rank
+     FROM game_leaderboard_entries
+     WHERE game_slug = $1
+     ORDER BY
+       CASE WHEN player_won THEN 1 ELSE 0 END DESC,
+       final_place ASC,
+       level_reached DESC,
+       hand_number DESC,
+       created_at ASC,
+       id ASC
+     LIMIT $2`,
+    [gameSlug, limit]
+  );
+
+  return result.rows.map((row) => ({
+    id: Number(row.id),
+    rank: Number(row.leaderboard_rank || 0),
+    playerName: String(row.player_name || '').trim(),
+    finalPlace: Number(row.final_place || 0),
+    levelReached: Number(row.level_reached || 0),
+    handNumber: Number(row.hand_number || 0),
+    playerWon: Boolean(row.player_won),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null
+  }));
+}
+
+export async function recordGameLeaderboardEntry(
+  pool,
+  { gameSlug, playerName, finalPlace, levelReached, handNumber, playerWon }
+) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const insert = await client.query(
+      `INSERT INTO game_leaderboard_entries (
+         game_slug, player_name, final_place, level_reached, hand_number, player_won, created_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       RETURNING id`,
+      [gameSlug, playerName, finalPlace, levelReached, handNumber, playerWon]
+    );
+
+    const entryId = Number(insert.rows[0]?.id || 0);
+
+    await client.query(
+      `WITH ranked AS (
+         SELECT
+           id,
+           ROW_NUMBER() OVER (
+             ORDER BY
+               CASE WHEN player_won THEN 1 ELSE 0 END DESC,
+               final_place ASC,
+               level_reached DESC,
+               hand_number DESC,
+               created_at ASC,
+               id ASC
+           ) AS leaderboard_rank
+         FROM game_leaderboard_entries
+         WHERE game_slug = $1
+       )
+       DELETE FROM game_leaderboard_entries entry
+       USING ranked
+       WHERE entry.id = ranked.id
+         AND ranked.leaderboard_rank > $2`,
+      [gameSlug, GAME_LEADERBOARD_LIMIT]
+    );
+
+    const kept = await client.query(
+      `SELECT 1
+       FROM game_leaderboard_entries
+       WHERE id = $1
+       LIMIT 1`,
+      [entryId]
+    );
+
+    await client.query('COMMIT');
+    return {
+      entryId,
+      madeLeaderboard: Boolean(kept.rows[0])
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
 }
 

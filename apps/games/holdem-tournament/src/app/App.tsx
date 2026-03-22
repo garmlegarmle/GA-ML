@@ -12,6 +12,7 @@ export interface TournamentCompletePayload {
   winnerId: string | null;
   winnerName: string | null;
   playerWon: boolean;
+  finalPlace: number;
   handNumber: number;
   level: number;
 }
@@ -20,6 +21,10 @@ export interface HoldemTournamentAppProps {
   layoutMode?: HoldemAppLayoutMode;
   className?: string;
   initialSeed?: number;
+  lang?: 'en' | 'ko';
+  playerName?: string;
+  onPlayerNameChange?: (value: string) => void;
+  onTournamentStart?: (playerName: string) => void;
   onTournamentComplete?: (payload: TournamentCompletePayload) => void;
 }
 
@@ -27,6 +32,10 @@ export default function App({
   layoutMode = 'fullscreen',
   className,
   initialSeed,
+  lang = 'ko',
+  playerName = '',
+  onPlayerNameChange,
+  onTournamentStart,
   onTournamentComplete,
 }: HoldemTournamentAppProps) {
   const initialize = useGameStore((state) => state.initialize);
@@ -60,12 +69,14 @@ export default function App({
     }
 
     completionKeyRef.current = key;
+    const humanSeat = game.seats.find((seat) => seat.isHuman);
 
     onTournamentComplete({
       reason: game.tournamentCompletionReason,
       winnerId: game.tournamentWinnerId,
       winnerName: winner?.name ?? null,
       playerWon: Boolean(winner?.isHuman),
+      finalPlace: winner?.isHuman ? 1 : Math.max(1, Number(humanSeat?.eliminationOrder || game.seats.length)),
       handNumber: game.hand.handNumber,
       level: game.currentLevel.level,
     });
@@ -80,7 +91,13 @@ export default function App({
         className ?? '',
       ].join(' ')}
     >
-      <TableScreen layoutMode={layoutMode} />
+      <TableScreen
+        layoutMode={layoutMode}
+        lang={lang}
+        playerName={playerName}
+        onPlayerNameChange={onPlayerNameChange}
+        onTournamentStart={onTournamentStart}
+      />
     </div>
   );
 }

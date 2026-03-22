@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DEFAULT_TOURNAMENT_CONFIG } from 'holdem/config/gameSettings';
+import { createTournamentConfig, normalizeTournamentPlayerName } from 'holdem/config/gameSettings';
 import { ACTION_PHASES, AUTO_ADVANCE_PHASES } from 'holdem/engine/stateMachine/phases';
 import {
   advanceState,
@@ -68,11 +68,15 @@ function clampRaiseInput(game: ReturnType<typeof createInitialGameState>, nextVa
   return Math.max(raiseAction.min, Math.min(raiseAction.max, Math.round(nextValue)));
 }
 
+function buildInitialGame(seed?: number, playerName?: string) {
+  return createInitialGameState(createTournamentConfig(playerName), seed ?? createSeed());
+}
+
 type GameStore = {
   game: ReturnType<typeof createInitialGameState>;
-  initialize: (seed?: number) => void;
-  startTournament: () => void;
-  restart: (seed?: number) => void;
+  initialize: (seed?: number, playerName?: string) => void;
+  startTournament: (playerName?: string) => void;
+  restart: (seed?: number, playerName?: string) => void;
   advanceOneStep: () => void;
   performHumanAction: (type: LegalAction['type'], amount?: number) => void;
   setRaiseInput: (amount: number) => void;
@@ -85,24 +89,34 @@ type GameStore = {
 };
 
 export const useGameStore = create<GameStore>((set, get) => ({
-  game: createInitialGameState(DEFAULT_TOURNAMENT_CONFIG, createSeed()),
-  initialize: (seed) =>
+  game: buildInitialGame(),
+  initialize: (seed, playerName) =>
     set(() => ({
-      game: createInitialGameState(DEFAULT_TOURNAMENT_CONFIG, seed ?? createSeed()),
+      game: buildInitialGame(seed, playerName),
     })),
-  startTournament: () =>
-    set((store) => ({
-      game: {
-        ...store.game,
-        ui: {
-          ...store.game.ui,
-          started: true,
+  startTournament: (playerName) =>
+    set((store) => {
+      const resolvedPlayerName = normalizeTournamentPlayerName(playerName || store.game.ui.playerName);
+
+      return {
+        game: {
+          ...store.game,
+          seats: store.game.seats.map((seat) => (seat.isHuman ? { ...seat, name: resolvedPlayerName } : seat)),
+          config: {
+            ...store.game.config,
+            seats: store.game.config.seats.map((seat) => (seat.isHuman ? { ...seat, name: resolvedPlayerName } : seat)),
+          },
+          ui: {
+            ...store.game.ui,
+            started: true,
+            playerName: resolvedPlayerName,
+          },
         },
-      },
-    })),
-  restart: (seed) =>
-    set(() => ({
-      game: createInitialGameState(DEFAULT_TOURNAMENT_CONFIG, seed ?? createSeed()),
+      };
+    }),
+  restart: (seed, playerName) =>
+    set((store) => ({
+      game: buildInitialGame(seed, playerName || store.game.ui.playerName),
     })),
   advanceOneStep: () =>
     set((store) => {

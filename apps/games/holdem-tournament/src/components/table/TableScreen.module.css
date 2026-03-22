@@ -290,6 +290,39 @@
   color: var(--muted);
 }
 
+.startField {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  text-align: left;
+}
+
+.startFieldLabel {
+  color: rgba(232, 221, 180, 0.86);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.startInput {
+  min-height: 48px;
+  width: 100%;
+  padding: 0 14px;
+  border: 1px solid rgba(228, 200, 122, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+
+.startInput::placeholder {
+  color: rgba(191, 208, 196, 0.72);
+}
+
+.startHint {
+  margin: 0 0 16px;
+  color: #f0c46a;
+  font-size: 0.82rem;
+}
+
 .startButton {
   min-width: 180px;
   min-height: 48px;
@@ -299,6 +332,11 @@
   color: #13201d;
   font-weight: 800;
   font-size: 1rem;
+}
+
+.startButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1400px) {

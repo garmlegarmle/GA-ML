@@ -43,12 +43,16 @@ import {
   getAppSetting,
   getMediaById,
   getMediaVariants,
+  getGamePlaySummary,
+  incrementGamePlayCount,
+  listGameLeaderboard,
   getPostTags,
   getPostTagsMap,
   listDistinctTags,
   listTagCountsBySection,
   mapPostRow,
   normalizeDerivedPostCardFields,
+  recordGameLeaderboardEntry,
   replacePostTags,
   setAppSetting,
   softDeletePost,
@@ -74,6 +78,8 @@ const publicBaseUrl = config.mediaPublicBaseUrl || config.siteOrigin || '';
 const SITEMAP_LANGS = ['en', 'ko'];
 const SITEMAP_SECTIONS = ['tools', 'games', 'blog'];
 const VIEW_COUNT_EXCLUDED_PAGE_SLUGS = new Set(['about', 'contact', 'privacy-policy']);
+const HOLDEM_GAME_SLUG = 'texas-holdem-tournament';
+const MAX_HOLDEM_PLAYER_NAME_LENGTH = 24;
 
 function withSecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -170,6 +176,30 @@ function normalizeTrendTicker(value) {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9._-]/g, '');
+}
+
+function normalizeHoldemPlayerName(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_HOLDEM_PLAYER_NAME_LENGTH);
+}
+
+async function buildHoldemGameStats(playerName = '') {
+  const normalizedName = normalizeHoldemPlayerName(playerName);
+  const [summary, leaderboard] = await Promise.all([
+    getGamePlaySummary(pool, {
+      gameSlug: HOLDEM_GAME_SLUG,
+      playerName: normalizedName || null
+    }),
+    listGameLeaderboard(pool, { gameSlug: HOLDEM_GAME_SLUG })
+  ]);
+
+  return {
+    summary,
+    leaderboard,
+    playerName: normalizedName || null
+  };
 }
 
 function isCsvUpload(file) {
@@ -677,6 +707,75 @@ app.post('/api/tools/trend-analyzer/analyze', upload.single('file'), async (req,
     const payload = await analyzeTrendCsvUpload(file, ticker || undefined);
     res.setHeader('Cache-Control', 'no-store');
     jsonOk(res, { ok: true, payload });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/games/texas-holdem-tournament/stats', async (req, res, next) => {
+  try {
+    const playerName = normalizeHoldemPlayerName(req.query.playerName || '');
+    const stats = await buildHoldemGameStats(playerName);
+    res.setHeader('Cache-Control', 'no-store');
+    jsonOk(res, { ok: true, ...stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/games/texas-holdem-tournament/play', async (req, res, next) => {
+  try {
+    const playerName = normalizeHoldemPlayerName(req.body?.playerName || '');
+    if (!playerName) return jsonError(res, 400, 'playerName is required');
+
+    const playCount = await incrementGamePlayCount(pool, {
+      gameSlug: HOLDEM_GAME_SLUG,
+      playerName
+    });
+    const stats = await buildHoldemGameStats(playerName);
+
+    res.setHeader('Cache-Control', 'no-store');
+    jsonOk(res, {
+      ok: true,
+      playerName,
+      playCount,
+      ...stats
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/games/texas-holdem-tournament/complete', async (req, res, next) => {
+  try {
+    const playerName = normalizeHoldemPlayerName(req.body?.playerName || '');
+    const finalPlace = parseIntSafe(req.body?.finalPlace);
+    const levelReached = parseIntSafe(req.body?.levelReached);
+    const handNumber = parseIntSafe(req.body?.handNumber, 0);
+    const playerWon = req.body?.playerWon === true || String(req.body?.playerWon || '').trim().toLowerCase() === 'true';
+
+    if (!playerName) return jsonError(res, 400, 'playerName is required');
+    if (!finalPlace || finalPlace < 1) return jsonError(res, 400, 'finalPlace is invalid');
+    if (!levelReached || levelReached < 1) return jsonError(res, 400, 'levelReached is invalid');
+    if (handNumber < 0) return jsonError(res, 400, 'handNumber is invalid');
+
+    const result = await recordGameLeaderboardEntry(pool, {
+      gameSlug: HOLDEM_GAME_SLUG,
+      playerName,
+      finalPlace,
+      levelReached,
+      handNumber,
+      playerWon
+    });
+    const stats = await buildHoldemGameStats(playerName);
+
+    res.setHeader('Cache-Control', 'no-store');
+    jsonOk(res, {
+      ok: true,
+      playerName,
+      madeLeaderboard: result.madeLeaderboard,
+      ...stats
+    });
   } catch (error) {
     next(error);
   }

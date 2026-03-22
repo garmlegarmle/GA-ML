@@ -61,6 +61,7 @@ function createInitialBettingState(bigBlind: number): BettingState {
 export function createInitialGameState(config: TournamentConfig, seed: number): GameState {
   const currentLevel = getBlindLevel(config, 0);
   const seats = assignTablePositions(createInitialSeats(config), config.initialButtonSeatIndex);
+  const humanSeat = seats.find((seat) => seat.isHuman);
 
   return {
     phase: 'tournament_init',
@@ -76,6 +77,7 @@ export function createInitialGameState(config: TournamentConfig, seed: number): 
     log: [],
     ui: {
       started: false,
+      playerName: humanSeat?.name ?? '당신',
       raiseInput: currentLevel.bigBlind * 2,
       actionSpeed: config.actionDelayMs,
       autoProgress: config.autoProgress,

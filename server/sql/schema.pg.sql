@@ -71,6 +71,26 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS game_play_counts (
+  game_slug TEXT NOT NULL,
+  player_name TEXT NOT NULL,
+  play_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (game_slug, player_name)
+);
+
+CREATE TABLE IF NOT EXISTS game_leaderboard_entries (
+  id BIGSERIAL PRIMARY KEY,
+  game_slug TEXT NOT NULL,
+  player_name TEXT NOT NULL,
+  final_place INTEGER NOT NULL CHECK (final_place >= 1),
+  level_reached INTEGER NOT NULL CHECK (level_reached >= 1),
+  hand_number INTEGER NOT NULL CHECK (hand_number >= 0),
+  player_won BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_slug_lang_section_active
   ON posts(slug, lang, section)
   WHERE is_deleted = FALSE;
@@ -98,3 +118,6 @@ CREATE INDEX IF NOT EXISTS idx_post_tags_post_tag
 
 CREATE INDEX IF NOT EXISTS idx_media_variants_media_variant
   ON media_variants(media_id, variant);
+
+CREATE INDEX IF NOT EXISTS idx_game_leaderboard_slug_created
+  ON game_leaderboard_entries(game_slug, created_at DESC, id DESC);

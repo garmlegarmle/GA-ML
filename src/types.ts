@@ -161,6 +161,37 @@ export interface TrendAnalysisResponse {
   payload: TrendPayload;
 }
 
+export interface HoldemLeaderboardEntry {
+  id: number;
+  rank: number;
+  playerName: string;
+  finalPlace: number;
+  levelReached: number;
+  handNumber: number;
+  playerWon: boolean;
+  createdAt: string | null;
+}
+
+export interface HoldemStatsSummary {
+  totalPlays: number;
+  playerPlays: number;
+}
+
+export interface HoldemStatsResponse {
+  ok: true;
+  playerName: string | null;
+  summary: HoldemStatsSummary;
+  leaderboard: HoldemLeaderboardEntry[];
+}
+
+export interface HoldemPlayResponse extends HoldemStatsResponse {
+  playCount: number;
+}
+
+export interface HoldemCompleteResponse extends HoldemStatsResponse {
+  madeLeaderboard: boolean;
+}
+
 export interface PostSaveSnapshot {
   id: number;
   slug: string;

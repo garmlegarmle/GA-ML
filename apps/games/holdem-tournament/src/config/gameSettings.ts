@@ -2,8 +2,10 @@ import { BET_SIZING_BUCKETS } from 'holdem/config/betSizing';
 import { BLIND_LEVELS } from 'holdem/config/blindLevels';
 import type { TournamentConfig } from 'holdem/types/tournament';
 
+export const DEFAULT_HUMAN_PLAYER_NAME = '당신';
+
 export const DEFAULT_PLAYER_SEATS = [
-  { seatIndex: 0, playerId: 'human-1', name: '당신', isHuman: true },
+  { seatIndex: 0, playerId: 'human-1', name: DEFAULT_HUMAN_PLAYER_NAME, isHuman: true },
   { seatIndex: 1, playerId: 'bot-1', name: 'Mara', isHuman: false, profileId: 'tight-passive' as const },
   { seatIndex: 2, playerId: 'bot-2', name: 'Viktor', isHuman: false, profileId: 'tight-aggressive' as const },
   { seatIndex: 3, playerId: 'bot-3', name: 'Nina', isHuman: false, profileId: 'loose-passive' as const },
@@ -14,13 +16,28 @@ export const DEFAULT_PLAYER_SEATS = [
   { seatIndex: 8, playerId: 'bot-8', name: 'Elliot', isHuman: false, profileId: 'balanced-regular' as const },
 ];
 
-export const DEFAULT_TOURNAMENT_CONFIG: TournamentConfig = {
-  startingStack: 10000,
-  handsPerLevel: 8,
-  blindLevels: BLIND_LEVELS,
-  seats: DEFAULT_PLAYER_SEATS,
-  betSizingBuckets: BET_SIZING_BUCKETS,
-  initialButtonSeatIndex: 0,
-  actionDelayMs: 850,
-  autoProgress: true,
-};
+export function normalizeTournamentPlayerName(value: string | null | undefined): string {
+  const normalized = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 24);
+
+  return normalized || DEFAULT_HUMAN_PLAYER_NAME;
+}
+
+export function createTournamentConfig(playerName?: string): TournamentConfig {
+  const resolvedPlayerName = normalizeTournamentPlayerName(playerName);
+
+  return {
+    startingStack: 10000,
+    handsPerLevel: 8,
+    blindLevels: BLIND_LEVELS,
+    seats: DEFAULT_PLAYER_SEATS.map((seat) => (seat.isHuman ? { ...seat, name: resolvedPlayerName } : seat)),
+    betSizingBuckets: BET_SIZING_BUCKETS,
+    initialButtonSeatIndex: 0,
+    actionDelayMs: 850,
+    autoProgress: true,
+  };
+}
+
+export const DEFAULT_TOURNAMENT_CONFIG: TournamentConfig = createTournamentConfig();

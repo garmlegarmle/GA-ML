@@ -6,6 +6,7 @@ export interface ToastMessage {
 
 export interface UIState {
   started: boolean;
+  playerName: string;
   raiseInput: number;
   actionSpeed: number;
   autoProgress: boolean;
