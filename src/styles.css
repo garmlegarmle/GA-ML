@@ -374,8 +374,19 @@ main {
   max-width: 740px;
 }
 
+.detail-layout--program {
+  max-width: var(--container);
+}
+
 .detail-layout__head {
   margin-bottom: 20px;
+}
+
+.detail-layout--program .detail-layout__head,
+.detail-layout--program .detail-layout__content,
+.detail-layout--program .detail-related {
+  max-width: 740px;
+  margin-inline: auto;
 }
 
 .detail-layout__pager {
@@ -427,6 +438,12 @@ main {
   border: 1px solid var(--border);
   margin-bottom: 20px;
   background: var(--bg);
+}
+
+.detail-program--tool {
+  border: 0;
+  margin-bottom: 28px;
+  background: transparent;
 }
 
 .detail-program img {

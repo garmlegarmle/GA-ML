@@ -181,6 +181,10 @@ function clearEdgeHoverStyles(editor: HTMLDivElement | null) {
     .forEach((node) => node.classList.remove('is-edge-hover'));
 }
 
+function isLockedBuiltinToolPost(post: PostItem | null | undefined): boolean {
+  return Boolean(post && post.section === 'tools' && post.slug === 'trend-analyzer');
+}
+
 export function PostEditorModal({
   open,
   mode,
@@ -230,6 +234,7 @@ export function PostEditorModal({
 
   const canDelete = mode === 'edit' && Boolean(initialPost?.id);
   const titleText = useMemo(() => (mode === 'edit' ? 'Edit Post' : 'Write Post'), [mode]);
+  const isBuiltinToolPost = useMemo(() => isLockedBuiltinToolPost(initialPost), [initialPost]);
 
   useEffect(() => {
     const nextHtml = toInitialEditorHtml(initialPost?.content_md || '');
@@ -783,10 +788,14 @@ export function PostEditorModal({
               Slug
               <input
                 value={slug}
+                disabled={isBuiltinToolPost}
                 onChange={(event) => setSlug(event.target.value)}
                 onBlur={() => setSlug((prev) => slugify(prev || title))}
                 placeholder="post-slug"
               />
+              {isBuiltinToolPost ? (
+                <span className="list-tags">This slug is reserved for the built-in tool route and cannot be changed.</span>
+              ) : null}
             </label>
 
             <label>
@@ -833,7 +842,7 @@ export function PostEditorModal({
             <div className="admin-inline-grid">
               <label>
                 Language
-                <select value={lang} onChange={(event) => setLang(event.target.value as SiteLang)}>
+                <select value={lang} disabled={isBuiltinToolPost} onChange={(event) => setLang(event.target.value as SiteLang)}>
                   <option value="en">en</option>
                   <option value="ko">ko</option>
                 </select>
@@ -841,7 +850,11 @@ export function PostEditorModal({
 
               <label>
                 Category
-                <select value={section} onChange={(event) => setSection(event.target.value as SiteSection)}>
+                <select
+                  value={section}
+                  disabled={isBuiltinToolPost}
+                  onChange={(event) => setSection(event.target.value as SiteSection)}
+                >
                   <option value="blog">blog</option>
                   <option value="tools">tool</option>
                   <option value="games">game</option>

@@ -1,9 +1,8 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
 import { analyzeTrendCsv } from '../lib/api';
 import type { SiteLang, TrendCandle, TrendPayload } from '../types';
 
-const TREND_TOOL_SLUG = 'trend-analyzer';
+export const TREND_ANALYZER_TOOL_SLUG = 'trend-analyzer';
 const TREND_FETCHER_REPO_URL = 'https://github.com/garmlegarmle/ga-ml-trend-fetcher';
 const TREND_FETCHER_MAC_URL = `${TREND_FETCHER_REPO_URL}/releases/latest/download/GA-ML-TrendFetcher-macos.zip`;
 const TREND_FETCHER_WINDOWS_URL = `${TREND_FETCHER_REPO_URL}/releases/latest/download/GA-ML-TrendFetcher-windows.zip`;
@@ -504,24 +503,7 @@ function CombinedTrendChart({ candles, lang }: { candles: TrendCandle[]; lang: S
   );
 }
 
-export function TrendAnalyzerFeatureCard({ lang }: { lang: SiteLang }) {
-  const copy = TOOL_COPY[lang];
-
-  return (
-    <section className="tool-feature-card" aria-label={copy.featureTitle}>
-      <div className="tool-feature-card__body">
-        <p className="tool-feature-card__eyebrow">{copy.featureEyebrow}</p>
-        <h2>{copy.featureTitle}</h2>
-        <p>{copy.featureDescription}</p>
-      </div>
-      <Link className="tool-feature-card__link" to={`/${lang}/tools/${TREND_TOOL_SLUG}/`}>
-        {copy.featureCta}
-      </Link>
-    </section>
-  );
-}
-
-export function TrendAnalyzerToolScreen({ lang }: { lang: SiteLang }) {
+export function TrendAnalyzerToolContent({ lang, embedded = false }: { lang: SiteLang; embedded?: boolean }) {
   const copy = TOOL_COPY[lang];
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [payload, setPayload] = useState<TrendPayload | null>(null);
@@ -669,226 +651,234 @@ export function TrendAnalyzerToolScreen({ lang }: { lang: SiteLang }) {
   };
 
   return (
-    <section className="page-section trend-tool-page">
-      <div className="container">
-        <div className="trend-tool-shell">
-          <header className="trend-tool-head">
-            <p className="trend-tool-head__eyebrow">{copy.eyebrow}</p>
-            <h1>{copy.title}</h1>
-            <p>{copy.description}</p>
-          </header>
+    <div className={`trend-tool-shell${embedded ? ' trend-tool-shell--embedded' : ''}`}>
+      {!embedded ? (
+        <header className="trend-tool-head">
+          <p className="trend-tool-head__eyebrow">{copy.eyebrow}</p>
+          <h1>{copy.title}</h1>
+          <p>{copy.description}</p>
+        </header>
+      ) : null}
 
-          <div className="trend-tool-intro-grid">
-            <section className="trend-tool-panel trend-tool-panel--intro">
-              <div className="trend-tool-panel__head">
-                <div>
-                  <h2>{copy.introTitle}</h2>
-                  <p>{copy.title}</p>
-                </div>
-              </div>
-              <p className="trend-tool-summary">{copy.introBody}</p>
-            </section>
-
-            <section className="trend-tool-panel trend-tool-panel--intro">
-              <div className="trend-tool-panel__head">
-                <div>
-                  <h2>{copy.usageTitle}</h2>
-                  <p>{copy.title}</p>
-                </div>
-              </div>
-              <ol className="trend-tool-step-list">
-                {copy.usageSteps.map((item, index) => (
-                  <li key={`usage-step-${index}`}>{item}</li>
-                ))}
-              </ol>
-            </section>
+      <div className="trend-tool-intro-grid">
+        <section className="trend-tool-panel trend-tool-panel--intro">
+          <div className="trend-tool-panel__head">
+            <div>
+              <h2>{copy.introTitle}</h2>
+              <p>{copy.title}</p>
+            </div>
           </div>
+          <p className="trend-tool-summary">{copy.introBody}</p>
+        </section>
 
-          <section className="trend-tool-panel trend-tool-panel--info">
+        <section className="trend-tool-panel trend-tool-panel--intro">
+          <div className="trend-tool-panel__head">
+            <div>
+              <h2>{copy.usageTitle}</h2>
+              <p>{copy.title}</p>
+            </div>
+          </div>
+          <ol className="trend-tool-step-list">
+            {copy.usageSteps.map((item, index) => (
+              <li key={`usage-step-${index}`}>{item}</li>
+            ))}
+          </ol>
+        </section>
+      </div>
+
+      <section className="trend-tool-panel trend-tool-panel--info">
+        <div className="trend-tool-panel__head">
+          <div>
+            <h2>{copy.downloadTitle}</h2>
+            <p>{copy.downloadBody}</p>
+          </div>
+        </div>
+        <div className="trend-tool-downloads">
+          <a className="trend-tool-downloads__link" href={TREND_FETCHER_MAC_URL} target="_blank" rel="noreferrer">
+            {copy.macDownload}
+          </a>
+          <a className="trend-tool-downloads__link" href={TREND_FETCHER_WINDOWS_URL} target="_blank" rel="noreferrer">
+            {copy.windowsDownload}
+          </a>
+          <a className="trend-tool-downloads__link trend-tool-downloads__link--ghost" href={TREND_FETCHER_REPO_URL} target="_blank" rel="noreferrer">
+            {copy.repoLink}
+          </a>
+        </div>
+        <p className="trend-tool-downloads__reason">{copy.downloadReason}</p>
+        <p className="trend-tool-downloads__note">{copy.downloadNote}</p>
+        <details className="trend-tool-disclosure">
+          <summary>{copy.pythonGuide}</summary>
+          <div className="trend-tool-python-fallback">
+            <p>{copy.pythonIntro}</p>
+            <pre>
+              <code>{copy.pythonCommands.join('\n')}</code>
+            </pre>
+          </div>
+        </details>
+      </section>
+
+      <form className="trend-tool-form" onSubmit={handleSubmit}>
+        <label className="trend-tool-form__field">
+          <span>{copy.fileLabel}</span>
+          <div className="trend-tool-upload-row">
+            <label className="trend-tool-file-button">
+              <input type="file" accept=".csv,text/csv" onChange={handleFileChange} />
+              <span>{copy.fileButton}</span>
+            </label>
+            <span className="trend-tool-file-name">{fileLabel}</span>
+          </div>
+          <p className="trend-tool-form__hint">{copy.fileHint}</p>
+        </label>
+
+        <div className="trend-tool-form__footer">
+          <button type="submit" disabled={isAnalyzing}>
+            {isAnalyzing ? copy.processing : copy.submit}
+          </button>
+          <p className="trend-tool-form__note">{copy.privacyNotice}</p>
+        </div>
+
+        {error ? <p className="trend-tool-form__error">{error}</p> : null}
+      </form>
+
+      <div className="trend-tool-status">
+        <span>
+          {copy.activeTicker}: <strong>{activeTicker}</strong>
+        </span>
+        <span>
+          {copy.fileStatus}: <strong>{fileLabel}</strong>
+        </span>
+        {payload ? (
+          <>
+            <span>
+              {copy.asOf}: <strong>{formatDate(payload.meta.as_of_date, lang)}</strong>
+            </span>
+            <span>
+              {copy.window}: <strong>{formatWindowLabel(payload.meta.window_bars, lang)}</strong>
+            </span>
+            <span>
+              {copy.trend}: <strong>{localizedTrendLabel}</strong>
+            </span>
+          </>
+        ) : null}
+      </div>
+
+      {payload ? (
+        <>
+          <section className="trend-tool-panel trend-tool-panel--summary">
             <div className="trend-tool-panel__head">
               <div>
-                <h2>{copy.downloadTitle}</h2>
-                <p>{copy.downloadBody}</p>
+                <h2>{copy.keySummaryTitle}</h2>
+                <p>{localizedTrendLabel}</p>
               </div>
             </div>
-            <div className="trend-tool-downloads">
-              <a className="trend-tool-downloads__link" href={TREND_FETCHER_MAC_URL} target="_blank" rel="noreferrer">
-                {copy.macDownload}
-              </a>
-              <a className="trend-tool-downloads__link" href={TREND_FETCHER_WINDOWS_URL} target="_blank" rel="noreferrer">
-                {copy.windowsDownload}
-              </a>
-              <a className="trend-tool-downloads__link trend-tool-downloads__link--ghost" href={TREND_FETCHER_REPO_URL} target="_blank" rel="noreferrer">
-                {copy.repoLink}
-              </a>
-            </div>
-            <p className="trend-tool-downloads__reason">{copy.downloadReason}</p>
-            <p className="trend-tool-downloads__note">{copy.downloadNote}</p>
-            <details className="trend-tool-disclosure">
-              <summary>{copy.pythonGuide}</summary>
-              <div className="trend-tool-python-fallback">
-                <p>{copy.pythonIntro}</p>
-                <pre>
-                  <code>{copy.pythonCommands.join('\n')}</code>
-                </pre>
-              </div>
-            </details>
+            <ul className="trend-tool-bullet-list">
+              {summaryBullets.map((item, index) => (
+                <li key={`summary-bullet-${index}`}>{item}</li>
+              ))}
+            </ul>
           </section>
 
-          <form className="trend-tool-form" onSubmit={handleSubmit}>
-            <label className="trend-tool-form__field">
-              <span>{copy.fileLabel}</span>
-              <div className="trend-tool-upload-row">
-                <label className="trend-tool-file-button">
-                  <input type="file" accept=".csv,text/csv" onChange={handleFileChange} />
-                  <span>{copy.fileButton}</span>
-                </label>
-                <span className="trend-tool-file-name">{fileLabel}</span>
+          <section className="trend-tool-panel">
+            <div className="trend-tool-panel__head">
+              <div>
+                <h2>{copy.chartTitle}</h2>
+                <p>{copy.chartSubtitle}</p>
               </div>
-              <p className="trend-tool-form__hint">{copy.fileHint}</p>
-            </label>
+              <div className="trend-tool-legend">
+                <span className="trend-tool-legend__item trend-tool-legend__item--sky">{copy.ema20Legend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--teal">{copy.ema50Legend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--ink">{copy.sma200Legend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--gold">{copy.tenkanLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--red">{copy.kijunLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--sand">{copy.cloudLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--blue">{copy.macdLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--orange">{copy.signalLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--violet">{copy.rsiLegend}</span>
+              </div>
+            </div>
+            <CombinedTrendChart candles={candles} lang={lang} />
+          </section>
 
-            <div className="trend-tool-form__footer">
-              <button type="submit" disabled={isAnalyzing}>
-                {isAnalyzing ? copy.processing : copy.submit}
-              </button>
-              <p className="trend-tool-form__note">{copy.privacyNotice}</p>
+          <section className="trend-tool-result">
+            <div className="trend-tool-result__head">
+              <h2>{copy.resultTitle}</h2>
             </div>
 
-            {error ? <p className="trend-tool-form__error">{error}</p> : null}
-          </form>
+            <div className="trend-tool-range-grid">
+              {rangeMetrics.map((metric) => {
+                const position = rangePosition(metric.value, metric.min, metric.max);
+                return (
+                  <article key={`metric-${metric.label}`} className="trend-tool-range-card">
+                    <div className="trend-tool-range-card__head">
+                      <span>{metric.label}</span>
+                      <strong>{formatMetricValue(metric.value, lang, metric.digits ?? 1, Boolean(metric.signed))}</strong>
+                    </div>
+                    <div className="trend-tool-range-track">
+                      <div className="trend-tool-range-fill" style={{ width: `${position}%` }} />
+                      <span className="trend-tool-range-marker" style={{ left: `${position}%` }} />
+                    </div>
+                    <div className="trend-tool-range-scale">
+                      <span>{metric.lowLabel}</span>
+                      <span>{metric.midLabel}</span>
+                      <span>{metric.highLabel}</span>
+                    </div>
+                    <p className="trend-tool-range-meta">{buildRangeMeta(metric, copy, lang)}</p>
+                  </article>
+                );
+              })}
+            </div>
 
-          <div className="trend-tool-status">
-            <span>
-              {copy.activeTicker}: <strong>{activeTicker}</strong>
-            </span>
-            <span>
-              {copy.fileStatus}: <strong>{fileLabel}</strong>
-            </span>
-            {payload ? (
-              <>
-                <span>
-                  {copy.asOf}: <strong>{formatDate(payload.meta.as_of_date, lang)}</strong>
-                </span>
-                <span>
-                  {copy.window}: <strong>{formatWindowLabel(payload.meta.window_bars, lang)}</strong>
-                </span>
-                <span>
-                  {copy.trend}: <strong>{localizedTrendLabel}</strong>
-                </span>
-              </>
-            ) : null}
-          </div>
-
-          {payload ? (
-            <>
-              <section className="trend-tool-panel trend-tool-panel--summary">
+            <div className="trend-tool-analysis-grid">
+              <article className="trend-tool-panel">
                 <div className="trend-tool-panel__head">
                   <div>
-                    <h2>{copy.keySummaryTitle}</h2>
+                    <h2>{copy.summaryTitle}</h2>
                     <p>{localizedTrendLabel}</p>
                   </div>
                 </div>
-                <ul className="trend-tool-bullet-list">
-                  {summaryBullets.map((item, index) => (
-                    <li key={`summary-bullet-${index}`}>{item}</li>
+                <div className="trend-tool-detail-stack">
+                  {detailSections.map((item, index) => (
+                    <p key={`detail-section-${index}`} className="trend-tool-summary">
+                      {item}
+                    </p>
                   ))}
-                </ul>
-              </section>
+                </div>
+              </article>
 
-              <section className="trend-tool-panel">
+              <article className="trend-tool-panel">
                 <div className="trend-tool-panel__head">
                   <div>
-                    <h2>{copy.chartTitle}</h2>
-                    <p>{copy.chartSubtitle}</p>
-                  </div>
-                  <div className="trend-tool-legend">
-                    <span className="trend-tool-legend__item trend-tool-legend__item--sky">{copy.ema20Legend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--teal">{copy.ema50Legend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--ink">{copy.sma200Legend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--gold">{copy.tenkanLegend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--red">{copy.kijunLegend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--sand">{copy.cloudLegend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--blue">{copy.macdLegend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--orange">{copy.signalLegend}</span>
-                    <span className="trend-tool-legend__item trend-tool-legend__item--violet">{copy.rsiLegend}</span>
+                    <h2>{copy.snapshotTitle}</h2>
+                    <p>{payload.meta.ticker}</p>
                   </div>
                 </div>
-                <CombinedTrendChart candles={candles} lang={lang} />
-              </section>
-
-              <section className="trend-tool-result">
-                <div className="trend-tool-result__head">
-                  <h2>{copy.resultTitle}</h2>
-                </div>
-
-                <div className="trend-tool-range-grid">
-                  {rangeMetrics.map((metric) => {
-                    const position = rangePosition(metric.value, metric.min, metric.max);
-                    return (
-                      <article key={`metric-${metric.label}`} className="trend-tool-range-card">
-                        <div className="trend-tool-range-card__head">
-                          <span>{metric.label}</span>
-                          <strong>{formatMetricValue(metric.value, lang, metric.digits ?? 1, Boolean(metric.signed))}</strong>
-                        </div>
-                        <div className="trend-tool-range-track">
-                          <div className="trend-tool-range-fill" style={{ width: `${position}%` }} />
-                          <span className="trend-tool-range-marker" style={{ left: `${position}%` }} />
-                        </div>
-                        <div className="trend-tool-range-scale">
-                          <span>{metric.lowLabel}</span>
-                          <span>{metric.midLabel}</span>
-                          <span>{metric.highLabel}</span>
-                        </div>
-                        <p className="trend-tool-range-meta">{buildRangeMeta(metric, copy, lang)}</p>
-                      </article>
-                    );
-                  })}
-                </div>
-
-                <div className="trend-tool-analysis-grid">
-                  <article className="trend-tool-panel">
-                    <div className="trend-tool-panel__head">
-                      <div>
-                        <h2>{copy.summaryTitle}</h2>
-                        <p>{localizedTrendLabel}</p>
-                      </div>
+                <dl className="trend-tool-metric-list">
+                  {snapshotItems.map((item) => (
+                    <div key={`snapshot-${item.label}`}>
+                      <dt>{item.label}</dt>
+                      <dd>{formatNumber(Number(item.value), lang, 2)}</dd>
                     </div>
-                    <div className="trend-tool-detail-stack">
-                      {detailSections.map((item, index) => (
-                        <p key={`detail-section-${index}`} className="trend-tool-summary">
-                          {item}
-                        </p>
-                      ))}
-                    </div>
-                  </article>
+                  ))}
+                </dl>
+              </article>
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="trend-tool-panel trend-tool-panel--empty">
+          <h2>{copy.noDataTitle}</h2>
+          <p>{copy.noDataBody}</p>
+        </section>
+      )}
+    </div>
+  );
+}
 
-                  <article className="trend-tool-panel">
-                    <div className="trend-tool-panel__head">
-                      <div>
-                        <h2>{copy.snapshotTitle}</h2>
-                        <p>{payload.meta.ticker}</p>
-                      </div>
-                    </div>
-                    <dl className="trend-tool-metric-list">
-                      {snapshotItems.map((item) => (
-                        <div key={`snapshot-${item.label}`}>
-                          <dt>{item.label}</dt>
-                          <dd>{formatNumber(Number(item.value), lang, 2)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </article>
-                </div>
-              </section>
-            </>
-          ) : (
-            <section className="trend-tool-panel trend-tool-panel--empty">
-              <h2>{copy.noDataTitle}</h2>
-              <p>{copy.noDataBody}</p>
-            </section>
-          )}
-        </div>
+export function TrendAnalyzerToolScreen({ lang }: { lang: SiteLang }) {
+  return (
+    <section className="page-section trend-tool-page">
+      <div className="container">
+        <TrendAnalyzerToolContent lang={lang} />
       </div>
     </section>
   );

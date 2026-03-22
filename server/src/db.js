@@ -39,6 +39,47 @@ export async function ensureSeedPages(pool) {
   }
 }
 
+export async function ensureSeedProgramPosts(pool) {
+  const posts = [
+    {
+      slug: 'trend-analyzer',
+      title: 'Trend Analyzer',
+      excerpt: 'Upload a local OHLCV CSV and review a 200-session trend analysis with chart overlays.',
+      content:
+        '# Trend Analyzer\n\nUse the built-in analyzer below to upload a CSV from the data downloader and review the chart, score ranges, and interpretation.',
+      lang: 'en',
+      tags: ['analysis', 'trend']
+    },
+    {
+      slug: 'trend-analyzer',
+      title: '추세 분석기',
+      excerpt: '로컬 OHLCV CSV를 업로드해 최근 200세션 기준 추세 분석과 차트 오버레이를 확인하세요.',
+      content:
+        '# 추세 분석기\n\n아래 내장 분석기에 데이터 다운로더가 만든 CSV를 업로드하면 차트, 범위형 점수, 해석 결과를 확인할 수 있습니다.',
+      lang: 'ko',
+      tags: ['분석', '추세']
+    }
+  ];
+
+  for (const item of posts) {
+    const inserted = await pool.query(
+      `INSERT INTO posts (
+         slug, title, excerpt, content_md, status, published_at, lang, section,
+         card_title, card_category, card_rank, schema_type
+       )
+       VALUES ($1, $2, $3, $4, 'published', NOW(), $5, 'tools', $2, 'tools', 1, 'Service')
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [item.slug, item.title, item.excerpt, item.content, item.lang]
+    );
+
+    const postId = inserted.rows[0]?.id ? Number(inserted.rows[0].id) : 0;
+    if (postId > 0 && item.tags.length > 0) {
+      await replacePostTags(pool, postId, item.tags);
+    }
+  }
+}
+
 export async function normalizeDerivedPostCardFields(pool) {
   await pool.query(
     `WITH tag_lists AS (

@@ -36,6 +36,7 @@ import {
 import {
   cleanupUnusedTag,
   createPool,
+  ensureSeedProgramPosts,
   ensureSchema,
   ensureSeedPages,
   getAppSetting,
@@ -220,6 +221,7 @@ async function bootstrap() {
   await fs.mkdir(config.mediaRoot, { recursive: true });
   await ensureSchema(pool);
   await ensureSeedPages(pool);
+  await ensureSeedProgramPosts(pool);
   await normalizeDerivedPostCardFields(pool);
   const currentHash = await getAppSetting(pool, 'admin_password_hash');
   if (!currentHash && config.adminLoginPassword) {

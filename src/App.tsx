@@ -10,7 +10,7 @@ import { PageManagerModal } from './components/PageManagerModal';
 import { PostEditorModal } from './components/PostEditorModal';
 import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
-import { TrendAnalyzerFeatureCard, TrendAnalyzerToolScreen } from './components/TrendAnalyzerTool';
+import { TREND_ANALYZER_TOOL_SLUG, TrendAnalyzerToolContent } from './components/TrendAnalyzerTool';
 import { trackPageView } from './lib/analytics';
 import { changeAdminPassword, getPostBySlug, getSession, listPosts, login, logout } from './lib/api';
 import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
@@ -302,17 +302,6 @@ function SiteShell({
 function RootRoute() {
   const lang = detectBrowserLang();
   return <Navigate to={`/${lang}/`} replace />;
-}
-
-function TrendAnalyzerToolRoute() {
-  const params = useParams();
-  const lang = normalizeLang(params.lang);
-
-  return (
-    <SiteShell lang={lang} active="tools" languageTogglePath={`/${oppositeLang(lang)}/tools/trend-analyzer/`}>
-      <TrendAnalyzerToolScreen lang={lang} />
-    </SiteShell>
-  );
 }
 
 function HomePage({
@@ -722,8 +711,6 @@ function SectionListPage({
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
 
-          {section === 'tools' ? <TrendAnalyzerFeatureCard lang={lang} /> : null}
-
           <div className="listing-grid listing-grid--four listing-grid--center">
             {visiblePosts.map((post) => (
               <EntryCard
@@ -953,6 +940,7 @@ function DetailPage({
   const enableHiddenPolicyLogin =
     section === 'pages' && lang === 'en' && slug === 'privacy-policy' && !admin.isAdmin;
   const isStandalonePage = section === 'pages';
+  const isTrendAnalyzerTool = section === 'tools' && slug === TREND_ANALYZER_TOOL_SLUG;
   const schemaJson = useMemo(() => {
     if (!post?.schemaType) return '';
 
@@ -989,7 +977,7 @@ function DetailPage({
       languageToggleState={languageToggle.state}
     >
       <article className="page-section">
-        <div className="container detail-layout">
+        <div className={`container detail-layout${isTrendAnalyzerTool ? ' detail-layout--program' : ''}`}>
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
           {!loading && !error && post ? (
@@ -1046,7 +1034,11 @@ function DetailPage({
                 </div>
               </header>
 
-              {(section === 'tools' || section === 'games') && (
+              {isTrendAnalyzerTool ? (
+                <section className="detail-program detail-program--tool" aria-label="Tool area">
+                  <TrendAnalyzerToolContent lang={lang} embedded />
+                </section>
+              ) : (section === 'tools' || section === 'games') && (
                 <section className="detail-program" aria-label="Program area">
                   {post.cover?.url ? (
                     <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
@@ -1216,10 +1208,6 @@ function AppInner() {
               savedPost={savedPost}
             />
           }
-        />
-        <Route
-          path="/:lang/tools/trend-analyzer"
-          element={<TrendAnalyzerToolRoute />}
         />
         <Route
           path="/:lang/:section/:slug"
