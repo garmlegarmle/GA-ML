@@ -378,6 +378,11 @@ main {
   max-width: var(--container);
 }
 
+.detail-layout--game {
+  width: min(1520px, calc(100vw - 24px));
+  max-width: 1520px;
+}
+
 .detail-layout__head {
   margin-bottom: 20px;
 }

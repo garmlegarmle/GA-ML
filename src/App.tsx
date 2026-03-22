@@ -998,7 +998,9 @@ function DetailPage({
       languageToggleState={languageToggle.state}
     >
       <article className="page-section">
-        <div className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}`}>
+        <div
+          className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}${isHoldemTournamentGame ? ' detail-layout--game' : ''}`}
+        >
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
           {!loading && !error && post ? (
