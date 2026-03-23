@@ -17,7 +17,7 @@ const CHIP_DISPLAY_ORDER: ChipTone[] = ['white', 'red', 'blue', 'yellow'];
 
 const POT_STACK_TOP = {
   desktop: 47,
-  mobile: 39,
+  mobile: 44,
 };
 const POT_STACK_LEFT = 50;
 
