@@ -121,15 +121,21 @@
   }
 
   .shortcutRow {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 5px;
-    overflow-x: auto;
-    padding-bottom: 2px;
+    overflow: visible;
+    padding-bottom: 0;
   }
 
   .shortcutButton {
     min-height: 20px;
     padding: 0 6px;
+    min-width: 0;
     font-size: 0.58rem;
+    white-space: normal;
+    line-height: 1.1;
+    text-align: center;
   }
 
   .numeric {
