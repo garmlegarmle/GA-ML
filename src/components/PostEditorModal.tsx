@@ -17,6 +17,33 @@ const RESIZE_EDGE_THRESHOLD = 14;
 type EditorPaneKey = 'body' | 'before' | 'after';
 type ProgramContentLayout = 'above' | 'below' | 'split';
 
+const FONT_SIZE_OPTIONS = [
+  { label: '12px', value: '1' },
+  { label: '14px', value: '2' },
+  { label: '15px', value: '3' },
+  { label: '18px', value: '4' },
+  { label: '24px', value: '5' },
+  { label: '32px', value: '6' }
+] as const;
+
+const FONT_SIZE_TO_PX: Record<string, string> = {
+  '1': '12px',
+  '2': '14px',
+  '3': '15px',
+  '4': '18px',
+  '5': '24px',
+  '6': '32px',
+  '7': '40px'
+};
+
+const FONT_FAMILY_OPTIONS = [
+  { label: 'Default', value: 'system-ui, -apple-system, Inter, "Helvetica Neue", Arial, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, "Times New Roman", serif' },
+  { label: 'Helvetica', value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { label: 'Trebuchet', value: '"Trebuchet MS", Verdana, sans-serif' },
+  { label: 'Courier', value: '"Courier New", Courier, monospace' }
+] as const;
+
 function slugify(value: string): string {
   return String(value || '')
     .toLowerCase()
@@ -137,6 +164,30 @@ function moveCaretAfter(node: Node): void {
   selection.addRange(range);
 }
 
+function normalizeLegacyFontTags(editor: HTMLDivElement | null) {
+  if (!editor) return;
+
+  editor.querySelectorAll('font').forEach((node) => {
+    const span = document.createElement('span');
+    const size = node.getAttribute('size');
+    const face = node.getAttribute('face');
+    const color = node.getAttribute('color');
+
+    if (size && FONT_SIZE_TO_PX[size]) {
+      span.style.fontSize = FONT_SIZE_TO_PX[size];
+    }
+    if (face) {
+      span.style.fontFamily = face;
+    }
+    if (color) {
+      span.style.color = color;
+    }
+
+    span.innerHTML = node.innerHTML;
+    node.replaceWith(span);
+  });
+}
+
 function applyImageAlignment(image: HTMLImageElement, align: 'left' | 'center' | 'right') {
   image.dataset.align = align;
   image.style.display = 'block';
@@ -232,8 +283,9 @@ export function PostEditorModal({
   const [cardCategoryTouched, setCardCategoryTouched] = useState(false);
   const [cardRankTouched, setCardRankTouched] = useState(false);
   const [bodyImageAlt, setBodyImageAlt] = useState('');
-  const [internalLinkQuery, setInternalLinkQuery] = useState('');
-  const [internalLinkResults, setInternalLinkResults] = useState<PostItem[]>([]);
+  const [linkDraft, setLinkDraft] = useState('');
+  const [linkResults, setLinkResults] = useState<PostItem[]>([]);
+  const [linkComposerOpen, setLinkComposerOpen] = useState(false);
   const [programContentLayout, setProgramContentLayout] = useState<ProgramContentLayout>('below');
   const [activeEditor, setActiveEditor] = useState<EditorPaneKey>('body');
 
@@ -329,8 +381,9 @@ export function PostEditorModal({
     setCardImageUrl(initialPost?.card.imageUrl || '');
     setCardImageAlt('');
     setBodyImageAlt('');
-    setInternalLinkQuery('');
-    setInternalLinkResults([]);
+    setLinkDraft('');
+    setLinkResults([]);
+    setLinkComposerOpen(false);
     setCardCategoryTouched(
       Boolean(initialPost?.card.category && initialPost.card.category !== (initialPost.section || defaultSection))
     );
@@ -438,9 +491,15 @@ export function PostEditorModal({
 
   useEffect(() => {
     if (!open) return;
-    const query = internalLinkQuery.trim();
-    if (!query) {
-      setInternalLinkResults([]);
+    const query = linkDraft.trim();
+    if (!query.startsWith('/')) {
+      setLinkResults([]);
+      return;
+    }
+
+    const normalizedQuery = query.slice(1).trim();
+    if (!normalizedQuery) {
+      setLinkResults([]);
       return;
     }
 
@@ -449,16 +508,16 @@ export function PostEditorModal({
       try {
         const response = await listPosts({
           lang,
-          q: query,
+          q: normalizedQuery,
           status: 'all',
           page: 1,
           limit: 20
         });
         if (canceled) return;
-        setInternalLinkResults(response.items || []);
+        setLinkResults(response.items || []);
       } catch {
         if (canceled) return;
-        setInternalLinkResults([]);
+        setLinkResults([]);
       }
     }, 180);
 
@@ -466,7 +525,7 @@ export function PostEditorModal({
       canceled = true;
       window.clearTimeout(timer);
     };
-  }, [internalLinkQuery, lang, open]);
+  }, [lang, linkDraft, open]);
 
   if (!open) return null;
 
@@ -481,9 +540,78 @@ export function PostEditorModal({
     editor.focus();
   }
 
+  function getSelectionRange(key: EditorPaneKey = preferredEditorKey()): Range | null {
+    const editor = getEditorElement(key);
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return null;
+    return range;
+  }
+
   function exec(command: string, value?: string) {
     focusEditor(preferredEditorKey());
     document.execCommand(command, false, value || '');
+    normalizeLegacyFontTags(getEditorElement(preferredEditorKey()));
+  }
+
+  function execWithCss(command: string, value: string) {
+    const key = preferredEditorKey();
+    focusEditor(key);
+    document.execCommand('styleWithCSS', false, 'true');
+    document.execCommand(command, false, value);
+    normalizeLegacyFontTags(getEditorElement(key));
+  }
+
+  function applyBackgroundColor(color: string) {
+    const key = preferredEditorKey();
+    focusEditor(key);
+    document.execCommand('styleWithCSS', false, 'true');
+    const applied = document.execCommand('hiliteColor', false, color);
+    if (!applied) {
+      document.execCommand('backColor', false, color);
+    }
+    normalizeLegacyFontTags(getEditorElement(key));
+  }
+
+  function normalizeLinkHref(value: string): string {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return '';
+    if (
+      trimmed.startsWith('/') ||
+      trimmed.startsWith('#') ||
+      /^[a-z][a-z0-9+.-]*:/i.test(trimmed)
+    ) {
+      return trimmed;
+    }
+    return `https://${trimmed}`;
+  }
+
+  function insertLinkHref(href: string) {
+    const normalizedHref = normalizeLinkHref(href);
+    if (!normalizedHref) return;
+
+    const editorKey = preferredEditorKey();
+    focusEditor(editorKey);
+    const range = getSelectionRange(editorKey);
+
+    if (range && !range.collapsed) {
+      document.execCommand('createLink', false, normalizedHref);
+      normalizeLegacyFontTags(getEditorElement(editorKey));
+      return;
+    }
+
+    const anchor = document.createElement('a');
+    anchor.href = normalizedHref;
+    anchor.textContent = normalizedHref;
+    insertNodeAtCursor(anchor);
+    insertNodeAtCursor(document.createTextNode(' '));
+  }
+
+  function closeLinkComposer() {
+    setLinkComposerOpen(false);
+    setLinkDraft('');
+    setLinkResults([]);
   }
 
   function insertNodeAtCursor(node: Node) {
@@ -618,6 +746,7 @@ export function PostEditorModal({
 
     const spacer = document.createTextNode(' ');
     insertNodeAtCursor(spacer);
+    closeLinkComposer();
   }
 
   function resolveImageAlt(currentValue: string, fallbackLabel: string): string {
@@ -875,7 +1004,7 @@ export function PostEditorModal({
         </div>
         <div
           ref={ref}
-          className="editor-surface"
+          className="editor-surface content-prose"
           contentEditable
           suppressContentEditableWarning
           onFocus={() => setActiveEditor(key)}
@@ -1139,142 +1268,243 @@ export function PostEditorModal({
                 </>
               ) : null}
 
-              <div className="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
-                <label className="editor-toolbar__label">
-                  Style
-                  <select
-                    className="editor-toolbar__select"
-                    defaultValue="p"
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      if (value === 'h2') exec('formatBlock', 'H2');
-                      else if (value === 'h3') exec('formatBlock', 'H3');
-                      else exec('formatBlock', 'P');
-                      event.currentTarget.value = 'p';
-                    }}
-                  >
-                    <option value="p">Normal</option>
-                    <option value="h2">H2</option>
-                    <option value="h3">H3</option>
-                  </select>
-                </label>
-                <button type="button" onClick={() => exec('bold')} aria-label="Bold">
-                  <strong>B</strong>
-                </button>
-                <button type="button" onClick={() => exec('italic')} aria-label="Italic">
-                  <em>I</em>
-                </button>
-                <button type="button" onClick={() => exec('underline')} aria-label="Underline">
-                  <u>U</u>
-                </button>
-                <button type="button" onClick={() => exec('strikeThrough')} aria-label="Strike">
-                  <s>S</s>
-                </button>
-                <button type="button" onClick={() => exec('insertUnorderedList')} aria-label="Bullet list">
-                  • List
-                </button>
-                <button type="button" onClick={() => exec('insertOrderedList')} aria-label="Numbered list">
-                  1. List
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const href = window.prompt('Link URL');
-                    if (href && href.trim()) exec('createLink', href.trim());
-                  }}
-                  aria-label="Insert link"
-                >
-                  Link
-                </button>
-                <button type="button" onClick={() => exec('removeFormat')} aria-label="Clear format">
-                  Tx
-                </button>
-                <button type="button" onClick={() => exec('justifyLeft')} aria-label="Align left">
-                  Left
-                </button>
-                <button type="button" onClick={() => exec('justifyCenter')} aria-label="Align center">
-                  Center
-                </button>
-                <button type="button" onClick={() => exec('justifyRight')} aria-label="Align right">
-                  Right
-                </button>
-                <label className="editor-toolbar__label">
-                  Image Alt Prefix
-                  <input
-                    className="editor-toolbar__alt"
-                    value={bodyImageAlt}
-                    onChange={(event) => setBodyImageAlt(event.target.value)}
-                    placeholder="Used for uploads, numbered for multi-image rows"
-                  />
-                </label>
-                <label className="editor-toolbar__upload">
-                  Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    hidden
-                    onChange={async (event) => {
-                      if (event.target.files?.length) await uploadAndInsertBodyImages(event.target.files);
-                      event.currentTarget.value = '';
-                    }}
-                  />
-                </label>
-              </div>
-
-              <div className="admin-card-settings">
-                <h3>Internal Link</h3>
-                <label>
-                  Search posts
-                  <input
-                    value={internalLinkQuery}
-                    onChange={(event) => setInternalLinkQuery(event.target.value)}
-                    placeholder="Search by title/content"
-                  />
-                </label>
-                <div className="internal-link-list">
-                  {internalLinkResults.map((item) => (
-                    <button
-                      key={`internal-link-${item.id}`}
-                      type="button"
-                      className="internal-link-item"
-                      onClick={() => insertInternalLink(item)}
+              <div className="admin-editor-workbench">
+                <div className="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
+                  <label className="editor-toolbar__label">
+                    Style
+                    <select
+                      className="editor-toolbar__select"
+                      defaultValue="p"
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value === 'h2') exec('formatBlock', 'H2');
+                        else if (value === 'h3') exec('formatBlock', 'H3');
+                        else exec('formatBlock', 'P');
+                        event.currentTarget.value = 'p';
+                      }}
                     >
-                      {item.title} ({item.lang}/{item.section})
-                    </button>
-                  ))}
-                  {internalLinkQuery.trim() && internalLinkResults.length === 0 ? (
-                    <p className="list-tags">No results.</p>
-                  ) : null}
+                      <option value="p">Normal</option>
+                      <option value="h2">H2</option>
+                      <option value="h3">H3</option>
+                    </select>
+                  </label>
+                  <label className="editor-toolbar__label">
+                    Size
+                    <select
+                      className="editor-toolbar__select"
+                      defaultValue="3"
+                      onChange={(event) => {
+                        execWithCss('fontSize', event.target.value);
+                      }}
+                    >
+                      {FONT_SIZE_OPTIONS.map((option) => (
+                        <option key={`font-size-${option.value}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="editor-toolbar__label">
+                    Font
+                    <select
+                      className="editor-toolbar__select editor-toolbar__select--font"
+                      defaultValue={FONT_FAMILY_OPTIONS[0].value}
+                      onChange={(event) => {
+                        execWithCss('fontName', event.target.value);
+                      }}
+                    >
+                      {FONT_FAMILY_OPTIONS.map((option) => (
+                        <option key={`font-family-${option.label}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => exec('bold')} aria-label="Bold">
+                    <strong>B</strong>
+                  </button>
+                  <button type="button" onClick={() => exec('italic')} aria-label="Italic">
+                    <em>I</em>
+                  </button>
+                  <button type="button" onClick={() => exec('underline')} aria-label="Underline">
+                    <u>U</u>
+                  </button>
+                  <button type="button" onClick={() => exec('strikeThrough')} aria-label="Strike">
+                    <s>S</s>
+                  </button>
+                  <button type="button" onClick={() => exec('insertUnorderedList')} aria-label="Bullet list">
+                    • List
+                  </button>
+                  <button type="button" onClick={() => exec('insertOrderedList')} aria-label="Numbered list">
+                    1. List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkComposerOpen((prev) => !prev);
+                      setLinkDraft('');
+                      setLinkResults([]);
+                    }}
+                    aria-label="Insert link"
+                  >
+                    Link
+                  </button>
+                  <label className="editor-toolbar__color">
+                    Text
+                    <input
+                      type="color"
+                      defaultValue="#111417"
+                      onChange={(event) => {
+                        execWithCss('foreColor', event.target.value);
+                      }}
+                    />
+                  </label>
+                  <label className="editor-toolbar__color">
+                    Highlight
+                    <input
+                      type="color"
+                      defaultValue="#fff4a3"
+                      onChange={(event) => {
+                        applyBackgroundColor(event.target.value);
+                      }}
+                    />
+                  </label>
+                  <button type="button" onClick={() => exec('removeFormat')} aria-label="Clear format">
+                    Tx
+                  </button>
+                  <button type="button" onClick={() => exec('justifyLeft')} aria-label="Align left">
+                    Left
+                  </button>
+                  <button type="button" onClick={() => exec('justifyCenter')} aria-label="Align center">
+                    Center
+                  </button>
+                  <button type="button" onClick={() => exec('justifyRight')} aria-label="Align right">
+                    Right
+                  </button>
+                  <label className="editor-toolbar__label">
+                    Image Alt Prefix
+                    <input
+                      className="editor-toolbar__alt"
+                      value={bodyImageAlt}
+                      onChange={(event) => setBodyImageAlt(event.target.value)}
+                      placeholder="Used for uploads, numbered for multi-image rows"
+                    />
+                  </label>
+                  <label className="editor-toolbar__upload">
+                    Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      onChange={async (event) => {
+                        if (event.target.files?.length) await uploadAndInsertBodyImages(event.target.files);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
                 </div>
-              </div>
 
-              {hasEmbeddedProgramPost ? (
-                <div className="admin-editor-stack">
-                  {(programContentLayout === 'above' || programContentLayout === 'split') &&
-                    renderEditorSurface('before', 'Content above the program', 'Rendered before the embedded tool/game.')}
-                  {(programContentLayout === 'below' || programContentLayout === 'split') &&
-                    renderEditorSurface('after', 'Content below the program', 'Rendered after the embedded tool/game.')}
+                {linkComposerOpen ? (
+                  <div className="editor-link-composer">
+                    <div className="editor-link-composer__row">
+                      <input
+                        className="editor-link-composer__input"
+                        value={linkDraft}
+                        onChange={(event) => setLinkDraft(event.target.value)}
+                        placeholder="Paste a URL or type / to search internal posts"
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape') {
+                            event.preventDefault();
+                            closeLinkComposer();
+                            return;
+                          }
+
+                          if (event.key !== 'Enter') return;
+                          event.preventDefault();
+
+                          const trimmed = linkDraft.trim();
+                          if (!trimmed) return;
+
+                          if (trimmed.startsWith('/')) {
+                            if (linkResults.length > 0) {
+                              insertInternalLink(linkResults[0]);
+                            }
+                            return;
+                          }
+
+                          insertLinkHref(trimmed);
+                          closeLinkComposer();
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const trimmed = linkDraft.trim();
+                          if (!trimmed) return;
+                          if (trimmed.startsWith('/')) {
+                            if (linkResults.length > 0) {
+                              insertInternalLink(linkResults[0]);
+                            }
+                            return;
+                          }
+                          insertLinkHref(trimmed);
+                          closeLinkComposer();
+                        }}
+                      >
+                        Apply
+                      </button>
+                      <button type="button" onClick={closeLinkComposer}>
+                        Close
+                      </button>
+                    </div>
+                    {linkDraft.trim().startsWith('/') ? (
+                      <div className="internal-link-list">
+                        {linkResults.map((item) => (
+                          <button
+                            key={`internal-link-${item.id}`}
+                            type="button"
+                            className="internal-link-item"
+                            onClick={() => insertInternalLink(item)}
+                          >
+                            {item.title} ({item.lang}/{item.section})
+                          </button>
+                        ))}
+                        {linkDraft.trim().slice(1).trim() && linkResults.length === 0 ? (
+                          <p className="list-tags">No results.</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {hasEmbeddedProgramPost ? (
+                  <div className="admin-editor-stack">
+                    {(programContentLayout === 'above' || programContentLayout === 'split') &&
+                      renderEditorSurface('before', 'Content above the program', 'Rendered before the embedded tool/game.')}
+                    {(programContentLayout === 'below' || programContentLayout === 'split') &&
+                      renderEditorSurface('after', 'Content below the program', 'Rendered after the embedded tool/game.')}
+                  </div>
+                ) : (
+                  renderEditorSurface('body', 'Body content', 'Rendered as the main post body.')
+                )}
+
+                <div className="editor-image-tools">
+                  <span>Image</span>
+                  <button type="button" onClick={() => setSelectedImageAlign('left')}>
+                    Left
+                  </button>
+                  <button type="button" onClick={() => setSelectedImageAlign('center')}>
+                    Center
+                  </button>
+                  <button type="button" onClick={() => setSelectedImageAlign('right')}>
+                    Right
+                  </button>
+                  <button type="button" onClick={deleteSelectedImage}>
+                    Delete image
+                  </button>
+                  <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
                 </div>
-              ) : (
-                renderEditorSurface('body', 'Body content', 'Rendered as the main post body.')
-              )}
-
-              <div className="editor-image-tools">
-                <span>Image</span>
-                <button type="button" onClick={() => setSelectedImageAlign('left')}>
-                  Left
-                </button>
-                <button type="button" onClick={() => setSelectedImageAlign('center')}>
-                  Center
-                </button>
-                <button type="button" onClick={() => setSelectedImageAlign('right')}>
-                  Right
-                </button>
-                <button type="button" onClick={deleteSelectedImage}>
-                  Delete image
-                </button>
-                <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
               </div>
             </div>
 

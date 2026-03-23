@@ -2423,6 +2423,13 @@ body.is-resizing-editor-image {
   cursor: pointer;
 }
 
+.admin-editor-workbench {
+  max-width: 740px;
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2467,6 +2474,58 @@ body.is-resizing-editor-image {
   padding: 6px 8px;
 }
 
+.editor-toolbar__select--font {
+  min-width: 160px;
+}
+
+.editor-toolbar__color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.editor-toolbar__color input {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.editor-link-composer {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.editor-link-composer__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.editor-link-composer__row button,
+.editor-link-composer__input {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.editor-link-composer__input {
+  flex: 1 1 320px;
+}
+
 .internal-link-list {
   display: grid;
   gap: 6px;
@@ -2486,8 +2545,10 @@ body.is-resizing-editor-image {
 .editor-surface {
   border: 1px solid var(--border);
   min-height: 340px;
-  padding: 14px;
-  background: var(--surface);
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 18px 22px;
+  background: var(--bg);
   font-size: 15px;
   line-height: 1.6;
   outline: none;
@@ -2496,6 +2557,10 @@ body.is-resizing-editor-image {
 
 .editor-surface:focus {
   box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.editor-surface p:last-child {
+  margin-bottom: 0;
 }
 
 .editor-surface p {
@@ -2589,6 +2654,15 @@ body.is-resizing-editor-image {
 
   .editor-surface .editor-image-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-editor-workbench {
+    max-width: 100%;
+  }
+
+  .editor-surface {
+    max-width: 100%;
+    padding: 14px;
   }
 }
 
