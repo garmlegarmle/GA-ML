@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import pg from 'pg';
-import { nowIso, slugifyTag } from './validators.js';
+import { nowIso, slugifyTag, toPlainText } from './validators.js';
 
 const { Pool } = pg;
 const GAME_LEADERBOARD_LIMIT = 10;
@@ -55,6 +55,10 @@ async function getPublishedContentCardCount(pool, lang) {
 
 export async function getNextPublishedContentCardRank(pool, lang) {
   return (await getPublishedContentCardCount(pool, lang)) + 1;
+}
+
+function hasMeaningfulProgramContent(value) {
+  return Boolean(toPlainText(String(value || '')).trim());
 }
 
 export async function ensureSeedProgramPosts(pool) {
@@ -336,9 +340,12 @@ The tournament flow, betting logic, eliminations, and showdown resolution all ru
     const existingPost = existing.rows[0];
     const hasLegacyProgramContent =
       existingPost?.id &&
-      !existingPost.content_before_md &&
-      !existingPost.content_after_md &&
-      String(existingPost.content_md || '').trim() === String(item.legacyContent || '').trim();
+      !hasMeaningfulProgramContent(existingPost.content_before_md) &&
+      !hasMeaningfulProgramContent(existingPost.content_after_md) &&
+      (
+        !hasMeaningfulProgramContent(existingPost.content_md) ||
+        String(existingPost.content_md || '').trim() === String(item.legacyContent || '').trim()
+      );
 
     if (hasLegacyProgramContent) {
       await pool.query(
