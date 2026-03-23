@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createTournamentConfig, normalizeTournamentPlayerName } from 'holdem/config/gameSettings';
+import { getGameUiText, type HoldemLang } from 'holdem/config/localization';
 import { ACTION_PHASES, AUTO_ADVANCE_PHASES } from 'holdem/engine/stateMachine/phases';
 import {
   advanceState,
@@ -26,11 +27,13 @@ function enqueueToast(game: ReturnType<typeof createInitialGameState>, kind: Toa
 }
 
 function enhanceTransition(previous: ReturnType<typeof createInitialGameState>, next: ReturnType<typeof createInitialGameState>) {
+  const copy = getGameUiText(next.ui.lang);
+
   if (next.levelIndex > previous.levelIndex) {
     enqueueToast(
       next,
       'info',
-      `레벨 ${next.currentLevel.level} 시작: ${next.currentLevel.smallBlind}/${next.currentLevel.bigBlind}`,
+      copy.levelToast(next.currentLevel.level, next.currentLevel.smallBlind, next.currentLevel.bigBlind),
     );
   }
 
@@ -46,7 +49,7 @@ function enhanceTransition(previous: ReturnType<typeof createInitialGameState>, 
 
   if (next.phase === 'tournament_complete' && next.tournamentWinnerId && next.tournamentWinnerId !== previous.tournamentWinnerId) {
     const winner = next.seats.find((seat) => seat.playerId === next.tournamentWinnerId);
-    enqueueToast(next, 'success', `${winner?.name ?? '우승자'} 우승`);
+    enqueueToast(next, 'success', copy.winnerToast(winner?.name ?? copy.unknownPlayer));
   }
 }
 
@@ -68,15 +71,15 @@ function clampRaiseInput(game: ReturnType<typeof createInitialGameState>, nextVa
   return Math.max(raiseAction.min, Math.min(raiseAction.max, Math.round(nextValue)));
 }
 
-function buildInitialGame(seed?: number, playerName?: string) {
-  return createInitialGameState(createTournamentConfig(playerName), seed ?? createSeed());
+function buildInitialGame(seed?: number, playerName?: string, lang: HoldemLang = 'ko') {
+  return createInitialGameState(createTournamentConfig(playerName, lang), seed ?? createSeed(), lang);
 }
 
 type GameStore = {
   game: ReturnType<typeof createInitialGameState>;
-  initialize: (seed?: number, playerName?: string) => void;
-  startTournament: (playerName?: string) => void;
-  restart: (seed?: number, playerName?: string) => void;
+  initialize: (seed?: number, playerName?: string, lang?: HoldemLang) => void;
+  startTournament: (playerName?: string, lang?: HoldemLang) => void;
+  restart: (seed?: number, playerName?: string, lang?: HoldemLang) => void;
   advanceOneStep: () => void;
   performHumanAction: (type: LegalAction['type'], amount?: number) => void;
   setRaiseInput: (amount: number) => void;
@@ -90,13 +93,14 @@ type GameStore = {
 
 export const useGameStore = create<GameStore>((set, get) => ({
   game: buildInitialGame(),
-  initialize: (seed, playerName) =>
+  initialize: (seed, playerName, lang = 'ko') =>
     set(() => ({
-      game: buildInitialGame(seed, playerName),
+      game: buildInitialGame(seed, playerName, lang),
     })),
-  startTournament: (playerName) =>
+  startTournament: (playerName, lang) =>
     set((store) => {
-      const resolvedPlayerName = normalizeTournamentPlayerName(playerName || store.game.ui.playerName);
+      const resolvedLang = lang || store.game.ui.lang;
+      const resolvedPlayerName = normalizeTournamentPlayerName(playerName || store.game.ui.playerName, resolvedLang);
 
       return {
         game: {
@@ -110,13 +114,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
             ...store.game.ui,
             started: true,
             playerName: resolvedPlayerName,
+            lang: resolvedLang,
           },
         },
       };
     }),
-  restart: (seed, playerName) =>
+  restart: (seed, playerName, lang) =>
     set((store) => ({
-      game: buildInitialGame(seed, playerName || store.game.ui.playerName),
+      game: buildInitialGame(seed, playerName || store.game.ui.playerName, lang || store.game.ui.lang),
     })),
   advanceOneStep: () =>
     set((store) => {

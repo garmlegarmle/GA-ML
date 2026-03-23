@@ -1569,28 +1569,31 @@ body.is-resizing-editor-image {
 }
 
 .holdem-game-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  display: flex;
+  justify-content: flex-start;
 }
 
 .holdem-game-summary__card {
   display: grid;
-  gap: 8px;
-  padding: 16px 18px;
+  gap: 6px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   background: #fffef8;
 }
 
+.holdem-game-summary__card--single {
+  min-width: 180px;
+}
+
 .holdem-game-summary__label {
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .holdem-game-summary__value {
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1;
   font-weight: 500;
 }
@@ -2561,7 +2564,7 @@ body.is-resizing-editor-image {
 
 @media (max-width: 860px) {
   .holdem-game-summary {
-    grid-template-columns: 1fr;
+    display: block;
   }
 
   .holdem-game-leaderboard__row {

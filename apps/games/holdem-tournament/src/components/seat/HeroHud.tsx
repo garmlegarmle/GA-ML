@@ -1,4 +1,5 @@
 import { CardView } from 'holdem/components/cards/CardView';
+import { formatChipStack, getGameUiText, type HoldemLang } from 'holdem/config/localization';
 import type { Seat } from 'holdem/types/engine';
 import styles from 'holdem/components/seat/HeroHud.module.css';
 
@@ -8,9 +9,12 @@ interface HeroHudProps {
   isButton: boolean;
   isSmallBlind: boolean;
   isBigBlind: boolean;
+  lang: HoldemLang;
 }
 
-export function HeroHud({ seat, handNumber, isButton, isSmallBlind, isBigBlind }: HeroHudProps) {
+export function HeroHud({ seat, handNumber, isButton, isSmallBlind, isBigBlind, lang }: HeroHudProps) {
+  const copy = getGameUiText(lang);
+
   if (!seat || seat.status !== 'active') {
     return null;
   }
@@ -20,14 +24,14 @@ export function HeroHud({ seat, handNumber, isButton, isSmallBlind, isBigBlind }
       <div className={styles.infoRow}>
         <div className={styles.identity}>
           <span className={styles.name}>{seat.name}</span>
-          <span className={styles.stack}>{seat.stack.toLocaleString()} 칩</span>
+          <span className={styles.stack}>{formatChipStack(seat.stack, lang)}</span>
         </div>
         <div className={styles.badges}>
           {isButton && <span className={styles.badge}>D</span>}
           {isSmallBlind && <span className={styles.badge}>SB</span>}
           {isBigBlind && <span className={styles.badge}>BB</span>}
-          {seat.hasFolded && <span className={styles.state}>폴드</span>}
-          {seat.isAllIn && <span className={styles.state}>올인</span>}
+          {seat.hasFolded && <span className={styles.state}>{copy.folded}</span>}
+          {seat.isAllIn && <span className={styles.state}>{copy.allIn}</span>}
         </div>
       </div>
 
@@ -51,7 +55,7 @@ export function HeroHud({ seat, handNumber, isButton, isSmallBlind, isBigBlind }
         )}
       </div>
 
-      <div className={styles.betLine}>{seat.currentBet > 0 ? `현재 베팅: ${seat.currentBet.toLocaleString()}` : ' '}</div>
+      <div className={styles.betLine}>{seat.currentBet > 0 ? copy.currentBet(seat.currentBet) : ' '}</div>
     </section>
   );
 }

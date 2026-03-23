@@ -1,5 +1,6 @@
 import { MOBILE_TABLE_SEAT_LAYOUT, TABLE_SEAT_LAYOUT } from 'holdem/config/theme';
 import { CardView } from 'holdem/components/cards/CardView';
+import { formatChipStack, getGameUiText, type HoldemLang } from 'holdem/config/localization';
 import type { Seat } from 'holdem/types/engine';
 import styles from 'holdem/components/seat/SeatView.module.css';
 
@@ -13,6 +14,7 @@ interface SeatViewProps {
   showCards: boolean;
   showHoleCards?: boolean;
   isMobileLayout?: boolean;
+  lang: HoldemLang;
 }
 
 export function SeatView({
@@ -25,10 +27,12 @@ export function SeatView({
   showCards,
   showHoleCards = true,
   isMobileLayout = false,
+  lang,
 }: SeatViewProps) {
   const layout = isMobileLayout ? MOBILE_TABLE_SEAT_LAYOUT : TABLE_SEAT_LAYOUT;
   const position = layout[seat.seatIndex] ?? layout[0]!;
   const isFoldedOut = seat.status === 'busted' || seat.hasFolded;
+  const copy = getGameUiText(lang);
 
   return (
     <div
@@ -49,7 +53,7 @@ export function SeatView({
       <div className={styles.nameRow}>
         <span className={styles.name}>{seat.name}</span>
       </div>
-      <div className={styles.stack}>{seat.stack.toLocaleString()} 칩</div>
+      <div className={styles.stack}>{formatChipStack(seat.stack, lang)}</div>
       {showHoleCards && (
         <div className={styles.cards}>
           {seat.holeCards.length > 0 ? (
@@ -73,11 +77,11 @@ export function SeatView({
         </div>
       )}
       <div className={styles.statusRow}>
-        {seat.hasFolded && seat.status === 'active' && <span className={styles.status}>폴드</span>}
-        {seat.isAllIn && seat.status === 'active' && <span className={styles.status}>올인</span>}
-        {seat.status === 'busted' && <span className={styles.status}>탈락</span>}
+        {seat.hasFolded && seat.status === 'active' && <span className={styles.status}>{copy.folded}</span>}
+        {seat.isAllIn && seat.status === 'active' && <span className={styles.status}>{copy.allIn}</span>}
+        {seat.status === 'busted' && <span className={styles.status}>{copy.busted}</span>}
       </div>
-      <div className={styles.betRow}>{seat.currentBet > 0 ? `현재 베팅: ${seat.currentBet}` : ' '}</div>
+      <div className={styles.betRow}>{seat.currentBet > 0 ? copy.currentBet(seat.currentBet) : ' '}</div>
     </div>
   );
 }

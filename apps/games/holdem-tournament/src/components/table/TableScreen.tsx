@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getStreetLabel } from 'holdem/config/localization';
+import { getGameUiText, getStreetLabel } from 'holdem/config/localization';
 import { useGameStore } from 'holdem/app/store/useGameStore';
 import { BettingControls } from 'holdem/components/betting/BettingControls';
 import { CommunityCards } from 'holdem/components/cards/CommunityCards';
@@ -80,6 +80,7 @@ export function TableScreen({
   const smallBlindSeatIndex = selectSmallBlindSeatIndex(game);
   const bigBlindSeatIndex = selectBigBlindSeatIndex(game);
   const copy = START_COPY[lang];
+  const uiCopy = getGameUiText(lang);
   const normalizedPlayerName = playerName.replace(/\s+/g, ' ').trim().slice(0, 24);
 
   useEffect(() => {
@@ -91,7 +92,7 @@ export function TableScreen({
       return;
     }
 
-    startTournament(normalizedPlayerName);
+    startTournament(normalizedPlayerName, lang);
     onTournamentStart?.(normalizedPlayerName);
   }
 
@@ -104,13 +105,13 @@ export function TableScreen({
       ].join(' ')}
     >
       <div className={styles.headerBar}>
-        <CompactStatus game={game} />
+        <CompactStatus game={game} lang={lang} />
         <div className={styles.headerButtons}>
           <button className={styles.headerButton} onClick={() => openOverlayPanel('history')}>
-            핸드 히스토리
+            {uiCopy.handHistory}
           </button>
           <button className={styles.headerButton} onClick={() => openOverlayPanel('settings')}>
-            설정
+            {uiCopy.settings}
           </button>
         </div>
       </div>
@@ -122,26 +123,26 @@ export function TableScreen({
               <div className={styles.innerGuide} />
               <div className={styles.boardZone}>
                 <div className={styles.potPanel}>
-                  <span className={styles.potLabel}>메인 팟</span>
+                  <span className={styles.potLabel}>{uiCopy.mainPot}</span>
                   <strong className={styles.potValue}>{mainPot.toLocaleString()}</strong>
                   {sidePots.length > 0 && (
                     <div className={styles.sidePots}>
                       {sidePots.map((amount, index) => (
-                        <span key={index}>사이드 팟 {index + 1}: {amount.toLocaleString()}</span>
+                        <span key={index}>{uiCopy.sidePot(index + 1)}: {amount.toLocaleString()}</span>
                       ))}
                     </div>
                   )}
                 </div>
                 <div className={styles.potMetaStrip}>
-                  <span>앤티 {game.currentLevel.ante} · BB {game.currentLevel.bigBlind}</span>
-                  <span>라운드 {game.hand.handNumber}</span>
+                  <span>{uiCopy.ante} {game.currentLevel.ante} · BB {game.currentLevel.bigBlind}</span>
+                  <span>{uiCopy.round} {game.hand.handNumber}</span>
                 </div>
                 <div className={styles.communityBoard}>
                   <CommunityCards cards={game.hand.communityCards} handNumber={game.hand.handNumber} />
                 </div>
                 <div className={styles.handMessage}>
                   {game.hand.winnerMessage ??
-                    (!actingSeat?.isHuman && actingSeat ? `${actingSeat.name} 차례 · ${getStreetLabel(game.betting.street)}` : '')}
+                    (!actingSeat?.isHuman && actingSeat ? uiCopy.actingTurn(actingSeat.name, getStreetLabel(game.betting.street, lang)) : '')}
                 </div>
               </div>
             </div>
@@ -161,6 +162,7 @@ export function TableScreen({
                 }
                 showHoleCards={!seat.isHuman}
                 isMobileLayout={isMobileLayout}
+                lang={lang}
               />
             ))}
             <TableChips game={game} totalPot={totalPot} isMobileLayout={isMobileLayout} />
@@ -172,9 +174,9 @@ export function TableScreen({
             <div className={styles.leftDock}>
               {game.phase === 'next_hand' ? (
                 <div className={styles.nextHandCard}>
-                  <div className={styles.nextHandText}>현재 핸드가 종료되었습니다. 준비되면 다음 핸드를 시작하세요.</div>
+                  <div className={styles.nextHandText}>{uiCopy.nextHandReady}</div>
                   <button className={styles.nextHandButton} onClick={advanceOneStep}>
-                    다음 핸드 시작
+                    {uiCopy.nextHandStart}
                   </button>
                 </div>
               ) : (
@@ -184,6 +186,7 @@ export function TableScreen({
                   amountToCall={amountToCall}
                   potSize={totalPot}
                   bigBlind={game.currentLevel.bigBlind}
+                  lang={lang}
                 />
               )}
             </div>
@@ -195,6 +198,7 @@ export function TableScreen({
                 isButton={humanSeat?.seatIndex === game.buttonSeatIndex}
                 isSmallBlind={humanSeat?.seatIndex === smallBlindSeatIndex}
                 isBigBlind={humanSeat?.seatIndex === bigBlindSeatIndex}
+                lang={lang}
               />
             </div>
           </div>
@@ -234,24 +238,25 @@ export function TableScreen({
 
       {!game.ui.started && showBotProfileIntro && (
         <BotProfileIntro
+          lang={lang}
           onBack={() => setShowBotProfileIntro(false)}
           onConfirm={handleStartConfirm}
         />
       )}
 
       {game.ui.overlayPanel === 'settings' && (
-        <CenterPopup title="설정" onClose={closeOverlayPanel}>
-          <SettingsPanel game={game} />
+        <CenterPopup title={uiCopy.settings} closeLabel={uiCopy.close} onClose={closeOverlayPanel}>
+          <SettingsPanel game={game} lang={lang} />
         </CenterPopup>
       )}
 
       {game.ui.overlayPanel === 'history' && (
-        <CenterPopup title="핸드 히스토리" onClose={closeOverlayPanel}>
-          <LogPanel entries={game.log} />
+        <CenterPopup title={uiCopy.handHistory} closeLabel={uiCopy.close} onClose={closeOverlayPanel}>
+          <LogPanel entries={game.log} lang={lang} />
         </CenterPopup>
       )}
 
-      <WinnerModal game={game} />
+      <WinnerModal game={game} lang={lang} />
       <ToastStack />
     </div>
   );

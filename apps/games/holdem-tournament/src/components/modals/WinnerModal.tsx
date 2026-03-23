@@ -1,9 +1,11 @@
 import { useGameStore } from 'holdem/app/store/useGameStore';
+import { formatPlacement, getGameUiText, type HoldemLang } from 'holdem/config/localization';
 import type { GameState } from 'holdem/types/engine';
 import styles from 'holdem/components/modals/WinnerModal.module.css';
 
-export function WinnerModal({ game }: { game: GameState }) {
+export function WinnerModal({ game, lang }: { game: GameState; lang: HoldemLang }) {
   const restart = useGameStore((state) => state.restart);
+  const uiCopy = getGameUiText(lang);
 
   if (game.phase !== 'tournament_complete' || !game.tournamentCompletionReason) {
     return null;
@@ -13,21 +15,27 @@ export function WinnerModal({ game }: { game: GameState }) {
   const humanSeat = game.seats.find((seat) => seat.isHuman);
   const isGameOver = game.tournamentCompletionReason === 'human-busted';
   const isHumanWinner = Boolean(winner?.isHuman);
-  const title = isGameOver ? '게임 오버' : isHumanWinner ? '토너먼트 우승!' : `${winner?.name ?? '알 수 없음'} 우승`;
-  const copy = isGameOver
-    ? `당신은 ${humanSeat?.eliminationOrder ?? '?'}위로 탈락했습니다. 새 토너먼트를 시작해 다시 도전할 수 있습니다.`
+  const winnerName = winner?.name ?? uiCopy.unknownPlayer;
+  const title = isGameOver ? uiCopy.gameOver : isHumanWinner ? uiCopy.tournamentWin : lang === 'ko' ? `${winnerName} 우승` : `${winnerName} wins`;
+  const bustPlace = typeof humanSeat?.eliminationOrder === 'number'
+    ? formatPlacement(humanSeat.eliminationOrder, lang)
+    : lang === 'ko'
+      ? '순위 미정'
+      : 'an unknown place';
+  const bodyText = isGameOver
+    ? uiCopy.winnerModalBusted(bustPlace)
     : isHumanWinner
-      ? `당신이 모든 칩을 가져가며 1위를 차지했습니다. 총 ${winner?.stack.toLocaleString()}칩으로 레벨 ${game.currentLevel.level}에서 토너먼트를 끝냈습니다.`
-      : `${winner?.name ?? '알 수 없음'}이(가) 모든 칩을 가져가며 우승했습니다. 총 ${winner?.stack.toLocaleString()}칩으로 레벨 ${game.currentLevel.level}에서 토너먼트를 끝냈습니다.`;
+      ? uiCopy.winnerModalHuman(Number(winner?.stack || 0), game.currentLevel.level)
+      : uiCopy.winnerModalBot(winnerName, Number(winner?.stack || 0), game.currentLevel.level);
 
   return (
     <div className={styles.overlay}>
       <div className={styles.modal}>
-        <span className={styles.eyebrow}>{isGameOver ? '플레이어 탈락' : '토너먼트 종료'}</span>
+        <span className={styles.eyebrow}>{isGameOver ? uiCopy.playerBusted : uiCopy.tournamentComplete}</span>
         <h2 className={styles.title}>{title}</h2>
-        <p className={styles.copy}>{copy}</p>
-        <button className={styles.restartButton} onClick={() => restart()}>
-          새 토너먼트 시작
+        <p className={styles.copy}>{bodyText}</p>
+        <button className={styles.restartButton} onClick={() => restart(undefined, undefined, lang)}>
+          {uiCopy.restartRun}
         </button>
       </div>
     </div>

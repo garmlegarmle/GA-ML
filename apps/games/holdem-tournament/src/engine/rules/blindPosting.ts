@@ -1,4 +1,5 @@
 import { appendLogEntry, createLogEntry } from 'holdem/engine/log/logEvents';
+import { getGameUiText } from 'holdem/config/localization';
 import { getBigBlindSeatIndex, getFirstToActPreflop, getSmallBlindSeatIndex } from 'holdem/engine/rules/positions';
 import type { GameState, Seat } from 'holdem/types/engine';
 
@@ -9,6 +10,7 @@ function postForcedBet(
   type: 'post-ante' | 'post-small-blind' | 'post-big-blind',
   label: string,
 ): void {
+  const copy = getGameUiText(state.ui.lang);
   const posted = Math.min(amount, seat.stack);
   seat.stack -= posted;
   seat.currentBet += type === 'post-ante' ? 0 : posted;
@@ -30,7 +32,7 @@ function postForcedBet(
       state.betting.street,
       type,
       posted,
-      `${seat.name} - ${label} ${posted}`,
+      copy.forcedBetLog(seat.name, label, posted),
     ),
   );
 }
@@ -45,7 +47,15 @@ export function postAntes(state: GameState): GameState {
 
   nextState.seats
     .filter((seat) => seat.status === 'active')
-    .forEach((seat) => postForcedBet(nextState, seat, nextState.currentLevel.ante, 'post-ante', '앤티'));
+    .forEach((seat) =>
+      postForcedBet(
+        nextState,
+        seat,
+        nextState.currentLevel.ante,
+        'post-ante',
+        getGameUiText(nextState.ui.lang).forcedBetLabel['post-ante'],
+      ),
+    );
 
   nextState.phase = 'post_blinds';
   return nextState;
@@ -66,8 +76,21 @@ export function postBlinds(state: GameState): GameState {
   const smallBlindSeat = nextState.seats.find((seat) => seat.seatIndex === smallBlindSeatIndex)!;
   const bigBlindSeat = nextState.seats.find((seat) => seat.seatIndex === bigBlindSeatIndex)!;
 
-  postForcedBet(nextState, smallBlindSeat, nextState.currentLevel.smallBlind, 'post-small-blind', '스몰 블라인드');
-  postForcedBet(nextState, bigBlindSeat, nextState.currentLevel.bigBlind, 'post-big-blind', '빅 블라인드');
+  const copy = getGameUiText(nextState.ui.lang);
+  postForcedBet(
+    nextState,
+    smallBlindSeat,
+    nextState.currentLevel.smallBlind,
+    'post-small-blind',
+    copy.forcedBetLabel['post-small-blind'],
+  );
+  postForcedBet(
+    nextState,
+    bigBlindSeat,
+    nextState.currentLevel.bigBlind,
+    'post-big-blind',
+    copy.forcedBetLabel['post-big-blind'],
+  );
 
   nextState.betting.street = 'preflop';
   nextState.betting.currentBet = nextState.currentLevel.bigBlind;

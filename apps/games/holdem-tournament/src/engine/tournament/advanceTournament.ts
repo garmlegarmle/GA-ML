@@ -1,4 +1,4 @@
-import { getPotLabel } from 'holdem/config/localization';
+import { getGameUiText, getPotLabel } from 'holdem/config/localization';
 import { drawCards, shuffleDeck } from 'holdem/engine/core/deck';
 import { countRemainingPlayers, getNextOccupiedSeatIndex, getPlayersAbleToAct } from 'holdem/engine/core/seating';
 import { decideBotAction } from 'holdem/engine/ai/decideAction';
@@ -68,6 +68,7 @@ function nextPhaseAfterStreet(street: Street): Phase {
 
 function setupNewHand(state: GameState): GameState {
   const nextState = structuredClone(state);
+  const copy = getGameUiText(nextState.ui.lang);
 
   if (countRemainingPlayers(nextState.seats) <= 1) {
     nextState.tournamentWinnerId = nextState.seats.find((seat) => seat.status === 'active')?.playerId ?? null;
@@ -110,11 +111,17 @@ function setupNewHand(state: GameState): GameState {
       nextState,
       nextState.buttonSeatIndex,
       'table',
-      '테이블',
+      'table',
       'preflop',
       'info',
       0,
-      `핸드 #${nextState.hand.handNumber} 시작. 버튼: ${nextState.seats.find((seat) => seat.seatIndex === nextState.buttonSeatIndex)?.name}. 블라인드 ${nextState.currentLevel.smallBlind}/${nextState.currentLevel.bigBlind}, 앤티 ${nextState.currentLevel.ante}`,
+      copy.handStartLog(
+        nextState.hand.handNumber,
+        nextState.seats.find((seat) => seat.seatIndex === nextState.buttonSeatIndex)?.name,
+        nextState.currentLevel.smallBlind,
+        nextState.currentLevel.bigBlind,
+        nextState.currentLevel.ante,
+      ),
     ),
   );
 
@@ -193,6 +200,7 @@ function resetForPostflop(state: GameState, street: Street): GameState {
 
 function dealBoardCards(state: GameState, street: Street, count: number): GameState {
   const nextState = structuredClone(state);
+  const copy = getGameUiText(nextState.ui.lang);
   let deck = nextState.hand.deck;
 
   if (street !== 'preflop') {
@@ -208,13 +216,11 @@ function dealBoardCards(state: GameState, street: Street, count: number): GameSt
       nextState,
       nextState.buttonSeatIndex,
       'table',
-      '테이블',
+      'table',
       street,
       'info',
       0,
-      `${street === 'flop' ? '플랍' : street === 'turn' ? '턴' : '리버'}: ${nextState.hand.communityCards
-        .map((card) => card.code)
-        .join(' ')}`,
+      copy.boardRevealLog(street as 'flop' | 'turn' | 'river', nextState.hand.communityCards.map((card) => card.code)),
     ),
   );
 
@@ -223,6 +229,7 @@ function dealBoardCards(state: GameState, street: Street, count: number): GameSt
 
 function runShowdown(state: GameState): GameState {
   const nextState = structuredClone(state);
+  const copy = getGameUiText(nextState.ui.lang);
   const resolved = resolveShowdown(nextState);
 
   nextState.hand.pots = resolved.pots;
@@ -245,7 +252,7 @@ function runShowdown(state: GameState): GameState {
             'showdown',
             'showdown',
             0,
-            `${seat.name} 오픈 ${seat.holeCards.map((card) => card.code).join(' ')}`,
+            copy.openCardsLog(seat.name, seat.holeCards.map((card) => card.code)),
           ),
         );
       }
@@ -258,6 +265,7 @@ function runShowdown(state: GameState): GameState {
 
 function awardPots(state: GameState): GameState {
   const nextState = state.hand.payouts.length === 0 ? runShowdown(state) : structuredClone(state);
+  const copy = getGameUiText(nextState.ui.lang);
 
   nextState.hand.payouts.forEach((payout) => {
     const seat = nextState.seats.find((candidate) => candidate.playerId === payout.playerId);
@@ -278,7 +286,7 @@ function awardPots(state: GameState): GameState {
         'showdown',
         'win',
         payout.amount,
-        `${seat.name} ${payout.amount}칩 획득 (${getPotLabel(payout.potId)}${payout.isOddChip ? ', 나머지 1칩 포함' : ''})`,
+        copy.winLog(seat.name, payout.amount, getPotLabel(payout.potId, nextState.ui.lang), payout.isOddChip),
       ),
     );
   });
@@ -290,6 +298,7 @@ function awardPots(state: GameState): GameState {
 
 function eliminatePlayers(state: GameState): GameState {
   const nextState = structuredClone(state);
+  const copy = getGameUiText(nextState.ui.lang);
   const activeBefore = nextState.seats.filter((seat) => seat.status === 'active').length;
   let humanBusted = false;
 
@@ -308,7 +317,7 @@ function eliminatePlayers(state: GameState): GameState {
           'showdown',
           'eliminated',
           0,
-          `${seat.name} 탈락 (${activeBefore}위)`,
+          copy.eliminationLog(seat.name, activeBefore),
         ),
       );
     }

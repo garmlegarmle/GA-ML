@@ -1,11 +1,14 @@
 import { BET_SIZING_BUCKETS } from 'holdem/config/betSizing';
 import { BLIND_LEVELS } from 'holdem/config/blindLevels';
+import type { HoldemLang } from 'holdem/config/localization';
 import type { TournamentConfig } from 'holdem/types/tournament';
 
-export const DEFAULT_HUMAN_PLAYER_NAME = '당신';
+export function getDefaultHumanPlayerName(lang: HoldemLang = 'ko') {
+  return lang === 'en' ? 'You' : '당신';
+}
 
 export const DEFAULT_PLAYER_SEATS = [
-  { seatIndex: 0, playerId: 'human-1', name: DEFAULT_HUMAN_PLAYER_NAME, isHuman: true },
+  { seatIndex: 0, playerId: 'human-1', name: getDefaultHumanPlayerName('ko'), isHuman: true },
   { seatIndex: 1, playerId: 'bot-1', name: 'Mara', isHuman: false, profileId: 'tight-passive' as const },
   { seatIndex: 2, playerId: 'bot-2', name: 'Viktor', isHuman: false, profileId: 'tight-aggressive' as const },
   { seatIndex: 3, playerId: 'bot-3', name: 'Nina', isHuman: false, profileId: 'loose-passive' as const },
@@ -16,17 +19,17 @@ export const DEFAULT_PLAYER_SEATS = [
   { seatIndex: 8, playerId: 'bot-8', name: 'Elliot', isHuman: false, profileId: 'balanced-regular' as const },
 ];
 
-export function normalizeTournamentPlayerName(value: string | null | undefined): string {
+export function normalizeTournamentPlayerName(value: string | null | undefined, lang: HoldemLang = 'ko'): string {
   const normalized = String(value || '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 24);
 
-  return normalized || DEFAULT_HUMAN_PLAYER_NAME;
+  return normalized || getDefaultHumanPlayerName(lang);
 }
 
-export function createTournamentConfig(playerName?: string): TournamentConfig {
-  const resolvedPlayerName = normalizeTournamentPlayerName(playerName);
+export function createTournamentConfig(playerName?: string, lang: HoldemLang = 'ko'): TournamentConfig {
+  const resolvedPlayerName = normalizeTournamentPlayerName(playerName, lang);
 
   return {
     startingStack: 10000,
@@ -40,4 +43,4 @@ export function createTournamentConfig(playerName?: string): TournamentConfig {
   };
 }
 
-export const DEFAULT_TOURNAMENT_CONFIG: TournamentConfig = createTournamentConfig();
+export const DEFAULT_TOURNAMENT_CONFIG: TournamentConfig = createTournamentConfig(undefined, 'ko');

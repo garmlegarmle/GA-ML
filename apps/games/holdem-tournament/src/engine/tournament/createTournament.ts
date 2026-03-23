@@ -1,5 +1,7 @@
+import { getDefaultHumanPlayerName } from 'holdem/config/gameSettings';
 import { assignTablePositions } from 'holdem/engine/rules/positions';
 import { getBlindLevel } from 'holdem/engine/tournament/levelProgression';
+import type { HoldemLang } from 'holdem/config/localization';
 import type { BettingState, GameState, HandState, Seat } from 'holdem/types/engine';
 import type { TournamentConfig } from 'holdem/types/tournament';
 
@@ -58,7 +60,7 @@ function createInitialBettingState(bigBlind: number): BettingState {
   };
 }
 
-export function createInitialGameState(config: TournamentConfig, seed: number): GameState {
+export function createInitialGameState(config: TournamentConfig, seed: number, lang: HoldemLang = 'ko'): GameState {
   const currentLevel = getBlindLevel(config, 0);
   const seats = assignTablePositions(createInitialSeats(config), config.initialButtonSeatIndex);
   const humanSeat = seats.find((seat) => seat.isHuman);
@@ -77,7 +79,8 @@ export function createInitialGameState(config: TournamentConfig, seed: number): 
     log: [],
     ui: {
       started: false,
-      playerName: humanSeat?.name ?? '당신',
+      playerName: humanSeat?.name ?? getDefaultHumanPlayerName(lang),
+      lang,
       raiseInput: currentLevel.bigBlind * 2,
       actionSpeed: config.actionDelayMs,
       autoProgress: config.autoProgress,

@@ -18,7 +18,6 @@ const COPY = {
     description:
       'Play a single-table tournament against local AI opponents. The embedded game runs directly in the page and keeps tournament flow, blinds, eliminations, and showdown logic in the browser.',
     totalPlays: 'Total plays',
-    yourPlays: 'Your plays',
     leaderboardTitle: 'Top 10 leaderboard',
     leaderboardEmpty: 'No ranked runs have been recorded yet.',
     leaderboardOutcome: 'Finish',
@@ -37,7 +36,6 @@ const COPY = {
     description:
       '로컬 AI 8명을 상대로 싱글 테이블 토너먼트를 진행하는 브라우저 게임입니다. 블라인드 상승, 탈락, 쇼다운까지 페이지 안에서 바로 플레이할 수 있습니다.',
     totalPlays: '총 플레이 수',
-    yourPlays: '내 플레이 수',
     leaderboardTitle: '상위 10위 랭킹',
     leaderboardEmpty: '아직 저장된 랭킹이 없습니다.',
     leaderboardOutcome: '최종 순위',
@@ -110,7 +108,7 @@ export function HoldemTournamentGameContent({ lang, embedded = false }: { lang: 
 
     async function load() {
       try {
-        const result = await getHoldemStats(playerName || undefined);
+        const result = await getHoldemStats();
         if (cancelled) return;
         setSummary(result.summary);
         setLeaderboard(result.leaderboard);
@@ -199,14 +197,10 @@ export function HoldemTournamentGameContent({ lang, embedded = false }: { lang: 
         </header>
       ) : null}
 
-      <section className="holdem-game-summary" aria-label={copy.leaderboardTitle}>
-        <article className="holdem-game-summary__card">
+      <section className="holdem-game-summary" aria-label={copy.totalPlays}>
+        <article className="holdem-game-summary__card holdem-game-summary__card--single">
           <span className="holdem-game-summary__label">{copy.totalPlays}</span>
           <strong className="holdem-game-summary__value">{summary.totalPlays.toLocaleString()}</strong>
-        </article>
-        <article className="holdem-game-summary__card">
-          <span className="holdem-game-summary__label">{copy.yourPlays}</span>
-          <strong className="holdem-game-summary__value">{summary.playerPlays.toLocaleString()}</strong>
         </article>
       </section>
 

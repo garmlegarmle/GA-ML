@@ -44,8 +44,8 @@ export default function App({
   useGameLoop();
 
   useEffect(() => {
-    initialize(initialSeed);
-  }, [initialize, initialSeed]);
+    initialize(initialSeed, undefined, lang);
+  }, [initialize, initialSeed, lang]);
 
   useEffect(() => {
     completionKeyRef.current = null;

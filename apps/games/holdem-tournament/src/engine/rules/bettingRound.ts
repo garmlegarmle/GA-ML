@@ -1,4 +1,5 @@
 import { getCircularSeatOrder, getHandContenders } from 'holdem/engine/core/seating';
+import { getGameUiText } from 'holdem/config/localization';
 import { appendLogEntry, createLogEntry } from 'holdem/engine/log/logEvents';
 import { getAmountToCall, getLegalActions, isActionLegal } from 'holdem/engine/rules/legalActions';
 import type { GameState, PlayerAction, Seat } from 'holdem/types/engine';
@@ -79,6 +80,7 @@ function logAction(state: GameState, seat: Seat, amount: number, text: string): 
 
 export function applyPlayerAction(state: GameState, action: PlayerAction): GameState {
   const nextState = structuredClone(state);
+  const copy = getGameUiText(nextState.ui.lang);
   const seat = findSeat(nextState, action.playerId);
 
   if (!seat || seat.status !== 'active' || seat.hasFolded || seat.isAllIn) {
@@ -103,7 +105,7 @@ export function applyPlayerAction(state: GameState, action: PlayerAction): GameS
       seat.lastActionAmount = 0;
       seat.actedThisStreet = true;
       seat.lastFullRaiseSeen = nextState.betting.fullRaiseCount;
-      logAction(nextState, seat, 0, `${seat.name} 폴드`);
+      logAction(nextState, seat, 0, copy.actionLogFold(seat.name));
       break;
     }
     case 'check': {
@@ -111,7 +113,7 @@ export function applyPlayerAction(state: GameState, action: PlayerAction): GameS
       seat.lastActionAmount = 0;
       seat.actedThisStreet = true;
       seat.lastFullRaiseSeen = nextState.betting.fullRaiseCount;
-      logAction(nextState, seat, 0, `${seat.name} 체크`);
+      logAction(nextState, seat, 0, copy.actionLogCheck(seat.name));
       break;
     }
     case 'call': {
@@ -120,7 +122,7 @@ export function applyPlayerAction(state: GameState, action: PlayerAction): GameS
       seat.lastActionAmount = committed;
       seat.actedThisStreet = true;
       seat.lastFullRaiseSeen = nextState.betting.fullRaiseCount;
-      logAction(nextState, seat, committed, `${seat.name} 콜 ${committed}`);
+      logAction(nextState, seat, committed, copy.actionLogCall(seat.name, committed));
       break;
     }
     case 'bet':
@@ -164,10 +166,10 @@ export function applyPlayerAction(state: GameState, action: PlayerAction): GameS
 
       const text =
         action.type === 'bet'
-          ? `${seat.name} 베팅 ${seat.currentBet}`
+          ? copy.actionLogBet(seat.name, seat.currentBet)
           : action.type === 'raise'
-            ? `${seat.name} 레이즈 ${seat.currentBet}`
-            : `${seat.name} 올인 ${seat.currentBet}`;
+            ? copy.actionLogRaise(seat.name, seat.currentBet)
+            : copy.actionLogAllIn(seat.name, seat.currentBet);
       logAction(nextState, seat, committed, text);
       break;
     }

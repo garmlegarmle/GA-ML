@@ -1,8 +1,10 @@
 import { buildPots } from 'holdem/engine/pots/buildPots';
+import { getGameUiText } from 'holdem/config/localization';
 import { distributePots } from 'holdem/engine/pots/distributePots';
 import type { GameState, Payout } from 'holdem/types/engine';
 
 export function resolveShowdown(state: GameState): Pick<GameState['hand'], 'pots' | 'payouts' | 'showdown' | 'winnerMessage'> {
+  const copy = getGameUiText(state.ui.lang);
   const contenders = state.seats.filter((seat) => seat.status === 'active' && seat.totalCommitted > 0);
   const pots = buildPots(state.seats);
 
@@ -22,7 +24,7 @@ export function resolveShowdown(state: GameState): Pick<GameState['hand'], 'pots
       pots,
       payouts,
       showdown: [],
-      winnerMessage: `${winner.name}이(가) 승부 없이 ${totalPot} 칩을 가져갑니다.`,
+      winnerMessage: copy.noContestWinner(winner.name, totalPot),
     };
   }
 
@@ -40,7 +42,7 @@ export function resolveShowdown(state: GameState): Pick<GameState['hand'], 'pots
     showdown,
     winnerMessage:
       winnerNames.length === 1
-        ? `${winnerNames[0]}이(가) 핸드를 가져갑니다.`
-        : `${winnerNames.join(', ')}이(가) 팟을 나눠 가집니다.`,
+        ? copy.showdownWinner(winnerNames[0])
+        : copy.splitPotWinner(winnerNames),
   };
 }
