@@ -1,4 +1,5 @@
 .page {
+  position: relative;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -253,17 +254,18 @@
 }
 
 .startOverlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
+  padding: 18px;
   background: rgba(2, 7, 6, 0.72);
   backdrop-filter: blur(6px);
   z-index: 36;
 }
 
 .startCard {
-  width: min(460px, calc(100vw - 32px));
+  width: min(460px, calc(100% - 32px));
   padding: 30px;
   border-radius: 26px;
   background: linear-gradient(180deg, rgba(18, 39, 33, 0.98), rgba(8, 21, 18, 0.98));
