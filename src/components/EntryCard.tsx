@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { sectionLabel, t } from '../lib/site';
-import type { PostItem, SiteLang } from '../types';
+import type { CardTitleSize, PostItem, SiteLang } from '../types';
 
 interface EntryCardProps {
   post: PostItem;
@@ -52,7 +52,12 @@ function weightedTitleLength(title: string): number {
   return total;
 }
 
-function titleClassName(title: string): string {
+function titleClassName(title: string, titleSize: CardTitleSize = 'auto'): string {
+  if (titleSize === 'default') return 'entry-card__title';
+  if (titleSize === 'compact') return 'entry-card__title entry-card__title--compact';
+  if (titleSize === 'tight') return 'entry-card__title entry-card__title--tight';
+  if (titleSize === 'ultra-tight') return 'entry-card__title entry-card__title--ultra-tight';
+
   const length = weightedTitleLength(title);
   if (length >= 36) return 'entry-card__title entry-card__title--ultra-tight';
   if (length >= 28) return 'entry-card__title entry-card__title--tight';
@@ -64,7 +69,7 @@ export function EntryCard({ post, href, lang, showDraftBadge = false }: EntryCar
   const targetHref = href || `/${lang}/${post.section}/${post.slug}/`;
   const cardTitle = post.card.title || post.title;
   const tags = Array.isArray(post.tags) ? post.tags : [];
-  const titleClass = titleClassName(cardTitle);
+  const titleClass = titleClassName(cardTitle, post.card.titleSize || 'auto');
   const rank = rankText(post, 1);
   const rankDigits = rank.replace(/\D/g, '').length;
   const rankClass = rankDigits >= 3 || rank.length >= 4 ? 'entry-card__rank entry-card__rank--compact' : 'entry-card__rank';

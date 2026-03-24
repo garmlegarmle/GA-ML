@@ -564,7 +564,8 @@ export function mapPostRow(row, tags, request, publicOrigin = '') {
       rank: rankValue,
       rankNumber: row.card_rank ? Number(row.card_rank) : null,
       imageId: row.card_image_id ? Number(row.card_image_id) : null,
-      imageUrl: cardImageUrl
+      imageUrl: cardImageUrl,
+      titleSize: row.card_title_size || 'auto'
     }
   };
 }

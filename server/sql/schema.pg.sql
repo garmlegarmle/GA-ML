@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS posts (
   card_tag TEXT,
   card_rank INTEGER,
   card_image_id BIGINT REFERENCES media(id) ON DELETE SET NULL,
+  card_title_size TEXT DEFAULT 'auto' CHECK (card_title_size IN ('auto', 'default', 'compact', 'tight', 'ultra-tight')),
   meta_title TEXT,
   meta_description TEXT,
   og_title TEXT,
@@ -109,6 +110,16 @@ ALTER TABLE posts
 
 ALTER TABLE posts
   ADD COLUMN IF NOT EXISTS content_after_md TEXT;
+
+ALTER TABLE posts
+  ADD COLUMN IF NOT EXISTS card_title_size TEXT;
+
+ALTER TABLE posts
+  ALTER COLUMN card_title_size SET DEFAULT 'auto';
+
+UPDATE posts
+SET card_title_size = 'auto'
+WHERE card_title_size IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_posts_status_published_at
   ON posts(status, published_at DESC NULLS LAST);

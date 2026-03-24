@@ -1,5 +1,6 @@
 export type SiteLang = 'en' | 'ko';
 export type SiteSection = 'blog' | 'tools' | 'games' | 'pages';
+export type CardTitleSize = 'auto' | 'default' | 'compact' | 'tight' | 'ultra-tight';
 
 export interface CardData {
   title: string;
@@ -9,6 +10,7 @@ export interface CardData {
   rankNumber: number | null;
   imageId: number | null;
   imageUrl: string | null;
+  titleSize: CardTitleSize;
 }
 
 export interface PostItem {

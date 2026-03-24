@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPost, deletePost, deleteTag, listPosts, listTags, updatePost, uploadMedia } from '../lib/api';
-import type { PostItem, PostSaveSnapshot, SiteLang, SiteSection } from '../types';
+import type { CardTitleSize, PostItem, PostSaveSnapshot, SiteLang, SiteSection } from '../types';
 
 interface PostEditorModalProps {
   open: boolean;
@@ -43,6 +43,14 @@ const FONT_FAMILY_OPTIONS = [
   { label: 'Trebuchet', value: '"Trebuchet MS", Verdana, sans-serif' },
   { label: 'Courier', value: '"Courier New", Courier, monospace' }
 ] as const;
+
+const CARD_TITLE_SIZE_OPTIONS: Array<{ label: string; value: CardTitleSize }> = [
+  { label: 'Auto', value: 'auto' },
+  { label: 'Default', value: 'default' },
+  { label: 'Compact', value: 'compact' },
+  { label: 'Tight', value: 'tight' },
+  { label: 'Ultra Tight', value: 'ultra-tight' }
+];
 
 function slugify(value: string): string {
   return String(value || '')
@@ -279,6 +287,7 @@ export function PostEditorModal({
   const [cardRank, setCardRank] = useState(stripRank(initialPost?.card.rank));
   const [cardImageId, setCardImageId] = useState<number | null>(initialPost?.card.imageId ?? null);
   const [cardImageUrl, setCardImageUrl] = useState(initialPost?.card.imageUrl || '');
+  const [cardTitleSize, setCardTitleSize] = useState<CardTitleSize>(initialPost?.card.titleSize || 'auto');
   const [cardImageAlt, setCardImageAlt] = useState('');
   const [cardCategoryTouched, setCardCategoryTouched] = useState(false);
   const [cardRankTouched, setCardRankTouched] = useState(false);
@@ -382,6 +391,7 @@ export function PostEditorModal({
     setCardRank(stripRank(initialPost?.card.rank));
     setCardImageId(initialPost?.card.imageId ?? null);
     setCardImageUrl(initialPost?.card.imageUrl || '');
+    setCardTitleSize(initialPost?.card.titleSize || 'auto');
     setCardImageAlt('');
     setBodyImageAlt('');
     setCardImageInputVersion(0);
@@ -994,7 +1004,8 @@ export function PostEditorModal({
         rank: rankNumber ? `#${rankNumber}` : null,
         rankNumber,
         imageId: cardImageId,
-        imageUrl: cardImageUrl || null
+        imageUrl: cardImageUrl || null,
+        titleSize: cardTitleSize
       }
     };
 
@@ -1019,7 +1030,8 @@ export function PostEditorModal({
         category: snapshot.card.category,
         tag: derivedCardTag,
         rank: rankNumber ? String(rankNumber) : '',
-        image_id: cardImageId
+        image_id: cardImageId,
+        title_size: cardTitleSize
       }
     };
 
@@ -1284,6 +1296,16 @@ export function PostEditorModal({
                     }}
                     placeholder="1"
                   />
+                </label>
+                <label>
+                  Card Title Size
+                  <select value={cardTitleSize} onChange={(event) => setCardTitleSize(event.target.value as CardTitleSize)}>
+                    {CARD_TITLE_SIZE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
               <p className="list-tags">

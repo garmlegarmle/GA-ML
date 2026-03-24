@@ -85,6 +85,7 @@ const HOLDEM_MAX_PLAYERS = 9;
 const HOLDEM_HANDS_PER_LEVEL = 8;
 const HOLDEM_RUN_TOKEN_TTL_SECONDS = 4 * 60 * 60;
 const rateLimitStore = new Map();
+const CARD_TITLE_SIZE_VALUES = new Set(['auto', 'default', 'compact', 'tight', 'ultra-tight']);
 
 function withSecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -188,6 +189,13 @@ function normalizeHoldemPlayerName(value) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_HOLDEM_PLAYER_NAME_LENGTH);
+}
+
+function normalizeCardTitleSize(value, fallback = 'auto') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return CARD_TITLE_SIZE_VALUES.has(normalized) ? normalized : fallback;
 }
 
 function createRunToken() {
@@ -598,6 +606,7 @@ app.post('/api/posts', async (req, res, next) => {
     const cardTag = tags.join(', ') || null;
     const cardRank = parseCardRank(payload.card?.rank) || (status === 'published' ? await getNextPublishedContentCardRank(pool, lang) : null);
     const cardImageId = parseIntSafe(payload.card?.image_id, null);
+    const cardTitleSize = normalizeCardTitleSize(payload.card?.title_size, 'auto');
     const metaTitle = String(payload.meta?.title || '').trim() || null;
     const metaDescription = String(payload.meta?.description || '').trim() || null;
     const ogTitle = metaTitle || title;
@@ -615,15 +624,15 @@ app.post('/api/posts', async (req, res, next) => {
       `INSERT INTO posts (
         slug, title, excerpt, content_md, content_before_md, content_after_md, status, cover_image_id, published_at,
         lang, section, pair_slug, created_at, updated_at,
-        card_title, card_category, card_tag, card_rank, card_image_id,
+        card_title, card_category, card_tag, card_rank, card_image_id, card_title_size,
         meta_title, meta_description, og_title, og_description, og_image_url, schema_type
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
       ) RETURNING id`,
       [
         slug, title, excerpt, content, embeddedProgram ? contentBefore || null : null, embeddedProgram ? contentAfter || null : null,
         status, null, publishedAt, lang, section, pairSlug, nowIso(), nowIso(),
-        cardTitle, cardCategory, cardTag, cardRank, cardImageId, metaTitle, metaDescription,
+        cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize, metaTitle, metaDescription,
         ogTitle, ogDescription, null, schemaType
       ]
     );
@@ -676,6 +685,10 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const cardTag = tags.join(', ') || null;
     const cardRank = payload.card?.rank !== undefined ? parseCardRank(payload.card.rank) : current.card_rank;
     const cardImageId = payload.card?.image_id !== undefined ? parseIntSafe(payload.card.image_id, null) : current.card_image_id;
+    const cardTitleSize =
+      payload.card?.title_size !== undefined
+        ? normalizeCardTitleSize(payload.card.title_size, 'auto')
+        : normalizeCardTitleSize(current.card_title_size, 'auto');
     const metaTitle = payload.meta?.title !== undefined ? String(payload.meta.title || '').trim() || null : current.meta_title;
     const metaDescription = payload.meta?.description !== undefined ? String(payload.meta.description || '').trim() || null : current.meta_description;
     const ogTitle = metaTitle || title;
@@ -693,13 +706,13 @@ app.put('/api/posts/:id', async (req, res, next) => {
       `UPDATE posts SET
          slug=$1, title=$2, excerpt=$3, content_md=$4, content_before_md=$5, content_after_md=$6, status=$7, cover_image_id=$8,
          published_at=$9, lang=$10, section=$11, pair_slug=$12, updated_at=$13,
-         card_title=$14, card_category=$15, card_tag=$16, card_rank=$17, card_image_id=$18,
-         meta_title=$19, meta_description=$20, og_title=$21, og_description=$22, og_image_url=$23, schema_type=$24
-       WHERE id = $25`,
+         card_title=$14, card_category=$15, card_tag=$16, card_rank=$17, card_image_id=$18, card_title_size=$19,
+         meta_title=$20, meta_description=$21, og_title=$22, og_description=$23, og_image_url=$24, schema_type=$25
+       WHERE id = $26`,
       [
         slug, title, excerpt, content, embeddedProgram ? contentBefore || null : null, embeddedProgram ? contentAfter || null : null,
         status, current.cover_image_id, publishedAt, lang, section, pairSlug, nowIso(),
-        cardTitle, cardCategory, cardTag, cardRank, cardImageId,
+        cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize,
         metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, postId
       ]
     );
