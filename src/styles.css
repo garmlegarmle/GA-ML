@@ -311,9 +311,9 @@ main {
 }
 
 .entry-card__title--ultra-tight {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.16;
-  -webkit-line-clamp: 5;
+  -webkit-line-clamp: 6;
 }
 
 .entry-card__rank {
@@ -2028,7 +2028,7 @@ body.is-resizing-editor-image {
   }
 
   .entry-card__title--ultra-tight {
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .entry-card__rank {
@@ -2205,7 +2205,7 @@ body.is-resizing-editor-image {
   }
 
   .entry-card__title--ultra-tight {
-    font-size: 10px;
+    font-size: 9px;
   }
 
   .entry-card__rank {

@@ -36,11 +36,27 @@ function displayTag(rawTag: string | null | undefined, tags: string[], lang: Sit
   return raw;
 }
 
+function weightedTitleLength(title: string): number {
+  let total = 0;
+  for (const char of [...String(title || '')]) {
+    if (/\s/.test(char)) {
+      total += 0.4;
+      continue;
+    }
+    if (/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\u2e80-\u9fff\uff01-\uff60\uffa0-\uffef]/.test(char)) {
+      total += 2;
+      continue;
+    }
+    total += 1;
+  }
+  return total;
+}
+
 function titleClassName(title: string): string {
-  const length = [...String(title || '')].length;
-  if (length >= 64) return 'entry-card__title entry-card__title--ultra-tight';
-  if (length >= 46) return 'entry-card__title entry-card__title--tight';
-  if (length >= 28) return 'entry-card__title entry-card__title--compact';
+  const length = weightedTitleLength(title);
+  if (length >= 36) return 'entry-card__title entry-card__title--ultra-tight';
+  if (length >= 28) return 'entry-card__title entry-card__title--tight';
+  if (length >= 18) return 'entry-card__title entry-card__title--compact';
   return 'entry-card__title';
 }
 
