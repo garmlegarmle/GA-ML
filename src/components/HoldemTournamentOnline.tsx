@@ -741,7 +741,7 @@ export function HoldemTournamentOnline({
   }
 
   return (
-    <div className="holdem-online-shell">
+    <div className="holdem-app-theme holdem-online-shell">
       {error ? <p className="holdem-online-error">{error}</p> : null}
       <div
         className={[

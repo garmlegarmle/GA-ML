@@ -290,7 +290,9 @@ export function HoldemTournamentGameContent({ lang, embedded = false }: { lang: 
           </section>
         </>
       ) : (
-        <HoldemTournamentOnline lang={lang} playerName={playerName} onPlayerNameChange={handlePlayerNameChange} />
+        <div className="holdem-game-stage">
+          <HoldemTournamentOnline lang={lang} playerName={playerName} onPlayerNameChange={handlePlayerNameChange} />
+        </div>
       )}
     </div>
   );
