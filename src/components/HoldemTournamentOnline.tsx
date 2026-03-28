@@ -198,6 +198,43 @@ function formatStatus(status: HoldemOnlineTableSummary['status'], lang: SiteLang
   }
 }
 
+function rotateSeatIndex(seatIndex: number | null, heroSeatIndex: number | null) {
+  if (seatIndex === null || heroSeatIndex === null) {
+    return seatIndex;
+  }
+  return (seatIndex - heroSeatIndex + 9) % 9;
+}
+
+function buildViewerRelativeSnapshot(snapshot: HoldemOnlineTableSnapshot | null) {
+  if (!snapshot || snapshot.viewer.seatIndex === null) {
+    return snapshot;
+  }
+
+  const heroSeatIndex = snapshot.viewer.seatIndex;
+
+  return {
+    ...snapshot,
+    viewer: {
+      ...snapshot.viewer,
+      seatIndex: 0,
+    },
+    actingSeatIndex: rotateSeatIndex(snapshot.actingSeatIndex, heroSeatIndex),
+    buttonSeatIndex: rotateSeatIndex(snapshot.buttonSeatIndex, heroSeatIndex),
+    smallBlindSeatIndex: rotateSeatIndex(snapshot.smallBlindSeatIndex, heroSeatIndex),
+    bigBlindSeatIndex: rotateSeatIndex(snapshot.bigBlindSeatIndex, heroSeatIndex),
+    seats: snapshot.seats
+      .map((seat) => ({
+        ...seat,
+        seatIndex: rotateSeatIndex(seat.seatIndex, heroSeatIndex) ?? seat.seatIndex,
+      }))
+      .sort((left, right) => left.seatIndex - right.seatIndex),
+    participants: snapshot.participants.map((participant) => ({
+      ...participant,
+      seatIndex: rotateSeatIndex(participant.seatIndex, heroSeatIndex),
+    })),
+  };
+}
+
 function buildShortcutOptions(
   wagerAction: (HoldemOnlineLegalAction & { min: number; max: number }) | undefined,
   currentBet: number,
@@ -551,6 +588,7 @@ export function HoldemTournamentOnline({
   const remainingSeconds = snapshot?.actionDeadlineAt ? Math.max(0, Math.ceil((snapshot.actionDeadlineAt - clock) / 1000)) : null;
   const currentResult: HoldemTournamentResultSnapshot | null =
     snapshot?.lastTournamentResult && snapshot.lastTournamentResult.id !== dismissedResultId ? snapshot.lastTournamentResult : null;
+  const displaySnapshot = useMemo(() => buildViewerRelativeSnapshot(snapshot), [snapshot]);
 
   const sendEvent = (type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current;
@@ -561,16 +599,22 @@ export function HoldemTournamentOnline({
     ws.send(JSON.stringify({ type, payload }));
   };
 
-  const activeTable = snapshot?.tableId ? snapshot : currentTableId ? tables.find((table) => table.tableId === currentTableId) || null : null;
-  const activeTableLabel = snapshot?.label || activeTable?.label || '';
-  const actingSeatName = snapshot?.actingPlayerName || '';
+  const activeTable = displaySnapshot?.tableId
+    ? displaySnapshot
+    : currentTableId
+      ? tables.find((table) => table.tableId === currentTableId) || null
+      : null;
+  const activeTableLabel = displaySnapshot?.label || activeTable?.label || '';
+  const actingSeatName = displaySnapshot?.actingPlayerName || '';
 
   const currentViewerSeat = useMemo(() => {
-    if (!snapshot?.viewer?.seatIndex) {
-      return snapshot?.viewer?.seatIndex === 0 ? snapshot.seats.find((seat) => seat.seatIndex === 0) || null : null;
+    if (!displaySnapshot?.viewer?.seatIndex) {
+      return displaySnapshot?.viewer?.seatIndex === 0
+        ? displaySnapshot.seats.find((seat) => seat.seatIndex === 0) || null
+        : null;
     }
-    return snapshot.seats.find((seat) => seat.seatIndex === snapshot.viewer.seatIndex) || null;
-  }, [snapshot]);
+    return displaySnapshot.seats.find((seat) => seat.seatIndex === displaySnapshot.viewer.seatIndex) || null;
+  }, [displaySnapshot]);
 
   function handleJoinTable(tableId: string) {
     setCurrentTableId(tableId);
@@ -656,7 +700,7 @@ export function HoldemTournamentOnline({
             ))}
           </div>
         </section>
-      ) : snapshot ? (
+      ) : displaySnapshot ? (
         <div className="holdem-online-table">
           <section className="holdem-online-tablebar">
             <div>
@@ -664,7 +708,7 @@ export function HoldemTournamentOnline({
               <h3>{activeTableLabel}</h3>
             </div>
             <div className="holdem-online-tablebar__actions">
-              <span>{formatStatus(snapshot.status, lang)}</span>
+              <span>{formatStatus(displaySnapshot.status, lang)}</span>
               <button onClick={handleLeaveTable}>{copy.leave}</button>
             </div>
           </section>
@@ -713,10 +757,10 @@ export function HoldemTournamentOnline({
                     <div className={tableStyles.boardZone}>
                       <div className={tableStyles.potPanel}>
                         <span className={tableStyles.potLabel}>{copy.mainPot}</span>
-                        <strong className={tableStyles.potValue}>{snapshot.mainPot.toLocaleString()}</strong>
-                        {snapshot.sidePots.length > 0 ? (
+                        <strong className={tableStyles.potValue}>{displaySnapshot.mainPot.toLocaleString()}</strong>
+                        {displaySnapshot.sidePots.length > 0 ? (
                           <div className={tableStyles.sidePots}>
-                            {snapshot.sidePots.map((amount, index) => (
+                            {displaySnapshot.sidePots.map((amount, index) => (
                               <span key={`${amount}-${index}`}>
                                 {copy.sidePot} {index + 1}: {amount.toLocaleString()}
                               </span>
@@ -726,31 +770,31 @@ export function HoldemTournamentOnline({
                       </div>
                       <div className={tableStyles.potMetaStrip}>
                         <span>
-                          {copy.ante} {snapshot.currentLevel?.ante ?? 0} · {copy.bb} {snapshot.currentLevel?.bigBlind ?? 0}
+                          {copy.ante} {displaySnapshot.currentLevel?.ante ?? 0} · {copy.bb} {displaySnapshot.currentLevel?.bigBlind ?? 0}
                         </span>
                         <span>
-                          {copy.hand} {snapshot.handNumber} · {copy.level} {snapshot.currentLevel?.level ?? '—'}
+                          {copy.hand} {displaySnapshot.handNumber} · {copy.level} {displaySnapshot.currentLevel?.level ?? '—'}
                         </span>
                       </div>
                       <div className={tableStyles.communityBoard}>
-                        <CommunityCards cards={snapshot.communityCards as never[]} handNumber={snapshot.handNumber} />
+                        <CommunityCards cards={displaySnapshot.communityCards as never[]} handNumber={displaySnapshot.handNumber} />
                       </div>
                       <div className={tableStyles.handMessage}>
-                        {snapshot.handMessage ||
+                        {displaySnapshot.handMessage ||
                           (actingSeatName ? `${actingSeatName} ${copy.acting}` : '')}
                       </div>
                     </div>
                   </div>
-                  {snapshot.seats.map((seat) => (
+                  {displaySnapshot.seats.map((seat) => (
                     <SeatView
-                      key={`${snapshot.handNumber}-${seat.playerId}`}
+                      key={`${displaySnapshot.handNumber}-${seat.playerId}`}
                       seat={seat as unknown as HoldemSeat}
-                      handNumber={snapshot.handNumber}
-                      isActing={seat.seatIndex === snapshot.actingSeatIndex}
-                      isButton={seat.seatIndex === snapshot.buttonSeatIndex}
-                      isSmallBlind={seat.seatIndex === snapshot.smallBlindSeatIndex}
-                      isBigBlind={seat.seatIndex === snapshot.bigBlindSeatIndex}
-                      showCards={seat.playerId === playerId || seat.hasShownCards || snapshot.status === 'tournament_complete'}
+                      handNumber={displaySnapshot.handNumber}
+                      isActing={seat.seatIndex === displaySnapshot.actingSeatIndex}
+                      isButton={seat.seatIndex === displaySnapshot.buttonSeatIndex}
+                      isSmallBlind={seat.seatIndex === displaySnapshot.smallBlindSeatIndex}
+                      isBigBlind={seat.seatIndex === displaySnapshot.bigBlindSeatIndex}
+                      showCards={seat.playerId === playerId || seat.hasShownCards || displaySnapshot.status === 'tournament_complete'}
                       showHoleCards
                       isMobileLayout={isMobileLayout}
                       lang={lang}
@@ -762,22 +806,22 @@ export function HoldemTournamentOnline({
               <section className={tableStyles.controlDock}>
                 <div className={tableStyles.bottomRail}>
                   <div className={tableStyles.leftDock}>
-                    {snapshot.viewer.role === 'player' && snapshot.legalActions.length > 0 ? (
+                    {displaySnapshot.viewer.role === 'player' && displaySnapshot.legalActions.length > 0 ? (
                       <OnlineBettingControls
                         lang={lang}
-                        legalActions={snapshot.legalActions}
-                        amountToCall={snapshot.amountToCall}
+                        legalActions={displaySnapshot.legalActions}
+                        amountToCall={displaySnapshot.amountToCall}
                         currentBet={currentViewerSeat?.currentBet ?? 0}
-                        potSize={snapshot.totalPot}
-                        bigBlind={snapshot.currentLevel?.bigBlind ?? 0}
-                        disabled={snapshot.actingSeatIndex !== snapshot.viewer.seatIndex}
+                        potSize={displaySnapshot.totalPot}
+                        bigBlind={displaySnapshot.currentLevel?.bigBlind ?? 0}
+                        disabled={displaySnapshot.actingSeatIndex !== displaySnapshot.viewer.seatIndex}
                         onAction={handleAction}
                       />
                     ) : (
                       <div className={bettingStyles.disabled}>
-                        {snapshot.viewer.role === 'spectator'
+                        {displaySnapshot.viewer.role === 'spectator'
                           ? copy.spectatingMessage
-                          : snapshot.viewer.role === 'eliminated'
+                          : displaySnapshot.viewer.role === 'eliminated'
                             ? copy.eliminatedMessage
                             : copy.waitingForTurn}
                       </div>
@@ -788,7 +832,7 @@ export function HoldemTournamentOnline({
                     <div className="holdem-online-sidepanel">
                       <div className="holdem-online-sidepanel__meta">
                         <span>{copy.totalPot}</span>
-                        <strong>{snapshot.totalPot.toLocaleString()}</strong>
+                        <strong>{displaySnapshot.totalPot.toLocaleString()}</strong>
                       </div>
                       {remainingSeconds !== null ? (
                         <div className="holdem-online-sidepanel__meta">
@@ -796,25 +840,25 @@ export function HoldemTournamentOnline({
                           <strong>{remainingSeconds}s</strong>
                         </div>
                       ) : null}
-                      {snapshot.status === 'waiting' ? (
+                      {displaySnapshot.status === 'waiting' ? (
                         <button
                           type="button"
                           className="holdem-online-ready-button"
-                          onClick={() => sendEvent(snapshot.viewer.ready ? 'table:unset_ready' : 'table:set_ready')}
+                          onClick={() => sendEvent(displaySnapshot.viewer.ready ? 'table:unset_ready' : 'table:set_ready')}
                         >
-                          {snapshot.viewer.ready ? copy.cancelReady : copy.ready}
+                          {displaySnapshot.viewer.ready ? copy.cancelReady : copy.ready}
                         </button>
-                      ) : snapshot.viewer.role === 'spectator' || snapshot.viewer.role === 'eliminated' ? (
+                      ) : displaySnapshot.viewer.role === 'spectator' || displaySnapshot.viewer.role === 'eliminated' ? (
                         <button
                           type="button"
                           className="holdem-online-ready-button"
                           onClick={() =>
                             sendEvent(
-                              snapshot.viewer.nextTournamentReady ? 'table:unset_next_tournament_ready' : 'table:set_next_tournament_ready',
+                              displaySnapshot.viewer.nextTournamentReady ? 'table:unset_next_tournament_ready' : 'table:set_next_tournament_ready',
                             )
                           }
                         >
-                          {snapshot.viewer.nextTournamentReady ? copy.cancelNextTournamentReady : copy.nextTournamentReady}
+                          {displaySnapshot.viewer.nextTournamentReady ? copy.cancelNextTournamentReady : copy.nextTournamentReady}
                         </button>
                       ) : null}
                     </div>
@@ -828,7 +872,7 @@ export function HoldemTournamentOnline({
             <div className="holdem-online-participants">
               <h3>{copy.spectators}</h3>
               <ul>
-                {snapshot.participants.map((participant) => (
+                {displaySnapshot.participants.map((participant) => (
                   <li key={participant.playerId}>
                     <span>
                       {participant.displayName}
@@ -846,11 +890,11 @@ export function HoldemTournamentOnline({
 
             <div className="holdem-online-log">
               <h3>{copy.logs}</h3>
-              {snapshot.logs.length === 0 ? (
+              {displaySnapshot.logs.length === 0 ? (
                 <p>{copy.noLogs}</p>
               ) : (
                 <div className="holdem-online-log__list">
-                  {snapshot.logs.slice().reverse().map((entry) => (
+                  {displaySnapshot.logs.slice().reverse().map((entry) => (
                     <div key={entry.id} className="holdem-online-log__entry">
                       <span>{entry.text}</span>
                     </div>
