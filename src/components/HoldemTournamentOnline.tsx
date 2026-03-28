@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CommunityCards } from 'holdem/components/cards/CommunityCards';
 import { SeatView } from 'holdem/components/seat/SeatView';
+import { TableChips } from 'holdem/components/table/TableChips';
 import bettingStyles from 'holdem/components/betting/BettingControls.module.css';
 import tableStyles from 'holdem/components/table/TableScreen.module.css';
 import { useIsMobileTableLayout } from 'holdem/hooks/useIsMobileTableLayout';
@@ -14,6 +15,7 @@ import type {
   HoldemTournamentResultSnapshot,
   SiteLang,
 } from '../types';
+import type { ChipAnimationGameState } from 'holdem/components/table/TableChips';
 
 const SESSION_TOKEN_STORAGE_KEY = 'ga_ml_holdem_online_session_token';
 const CURRENT_TABLE_STORAGE_KEY = 'ga_ml_holdem_online_current_table';
@@ -231,6 +233,28 @@ function buildViewerRelativeSnapshot(snapshot: HoldemOnlineTableSnapshot | null)
     participants: snapshot.participants.map((participant) => ({
       ...participant,
       seatIndex: rotateSeatIndex(participant.seatIndex, heroSeatIndex),
+    })),
+  };
+}
+
+function buildOnlineChipState(snapshot: HoldemOnlineTableSnapshot | null): ChipAnimationGameState | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    hand: {
+      handNumber: snapshot.handNumber,
+      completed:
+        snapshot.status === 'showdown' ||
+        snapshot.status === 'tournament_complete' ||
+        snapshot.seats.some((seat) => seat.winningsThisHand > 0),
+    },
+    seats: snapshot.seats.map((seat) => ({
+      playerId: seat.playerId,
+      seatIndex: seat.seatIndex,
+      currentBet: seat.currentBet,
+      winningsThisHand: seat.winningsThisHand,
     })),
   };
 }
@@ -589,6 +613,7 @@ export function HoldemTournamentOnline({
   const currentResult: HoldemTournamentResultSnapshot | null =
     snapshot?.lastTournamentResult && snapshot.lastTournamentResult.id !== dismissedResultId ? snapshot.lastTournamentResult : null;
   const displaySnapshot = useMemo(() => buildViewerRelativeSnapshot(snapshot), [snapshot]);
+  const chipAnimationState = useMemo(() => buildOnlineChipState(displaySnapshot), [displaySnapshot]);
 
   const sendEvent = (type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current;
@@ -606,6 +631,7 @@ export function HoldemTournamentOnline({
       : null;
   const activeTableLabel = displaySnapshot?.label || activeTable?.label || '';
   const actingSeatName = displaySnapshot?.actingPlayerName || '';
+  const showLobbyOverlay = !currentTableId || !displaySnapshot;
 
   const currentViewerSeat = useMemo(() => {
     if (!displaySnapshot?.viewer?.seatIndex) {
@@ -636,72 +662,15 @@ export function HoldemTournamentOnline({
 
   return (
     <div className="holdem-online-shell">
-      <section className="holdem-online-head">
-        <div>
-          <h2>{copy.modeTitle}</h2>
-          <p>{copy.modeBody}</p>
-        </div>
-        <div className="holdem-online-connection">
-          <span>{copy.connection}</span>
-          <strong>{connectionLabel}</strong>
-        </div>
-      </section>
-
-      <section className="holdem-online-name-panel">
-        <div>
-          <h3>{copy.nameTitle}</h3>
-          <p>{copy.nameHint}</p>
-        </div>
-        <input
-          type="text"
-          value={playerName}
-          maxLength={24}
-          onChange={(event) => onPlayerNameChange(event.target.value)}
-          placeholder={lang === 'ko' ? '표시할 이름 입력' : 'Enter display name'}
-        />
-      </section>
-
       {error ? <p className="holdem-online-error">{error}</p> : null}
-
-      {!currentTableId ? (
-        <section className="holdem-online-lobby">
-          <div className="holdem-online-lobby__head">
-            <h3>{copy.tableListTitle}</h3>
-          </div>
-          <div className="holdem-online-lobby__grid">
-            {tables.map((table) => (
-              <article key={table.tableId} className="holdem-online-card">
-                <div className="holdem-online-card__head">
-                  <strong>{table.label}</strong>
-                  <span>{formatStatus(table.status, lang)}</span>
-                </div>
-                <dl className="holdem-online-card__stats">
-                  <div>
-                    <dt>{copy.tablePlayers}</dt>
-                    <dd>{table.connectedCount}</dd>
-                  </div>
-                  <div>
-                    <dt>{copy.tableSeated}</dt>
-                    <dd>{table.seatedCount}</dd>
-                  </div>
-                  <div>
-                    <dt>{copy.tableReady}</dt>
-                    <dd>{table.readyCount}</dd>
-                  </div>
-                  <div>
-                    <dt>{copy.level}</dt>
-                    <dd>{table.level ?? '—'}</dd>
-                  </div>
-                </dl>
-                <button disabled={!normalizedPlayerName || connectionStatus !== 'connected'} onClick={() => handleJoinTable(table.tableId)}>
-                  {copy.join}
-                </button>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : displaySnapshot ? (
-        <div className="holdem-online-table">
+      <div
+        className={[
+          tableStyles.page,
+          tableStyles.embeddedPage,
+          isMobileLayout ? tableStyles.mobilePage : '',
+        ].join(' ')}
+      >
+        {!showLobbyOverlay && displaySnapshot ? (
           <section className="holdem-online-tablebar">
             <div>
               <p>{copy.currentTable}</p>
@@ -712,49 +681,16 @@ export function HoldemTournamentOnline({
               <button onClick={handleLeaveTable}>{copy.leave}</button>
             </div>
           </section>
+        ) : null}
 
-          {currentResult ? (
-            <section className="holdem-online-result">
-              <div className="holdem-online-result__head">
-                <h3>{copy.resultTitle}</h3>
-                <button type="button" onClick={() => setDismissedResultId(currentResult.id)}>
-                  {copy.closeResult}
-                </button>
-              </div>
-              <div className="holdem-online-result__meta">
-                <span>{copy.resultLevel} {currentResult.level}</span>
-                <span>{copy.resultHands} {currentResult.handNumber}</span>
-              </div>
-              <div className="holdem-online-result__table">
-                <div className="holdem-online-result__row holdem-online-result__row--head">
-                  <span>{copy.place}</span>
-                  <span>{copy.player}</span>
-                  <span>{copy.chips}</span>
-                </div>
-                {currentResult.entries.map((entry) => (
-                  <div key={entry.playerId} className="holdem-online-result__row">
-                    <span>{formatPlacement(entry.finalPlace, lang)}</span>
-                    <span>{entry.playerName}</span>
-                    <span>{entry.chipCount.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <div
-            className={[
-              tableStyles.page,
-              tableStyles.embeddedPage,
-              isMobileLayout ? tableStyles.mobilePage : '',
-            ].join(' ')}
-          >
-            <main className={tableStyles.mainStage}>
-              <section className={tableStyles.tableWrap}>
-                <div className={[tableStyles.tableArena, isMobileLayout ? tableStyles.mobileTableArena : ''].join(' ')}>
-                  <div className={tableStyles.tableSurface}>
-                    <div className={tableStyles.innerGuide} />
-                    <div className={tableStyles.boardZone}>
+        <main className={tableStyles.mainStage}>
+          <section className={tableStyles.tableWrap}>
+            <div className={[tableStyles.tableArena, isMobileLayout ? tableStyles.mobileTableArena : ''].join(' ')}>
+              <div className={tableStyles.tableSurface}>
+                <div className={tableStyles.innerGuide} />
+                <div className={tableStyles.boardZone}>
+                  {displaySnapshot ? (
+                    <>
                       <div className={tableStyles.potPanel}>
                         <span className={tableStyles.potLabel}>{copy.mainPot}</span>
                         <strong className={tableStyles.potValue}>{displaySnapshot.mainPot.toLocaleString()}</strong>
@@ -783,132 +719,218 @@ export function HoldemTournamentOnline({
                         {displaySnapshot.handMessage ||
                           (actingSeatName ? `${actingSeatName} ${copy.acting}` : '')}
                       </div>
+                    </>
+                  ) : (
+                    <div className="holdem-online-standby">
+                      <span className="holdem-online-standby__eyebrow">{copy.modeTitle}</span>
+                      <strong className="holdem-online-standby__title">{copy.modeBody}</strong>
                     </div>
-                  </div>
-                  {displaySnapshot.seats.map((seat) => (
-                    <SeatView
-                      key={`${displaySnapshot.handNumber}-${seat.playerId}`}
-                      seat={seat as unknown as HoldemSeat}
-                      handNumber={displaySnapshot.handNumber}
-                      isActing={seat.seatIndex === displaySnapshot.actingSeatIndex}
-                      isButton={seat.seatIndex === displaySnapshot.buttonSeatIndex}
-                      isSmallBlind={seat.seatIndex === displaySnapshot.smallBlindSeatIndex}
-                      isBigBlind={seat.seatIndex === displaySnapshot.bigBlindSeatIndex}
-                      showCards={seat.playerId === playerId || seat.hasShownCards || displaySnapshot.status === 'tournament_complete'}
-                      showHoleCards
-                      isMobileLayout={isMobileLayout}
-                      lang={lang}
-                    />
-                  ))}
+                  )}
                 </div>
-              </section>
+              </div>
 
-              <section className={tableStyles.controlDock}>
-                <div className={tableStyles.bottomRail}>
-                  <div className={tableStyles.leftDock}>
-                    {displaySnapshot.viewer.role === 'player' && displaySnapshot.legalActions.length > 0 ? (
-                      <OnlineBettingControls
-                        lang={lang}
-                        legalActions={displaySnapshot.legalActions}
-                        amountToCall={displaySnapshot.amountToCall}
-                        currentBet={currentViewerSeat?.currentBet ?? 0}
-                        potSize={displaySnapshot.totalPot}
-                        bigBlind={displaySnapshot.currentLevel?.bigBlind ?? 0}
-                        disabled={displaySnapshot.actingSeatIndex !== displaySnapshot.viewer.seatIndex}
-                        onAction={handleAction}
+              {displaySnapshot?.seats.map((seat) => (
+                <SeatView
+                  key={`${displaySnapshot.handNumber}-${seat.playerId}`}
+                  seat={seat as unknown as HoldemSeat}
+                  handNumber={displaySnapshot.handNumber}
+                  isActing={seat.seatIndex === displaySnapshot.actingSeatIndex}
+                  isButton={seat.seatIndex === displaySnapshot.buttonSeatIndex}
+                  isSmallBlind={seat.seatIndex === displaySnapshot.smallBlindSeatIndex}
+                  isBigBlind={seat.seatIndex === displaySnapshot.bigBlindSeatIndex}
+                  showCards={seat.playerId === playerId || seat.hasShownCards || displaySnapshot.status === 'tournament_complete'}
+                  showHoleCards
+                  isMobileLayout={isMobileLayout}
+                  lang={lang}
+                />
+              ))}
+
+              {displaySnapshot && chipAnimationState ? (
+                <TableChips game={chipAnimationState} totalPot={displaySnapshot.totalPot} isMobileLayout={isMobileLayout} />
+              ) : null}
+
+              {showLobbyOverlay ? (
+                <div className={tableStyles.startOverlay}>
+                  <div className={`${tableStyles.startCard} holdem-online-overlay-card`}>
+                    <span className={tableStyles.startEyebrow}>{copy.modeTitle}</span>
+                    <h2 className={tableStyles.startTitle}>{copy.tableListTitle}</h2>
+                    <p className={tableStyles.startCopy}>{copy.modeBody}</p>
+                    <div className="holdem-online-overlay-status">
+                      <span>{copy.connection}</span>
+                      <strong>{connectionLabel}</strong>
+                    </div>
+                    <label className={tableStyles.startField}>
+                      <span className={tableStyles.startFieldLabel}>{copy.nameTitle}</span>
+                      <input
+                        className={tableStyles.startInput}
+                        type="text"
+                        value={playerName}
+                        maxLength={24}
+                        onChange={(event) => onPlayerNameChange(event.target.value)}
+                        placeholder={lang === 'ko' ? '표시할 이름 입력' : 'Enter display name'}
                       />
-                    ) : (
-                      <div className={bettingStyles.disabled}>
-                        {displaySnapshot.viewer.role === 'spectator'
-                          ? copy.spectatingMessage
-                          : displaySnapshot.viewer.role === 'eliminated'
-                            ? copy.eliminatedMessage
-                            : copy.waitingForTurn}
+                    </label>
+                    {!currentTableId ? <p className={tableStyles.startHint}>{copy.nameHint}</p> : null}
+                    {!currentTableId ? (
+                      <div className="holdem-online-lobby__grid">
+                        {tables.map((table) => (
+                          <article key={table.tableId} className="holdem-online-card">
+                            <div className="holdem-online-card__head">
+                              <strong>{table.label}</strong>
+                              <span>{formatStatus(table.status, lang)}</span>
+                            </div>
+                            <dl className="holdem-online-card__stats">
+                              <div>
+                                <dt>{copy.tablePlayers}</dt>
+                                <dd>{table.connectedCount}</dd>
+                              </div>
+                              <div>
+                                <dt>{copy.tableSeated}</dt>
+                                <dd>{table.seatedCount}</dd>
+                              </div>
+                              <div>
+                                <dt>{copy.tableReady}</dt>
+                                <dd>{table.readyCount}</dd>
+                              </div>
+                              <div>
+                                <dt>{copy.level}</dt>
+                                <dd>{table.level ?? '—'}</dd>
+                              </div>
+                            </dl>
+                            <button
+                              disabled={!normalizedPlayerName || connectionStatus !== 'connected'}
+                              onClick={() => handleJoinTable(table.tableId)}
+                            >
+                              {copy.join}
+                            </button>
+                          </article>
+                        ))}
                       </div>
+                    ) : (
+                      <p className="holdem-online-loading">{copy.loadingTable}</p>
                     )}
                   </div>
+                </div>
+              ) : null}
 
-                  <div className={tableStyles.rightDock}>
-                    <div className="holdem-online-sidepanel">
-                      <div className="holdem-online-sidepanel__meta">
-                        <span>{copy.totalPot}</span>
-                        <strong>{displaySnapshot.totalPot.toLocaleString()}</strong>
+              {currentResult ? (
+                <div className={tableStyles.startOverlay}>
+                  <div className={`${tableStyles.startCard} holdem-online-result-card`}>
+                    <div className="holdem-online-result__head">
+                      <h3>{copy.resultTitle}</h3>
+                      <button type="button" onClick={() => setDismissedResultId(currentResult.id)}>
+                        {copy.closeResult}
+                      </button>
+                    </div>
+                    <div className="holdem-online-result__meta">
+                      <span>{copy.resultLevel} {currentResult.level}</span>
+                      <span>{copy.resultHands} {currentResult.handNumber}</span>
+                    </div>
+                    <div className="holdem-online-result__table">
+                      <div className="holdem-online-result__row holdem-online-result__row--head">
+                        <span>{copy.place}</span>
+                        <span>{copy.player}</span>
+                        <span>{copy.chips}</span>
                       </div>
-                      {remainingSeconds !== null ? (
-                        <div className="holdem-online-sidepanel__meta">
-                          <span>{copy.actionDeadline}</span>
-                          <strong>{remainingSeconds}s</strong>
+                      {currentResult.entries.map((entry) => (
+                        <div key={entry.playerId} className="holdem-online-result__row">
+                          <span>{formatPlacement(entry.finalPlace, lang)}</span>
+                          <span>{entry.playerName}</span>
+                          <span>{entry.chipCount.toLocaleString()}</span>
                         </div>
-                      ) : null}
-                      {displaySnapshot.status === 'waiting' ? (
-                        <button
-                          type="button"
-                          className="holdem-online-ready-button"
-                          onClick={() => sendEvent(displaySnapshot.viewer.ready ? 'table:unset_ready' : 'table:set_ready')}
-                        >
-                          {displaySnapshot.viewer.ready ? copy.cancelReady : copy.ready}
-                        </button>
-                      ) : displaySnapshot.viewer.role === 'spectator' || displaySnapshot.viewer.role === 'eliminated' ? (
-                        <button
-                          type="button"
-                          className="holdem-online-ready-button"
-                          onClick={() =>
-                            sendEvent(
-                              displaySnapshot.viewer.nextTournamentReady ? 'table:unset_next_tournament_ready' : 'table:set_next_tournament_ready',
-                            )
-                          }
-                        >
-                          {displaySnapshot.viewer.nextTournamentReady ? copy.cancelNextTournamentReady : copy.nextTournamentReady}
-                        </button>
-                      ) : null}
+                      ))}
                     </div>
                   </div>
                 </div>
-              </section>
-            </main>
-          </div>
-
-          <section className="holdem-online-rail">
-            <div className="holdem-online-participants">
-              <h3>{copy.spectators}</h3>
-              <ul>
-                {displaySnapshot.participants.map((participant) => (
-                  <li key={participant.playerId}>
-                    <span>
-                      {participant.displayName}
-                      {participant.playerId === playerId ? ` (${copy.you})` : ''}
-                    </span>
-                    <span>
-                      {participant.connected ? copy.connected : copy.disconnected}
-                      {participant.ready ? ` · ${copy.ready}` : ''}
-                      {participant.nextTournamentReady ? ` · ${copy.nextTournamentReady}` : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="holdem-online-log">
-              <h3>{copy.logs}</h3>
-              {displaySnapshot.logs.length === 0 ? (
-                <p>{copy.noLogs}</p>
-              ) : (
-                <div className="holdem-online-log__list">
-                  {displaySnapshot.logs.slice().reverse().map((entry) => (
-                    <div key={entry.id} className="holdem-online-log__entry">
-                      <span>{entry.text}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              ) : null}
             </div>
           </section>
-        </div>
-      ) : (
-        <section className="holdem-online-lobby">
-          <p>{copy.loadingTable}</p>
-        </section>
-      )}
+
+          {displaySnapshot ? (
+            <section className={tableStyles.controlDock}>
+              <div className={tableStyles.bottomRail}>
+                <div className={tableStyles.leftDock}>
+                  {displaySnapshot.viewer.role === 'player' && displaySnapshot.legalActions.length > 0 ? (
+                    <OnlineBettingControls
+                      lang={lang}
+                      legalActions={displaySnapshot.legalActions}
+                      amountToCall={displaySnapshot.amountToCall}
+                      currentBet={currentViewerSeat?.currentBet ?? 0}
+                      potSize={displaySnapshot.totalPot}
+                      bigBlind={displaySnapshot.currentLevel?.bigBlind ?? 0}
+                      disabled={displaySnapshot.actingSeatIndex !== displaySnapshot.viewer.seatIndex}
+                      onAction={handleAction}
+                    />
+                  ) : (
+                    <div className={bettingStyles.disabled}>
+                      {displaySnapshot.viewer.eliminated
+                        ? copy.eliminatedMessage
+                        : displaySnapshot.viewer.role === 'spectator'
+                          ? copy.spectatingMessage
+                          : copy.waitingForTurn}
+                    </div>
+                  )}
+                </div>
+
+                <div className={tableStyles.rightDock}>
+                  <div className="holdem-online-sidepanel">
+                    <div className="holdem-online-sidepanel__meta">
+                      <span>{copy.totalPot}</span>
+                      <strong>{displaySnapshot.totalPot.toLocaleString()}</strong>
+                    </div>
+                    {remainingSeconds !== null ? (
+                      <div className="holdem-online-sidepanel__meta">
+                        <span>{copy.actionDeadline}</span>
+                        <strong>{remainingSeconds}s</strong>
+                      </div>
+                    ) : null}
+                    {displaySnapshot.status === 'waiting' ? (
+                      <button
+                        type="button"
+                        className="holdem-online-ready-button"
+                        onClick={() => sendEvent(displaySnapshot.viewer.ready ? 'table:unset_ready' : 'table:set_ready')}
+                      >
+                        {displaySnapshot.viewer.ready ? copy.cancelReady : copy.ready}
+                      </button>
+                    ) : displaySnapshot.viewer.role === 'spectator' ? (
+                      <button
+                        type="button"
+                        className="holdem-online-ready-button"
+                        onClick={() =>
+                          sendEvent(
+                            displaySnapshot.viewer.nextTournamentReady ? 'table:unset_next_tournament_ready' : 'table:set_next_tournament_ready',
+                          )
+                        }
+                      >
+                        {displaySnapshot.viewer.nextTournamentReady ? copy.cancelNextTournamentReady : copy.nextTournamentReady}
+                      </button>
+                    ) : null}
+
+                    <div className="holdem-online-sidepanel__participants">
+                      <h3>{copy.spectators}</h3>
+                      <ul>
+                        {displaySnapshot.participants.map((participant) => (
+                          <li key={participant.playerId}>
+                            <span>
+                              {participant.displayName}
+                              {participant.playerId === playerId ? ` (${copy.you})` : ''}
+                            </span>
+                            <span>
+                              {participant.connected ? copy.connected : copy.disconnected}
+                              {participant.ready ? ` · ${copy.ready}` : ''}
+                              {participant.nextTournamentReady ? ` · ${copy.nextTournamentReady}` : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          ) : null}
+        </main>
+      </div>
     </div>
   );
 }

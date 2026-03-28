@@ -297,7 +297,8 @@ export interface HoldemOnlineTableSnapshot extends HoldemOnlineTableSummary {
     playerId: string;
     displayName: string;
     connected: boolean;
-    role: 'player' | 'eliminated' | 'spectator';
+    role: 'player' | 'spectator';
+    eliminated: boolean;
     ready: boolean;
     nextTournamentReady: boolean;
     seatIndex: number | null;

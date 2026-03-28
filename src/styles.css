@@ -2672,20 +2672,13 @@ body.is-resizing-editor-image {
   gap: 18px;
 }
 
-.holdem-online-head,
-.holdem-online-name-panel,
-.holdem-online-lobby,
 .holdem-online-tablebar,
-.holdem-online-result,
-.holdem-online-participants,
-.holdem-online-log {
+.holdem-online-result {
   border: 1px solid var(--border);
   background: #fffef8;
   padding: 18px;
 }
 
-.holdem-online-head,
-.holdem-online-name-panel,
 .holdem-online-tablebar {
   display: flex;
   justify-content: space-between;
@@ -2693,25 +2686,12 @@ body.is-resizing-editor-image {
   gap: 18px;
 }
 
-.holdem-online-head h2,
-.holdem-online-name-panel h3,
-.holdem-online-lobby__head h3,
 .holdem-online-tablebar h3,
 .holdem-online-result__head h3,
-.holdem-online-participants h3,
-.holdem-online-log h3 {
+.holdem-online-sidepanel__participants h3 {
   margin: 0;
   font-size: 20px;
   line-height: 1.15;
-}
-
-.holdem-online-head p,
-.holdem-online-name-panel p,
-.holdem-online-lobby p,
-.holdem-online-log p {
-  margin: 8px 0 0;
-  font-size: 14px;
-  line-height: 1.6;
 }
 
 .holdem-online-connection {
@@ -2729,16 +2709,6 @@ body.is-resizing-editor-image {
   color: rgba(17, 20, 23, 0.7);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-}
-
-.holdem-online-name-panel input {
-  min-width: min(280px, 100%);
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 15px;
-  padding: 12px 14px;
 }
 
 .holdem-online-error {
@@ -2812,6 +2782,28 @@ body.is-resizing-editor-image {
   gap: 18px;
 }
 
+.holdem-online-standby {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  max-width: 360px;
+  text-align: center;
+}
+
+.holdem-online-standby__eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(232, 221, 180, 0.78);
+}
+
+.holdem-online-standby__title {
+  font-size: 15px;
+  line-height: 1.7;
+  color: rgba(255, 250, 230, 0.94);
+  font-weight: 600;
+}
+
 .holdem-online-tablebar__actions {
   display: flex;
   align-items: center;
@@ -2855,21 +2847,51 @@ body.is-resizing-editor-image {
   color: rgba(17, 20, 23, 0.64);
 }
 
-.holdem-online-rail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 18px;
+.holdem-online-overlay-card {
+  width: min(660px, calc(100% - 28px));
+  text-align: left;
 }
 
-.holdem-online-participants ul {
+.holdem-online-overlay-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 248, 228, 0.92);
+}
+
+.holdem-online-overlay-status span {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(226, 212, 167, 0.78);
+}
+
+.holdem-online-loading {
+  margin: 10px 0 0;
+  color: rgba(233, 221, 180, 0.92);
+  text-align: center;
+}
+
+.holdem-online-sidepanel__participants {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.holdem-online-sidepanel__participants ul {
   list-style: none;
   padding: 0;
-  margin: 16px 0 0;
+  margin: 0;
   display: grid;
   gap: 10px;
 }
 
-.holdem-online-participants li {
+.holdem-online-sidepanel__participants li {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -2878,24 +2900,9 @@ body.is-resizing-editor-image {
   line-height: 1.5;
 }
 
-.holdem-online-participants li span:last-child {
+.holdem-online-sidepanel__participants li span:last-child {
   color: rgba(17, 20, 23, 0.68);
   text-align: right;
-}
-
-.holdem-online-log__list {
-  margin-top: 16px;
-  display: grid;
-  gap: 10px;
-  max-height: 280px;
-  overflow: auto;
-}
-
-.holdem-online-log__entry {
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(17, 20, 23, 0.08);
-  font-size: 14px;
-  line-height: 1.5;
 }
 
 .holdem-online-sidepanel {
@@ -2927,13 +2934,10 @@ body.is-resizing-editor-image {
   }
 
   .holdem-game-mode-switch,
-  .holdem-online-lobby__grid,
-  .holdem-online-rail {
+  .holdem-online-lobby__grid {
     grid-template-columns: 1fr;
   }
 
-  .holdem-online-head,
-  .holdem-online-name-panel,
   .holdem-online-tablebar {
     display: grid;
   }
@@ -2974,7 +2978,7 @@ body.is-resizing-editor-image {
 
   .holdem-online-result__row,
   .holdem-online-card__stats,
-  .holdem-online-participants li {
+  .holdem-online-sidepanel__participants li {
     grid-template-columns: 1fr;
     display: grid;
   }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { MOBILE_TABLE_SEAT_LAYOUT, TABLE_SEAT_LAYOUT } from 'holdem/config/theme';
-import type { GameState } from 'holdem/types/engine';
+import type { GameState, Seat } from 'holdem/types/engine';
 import styles from 'holdem/components/table/TableChips.module.css';
 
 type ChipTone = 'white' | 'red' | 'blue' | 'yellow';
@@ -83,7 +83,17 @@ interface ChipSnapshot {
   currentBetTotal: number;
 }
 
-function createSnapshot(game: GameState): ChipSnapshot {
+export interface ChipAnimationGameState {
+  hand: Pick<GameState['hand'], 'handNumber' | 'completed'>;
+  seats: Array<
+    Pick<
+      Seat,
+      'playerId' | 'seatIndex' | 'currentBet' | 'winningsThisHand'
+    >
+  >;
+}
+
+function createSnapshot(game: ChipAnimationGameState): ChipSnapshot {
   return {
     handNumber: game.hand.handNumber,
     currentBets: new Map(game.seats.map((seat) => [seat.playerId, seat.currentBet])),
@@ -92,7 +102,15 @@ function createSnapshot(game: GameState): ChipSnapshot {
   };
 }
 
-export function TableChips({ game, totalPot, isMobileLayout = false }: { game: GameState; totalPot: number; isMobileLayout?: boolean }) {
+export function TableChips({
+  game,
+  totalPot,
+  isMobileLayout = false,
+}: {
+  game: ChipAnimationGameState;
+  totalPot: number;
+  isMobileLayout?: boolean;
+}) {
   const previousSnapshotRef = useRef<ChipSnapshot | null>(null);
   const [effects, setEffects] = useState<ChipEffect[]>([]);
   const currentBetTotal = game.seats.reduce((sum, seat) => sum + seat.currentBet, 0);

@@ -172,7 +172,7 @@ function buildTableSummary(table) {
     label: table.label,
     status: table.status,
     connectedCount: connectedParticipants.length,
-    seatedCount: table.game ? table.game.seats.length : 0,
+    seatedCount: table.game ? table.game.seats.filter((seat) => seat.status === 'active').length : 0,
     readyCount,
     handNumber: table.game?.hand.handNumber ?? 0,
     level: table.game?.currentLevel.level ?? null,
@@ -181,9 +181,31 @@ function buildTableSummary(table) {
   };
 }
 
-function isViewerSeated(table, playerId) {
+function hasActiveSeat(table, playerId) {
   if (!table.game) return false;
-  return table.game.seats.some((seat) => seat.playerId === playerId);
+  return table.game.seats.some((seat) => seat.playerId === playerId && seat.status === 'active');
+}
+
+function syncParticipantSeatState(table) {
+  if (!table.game) {
+    for (const participant of table.participants.values()) {
+      participant.currentSeatIndex = null;
+    }
+    return;
+  }
+
+  for (const participant of table.participants.values()) {
+    const activeSeat = table.game.seats.find(
+      (seat) => seat.playerId === participant.playerId && seat.status === 'active',
+    );
+    participant.currentSeatIndex = activeSeat?.seatIndex ?? null;
+  }
+}
+
+function hasConnectedSeatedPlayers(table) {
+  return [...table.participants.values()].some(
+    (participant) => participant.connected && participant.currentSeatIndex !== null,
+  );
 }
 
 function buildTableSnapshot(table, viewerPlayerId) {
@@ -191,6 +213,7 @@ function buildTableSnapshot(table, viewerPlayerId) {
   const game = table.game;
   const actingSeat = findActingSeat(game);
   const viewerSeat = game?.seats.find((seat) => seat.playerId === viewerPlayerId) || null;
+  const viewerEliminated = Boolean(viewerSeat && viewerSeat.status === 'busted');
   const revealAll = game?.phase === 'tournament_complete';
   const legalActions = viewerSeat ? getLegalActions(game, viewerPlayerId) : [];
   const amountToCall = viewerSeat ? getAmountToCall(game, viewerSeat) : 0;
@@ -201,10 +224,11 @@ function buildTableSnapshot(table, viewerPlayerId) {
       playerId: viewerPlayerId,
       displayName: participant?.displayName || '',
       connected: Boolean(participant?.connected),
-      role: viewerSeat ? (viewerSeat.status === 'active' ? 'player' : 'eliminated') : 'spectator',
+      role: viewerSeat && viewerSeat.status === 'active' ? 'player' : 'spectator',
+      eliminated: viewerEliminated,
       ready: Boolean(participant?.ready),
       nextTournamentReady: Boolean(participant?.nextTournamentReady),
-      seatIndex: viewerSeat?.seatIndex ?? null,
+      seatIndex: viewerSeat && viewerSeat.status === 'active' ? viewerSeat.seatIndex : null,
     },
     actionDeadlineAt: table.actionTimeout?.deadlineAt ?? null,
     actingSeatIndex: actingSeat?.seatIndex ?? null,
@@ -228,7 +252,7 @@ function buildTableSnapshot(table, viewerPlayerId) {
         connected: entry.connected,
         ready: entry.ready,
         nextTournamentReady: entry.nextTournamentReady,
-        seated: isViewerSeated(table, entry.playerId),
+        seated: hasActiveSeat(table, entry.playerId),
         seatIndex: entry.currentSeatIndex,
       }))
       .sort((left, right) => left.displayName.localeCompare(right.displayName)),
@@ -323,6 +347,9 @@ export function createHoldemOnlineManager() {
       participant.ready = false;
       participant.nextTournamentReady = false;
       participant.disconnectedAt = now();
+      if (!hasConnectedSeatedPlayers(table)) {
+        terminateAbandonedTournament(table);
+      }
       return;
     }
 
@@ -366,6 +393,28 @@ export function createHoldemOnlineManager() {
 
     table.game = null;
     broadcastTable(table, 'tournament:result_snapshot');
+    broadcastTables();
+  }
+
+  function terminateAbandonedTournament(table) {
+    clearActionTimeout(table);
+    table.game = null;
+    table.status = 'waiting';
+    table.lastTournamentResult = null;
+
+    for (const [playerId, participant] of [...table.participants.entries()]) {
+      participant.currentSeatIndex = null;
+      participant.ready = false;
+      participant.nextTournamentReady = false;
+
+      if (!participant.connected) {
+        table.participants.delete(playerId);
+        playerTable.delete(playerId);
+        clearDisconnectTimeout(table, playerId);
+      }
+    }
+
+    broadcastTable(table);
     broadcastTables();
   }
 
@@ -413,6 +462,7 @@ export function createHoldemOnlineManager() {
   function driveTable(table) {
     clearActionTimeout(table);
     while (table.game) {
+      syncParticipantSeatState(table);
       if (table.game.phase === 'tournament_complete') {
         finalizeTournament(table);
         return;
@@ -435,6 +485,7 @@ export function createHoldemOnlineManager() {
       const previousState = table.game;
       const nextState = advanceOnlineState(table.game);
       table.game = nextState;
+      syncParticipantSeatState(table);
       const eventType = eventTypeForTransition(previousState, nextState);
       broadcastTable(table, eventType);
       broadcastTables();
@@ -558,7 +609,11 @@ export function createHoldemOnlineManager() {
       participant.disconnectedAt = now();
       participant.ready = false;
       participant.nextTournamentReady = false;
-      scheduleDisconnectCleanup(table, playerId);
+      if (!hasConnectedSeatedPlayers(table)) {
+        terminateAbandonedTournament(table);
+      } else {
+        scheduleDisconnectCleanup(table, playerId);
+      }
     } else {
       table.participants.delete(playerId);
       playerTable.delete(playerId);
@@ -596,7 +651,11 @@ export function createHoldemOnlineManager() {
           participant.disconnectedAt = now();
           participant.ready = false;
           participant.nextTournamentReady = false;
-          scheduleDisconnectCleanup(table, connection.playerId);
+          if (!hasConnectedSeatedPlayers(table)) {
+            terminateAbandonedTournament(table);
+          } else {
+            scheduleDisconnectCleanup(table, connection.playerId);
+          }
           broadcastTable(table);
           broadcastTables();
         }
@@ -633,6 +692,7 @@ export function createHoldemOnlineManager() {
     }
 
     table.game = nextState;
+    syncParticipantSeatState(table);
     broadcastTable(table, 'action:applied', () => ({
       action: {
         playerId: connection.playerId,
