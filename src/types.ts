@@ -216,6 +216,11 @@ export interface HoldemOnlineLegalAction {
   isRaise?: boolean;
 }
 
+export interface HoldemOnlineTableSettings {
+  actionTimeoutSeconds: number;
+  betweenHandsDelaySeconds: number;
+}
+
 export interface HoldemOnlineTableSummary {
   tableId: string;
   label: string;
@@ -227,6 +232,9 @@ export interface HoldemOnlineTableSummary {
   level: number | null;
   smallBlind: number | null;
   bigBlind: number | null;
+  captainPlayerId: string | null;
+  captainDisplayName: string | null;
+  settings: HoldemOnlineTableSettings;
 }
 
 export interface HoldemOnlineParticipant {
@@ -237,6 +245,7 @@ export interface HoldemOnlineParticipant {
   nextTournamentReady: boolean;
   seated: boolean;
   seatIndex: number | null;
+  isCaptain: boolean;
 }
 
 export interface HoldemOnlineSeat {
@@ -303,6 +312,7 @@ export interface HoldemOnlineTableSnapshot extends HoldemOnlineTableSummary {
     ready: boolean;
     nextTournamentReady: boolean;
     seatIndex: number | null;
+    isCaptain: boolean;
   };
   actionDeadlineAt: number | null;
   actingSeatIndex: number | null;
@@ -327,6 +337,7 @@ export interface HoldemOnlineTableSnapshot extends HoldemOnlineTableSummary {
   legalActions: HoldemOnlineLegalAction[];
   amountToCall: number;
   lastTournamentResult: HoldemTournamentResultSnapshot | null;
+  settings: HoldemOnlineTableSettings;
 }
 
 export interface HoldemOnlineSessionResponse {

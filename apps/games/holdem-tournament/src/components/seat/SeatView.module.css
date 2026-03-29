@@ -113,12 +113,35 @@
   font-size: 0.74rem;
 }
 
+.timer {
+  margin-top: 6px;
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(241, 212, 136, 0.16);
+  border: 1px solid rgba(241, 212, 136, 0.28);
+  color: rgba(255, 244, 214, 0.94);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
 .cards {
   display: flex;
   justify-content: center;
   gap: 10px;
   margin-top: 7px;
   flex-wrap: nowrap;
+}
+
+.cardsButton {
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .humanSeat .cards {
@@ -191,6 +214,14 @@
 
   .stack {
     margin-top: 3px;
+    font-size: 0.52rem;
+  }
+
+  .timer {
+    margin-top: 4px;
+    min-height: 14px;
+    min-width: 32px;
+    padding: 0 6px;
     font-size: 0.52rem;
   }
 

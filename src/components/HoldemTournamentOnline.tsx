@@ -23,6 +23,8 @@ import type { ChipAnimationGameState } from 'holdem/components/table/TableChips'
 
 const SESSION_TOKEN_STORAGE_KEY = 'ga_ml_holdem_online_session_token';
 const ONLINE_HANDS_PER_LEVEL = 8;
+const ACTION_TIMEOUT_OPTIONS = [15, 20, 30, 45, 60];
+const BETWEEN_HANDS_DELAY_OPTIONS = [5, 8, 10, 12, 15];
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error';
 
@@ -39,6 +41,13 @@ const COPY = {
     connecting: 'Connecting…',
     reconnecting: 'Reconnecting…',
     disconnected: 'Disconnected',
+    settings: 'Settings',
+    settingsTitle: 'Table settings',
+    settingsBody: 'Only the first player to join a table can change live table options.',
+    actionTimeoutSetting: 'Action time per turn',
+    betweenHandsDelaySetting: 'Delay before next hand',
+    saveSettings: 'Save settings',
+    closeSettings: 'Close',
     nameTitle: 'Choose your online display name',
     nameHint: 'The same name is used for AI mode and online tables.',
     continueToTables: 'Continue',
@@ -107,6 +116,13 @@ const COPY = {
     connecting: '연결 중…',
     reconnecting: '재연결 중…',
     disconnected: '연결 끊김',
+    settings: '설정',
+    settingsTitle: '테이블 설정',
+    settingsBody: '해당 테이블에 가장 먼저 들어온 플레이어만 라이브 테이블 옵션을 바꿀 수 있습니다.',
+    actionTimeoutSetting: '턴당 제한 시간',
+    betweenHandsDelaySetting: '다음 핸드까지 대기 시간',
+    saveSettings: '설정 저장',
+    closeSettings: '닫기',
     nameTitle: '온라인 표시 이름',
     nameHint: 'AI 모드와 온라인 테이블에서 같은 이름을 사용합니다.',
     continueToTables: '다음',
@@ -519,6 +535,11 @@ export function HoldemTournamentOnline({
   const [error, setError] = useState<string | null>(null);
   const [dismissedResultId, setDismissedResultId] = useState<string | null>(null);
   const [setupStep, setSetupStep] = useState<'name' | 'table'>(initialSetupStep);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsActionTimeout, setSettingsActionTimeout] = useState(30);
+  const [settingsBetweenHandsDelay, setSettingsBetweenHandsDelay] = useState(10);
+  const [revealedCardsBySeat, setRevealedCardsBySeat] = useState<Record<string, number>>({});
+  const [deadlineNow, setDeadlineNow] = useState(() => Date.now());
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const onPlayerNameChangeRef = useRef(onPlayerNameChange);
@@ -700,6 +721,31 @@ export function HoldemTournamentOnline({
   const chipAnimationState = useMemo(() => buildOnlineChipState(displaySnapshot), [displaySnapshot]);
   const isWaitingRoom = displaySnapshot?.status === 'waiting';
   const showLobbyOverlay = !displaySnapshot;
+  const countdownSeconds =
+    displaySnapshot?.actionDeadlineAt && displaySnapshot.actingSeatIndex !== null
+      ? Math.max(0, Math.ceil((displaySnapshot.actionDeadlineAt - deadlineNow) / 1000))
+      : null;
+
+  useEffect(() => {
+    setRevealedCardsBySeat({});
+  }, [displaySnapshot?.tableId, displaySnapshot?.handNumber]);
+
+  useEffect(() => {
+    if (!displaySnapshot?.settings || showSettings) return;
+    setSettingsActionTimeout(displaySnapshot.settings.actionTimeoutSeconds);
+    setSettingsBetweenHandsDelay(displaySnapshot.settings.betweenHandsDelaySeconds);
+  }, [displaySnapshot?.settings.actionTimeoutSeconds, displaySnapshot?.settings.betweenHandsDelaySeconds, showSettings]);
+
+  useEffect(() => {
+    if (!displaySnapshot?.actionDeadlineAt || displaySnapshot.actingSeatIndex === null || typeof window === 'undefined') {
+      return;
+    }
+
+    const tick = () => setDeadlineNow(Date.now());
+    tick();
+    const timer = window.setInterval(tick, 250);
+    return () => window.clearInterval(timer);
+  }, [displaySnapshot?.actionDeadlineAt, displaySnapshot?.actingSeatIndex]);
 
   const sendEvent = (type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current;
@@ -723,6 +769,7 @@ export function HoldemTournamentOnline({
     setCurrentTableId(tableId);
     setSnapshot(null);
     setSetupStep('table');
+    setShowSettings(false);
     sendEvent('table:join', { tableId });
   }
 
@@ -732,11 +779,32 @@ export function HoldemTournamentOnline({
     setSnapshot(null);
     setDismissedResultId(null);
     setSetupStep('table');
+    setShowSettings(false);
   }
 
   function handleAction(type: HoldemOnlineLegalAction['type'], amount?: number) {
     const eventType = `action:${type}`;
     sendEvent(eventType, amount !== undefined ? { amount } : {});
+  }
+
+  function handleSaveSettings() {
+    sendEvent('table:update_settings', {
+      actionTimeoutSeconds: settingsActionTimeout,
+      betweenHandsDelaySeconds: settingsBetweenHandsDelay,
+    });
+    setShowSettings(false);
+  }
+
+  function handleRevealSeatCards(seatPlayerId: string, maxCards: number) {
+    if (!displaySnapshot || maxCards <= 0) {
+      return;
+    }
+
+    const key = `${displaySnapshot.handNumber}:${seatPlayerId}`;
+    setRevealedCardsBySeat((current) => ({
+      ...current,
+      [key]: Math.min((current[key] || 0) + 1, maxCards),
+    }));
   }
 
   function handleContinueToTables() {
@@ -763,6 +831,11 @@ export function HoldemTournamentOnline({
           <div className={tableStyles.headerBar}>
             <OnlineCompactStatus snapshot={displaySnapshot} lang={lang} />
             <div className={tableStyles.headerButtons}>
+              {displaySnapshot.viewer.isCaptain ? (
+                <button className={tableStyles.headerButton} onClick={() => setShowSettings(true)}>
+                  {copy.settings}
+                </button>
+              ) : null}
               <button className={tableStyles.headerButton} onClick={handleLeaveTable}>
                 {copy.leave}
               </button>
@@ -816,22 +889,37 @@ export function HoldemTournamentOnline({
                 </div>
               </div>
 
-              {displaySnapshot?.seats.map((seat) => (
-                <SeatView
-                  key={`${displaySnapshot.handNumber}-${seat.playerId}`}
-                  seat={seat as unknown as HoldemSeat}
-                  handNumber={displaySnapshot.handNumber}
-                  isActing={seat.seatIndex === displaySnapshot.actingSeatIndex}
-                  isWinner={seat.isWinner}
-                  isButton={seat.seatIndex === displaySnapshot.buttonSeatIndex}
-                  isSmallBlind={seat.seatIndex === displaySnapshot.smallBlindSeatIndex}
-                  isBigBlind={seat.seatIndex === displaySnapshot.bigBlindSeatIndex}
-                  showCards={seat.playerId !== playerId && (seat.hasShownCards || displaySnapshot.status === 'tournament_complete')}
-                  showHoleCards={seat.playerId !== playerId}
-                  isMobileLayout={isMobileLayout}
-                  lang={lang}
-                />
-              ))}
+              {displaySnapshot?.seats.map((seat) => {
+                const revealKey = `${displaySnapshot.handNumber}:${seat.playerId}`;
+                const revealCount =
+                  seat.playerId === playerId
+                    ? seat.holeCards.length
+                    : seat.hasShownCards
+                      ? Math.min(revealedCardsBySeat[revealKey] || 0, seat.holeCards.length)
+                      : 0;
+                const canRevealCards = seat.playerId !== playerId && seat.hasShownCards && seat.holeCards.length > 0;
+
+                return (
+                  <SeatView
+                    key={`${displaySnapshot.handNumber}-${seat.playerId}`}
+                    seat={seat as unknown as HoldemSeat}
+                    handNumber={displaySnapshot.handNumber}
+                    isActing={seat.seatIndex === displaySnapshot.actingSeatIndex}
+                    isWinner={seat.isWinner}
+                    isButton={seat.seatIndex === displaySnapshot.buttonSeatIndex}
+                    isSmallBlind={seat.seatIndex === displaySnapshot.smallBlindSeatIndex}
+                    isBigBlind={seat.seatIndex === displaySnapshot.bigBlindSeatIndex}
+                    showCards={false}
+                    revealedCardCount={revealCount}
+                    canRevealCards={canRevealCards}
+                    onRevealCards={() => handleRevealSeatCards(seat.playerId, seat.holeCards.length)}
+                    countdownSeconds={seat.seatIndex === displaySnapshot.actingSeatIndex ? countdownSeconds : null}
+                    showHoleCards={seat.playerId !== playerId}
+                    isMobileLayout={isMobileLayout}
+                    lang={lang}
+                  />
+                );
+              })}
 
               {displaySnapshot && chipAnimationState ? (
                 <TableChips game={chipAnimationState} totalPot={displaySnapshot.totalPot} isMobileLayout={isMobileLayout} />
@@ -979,12 +1067,69 @@ export function HoldemTournamentOnline({
                       {displaySnapshot.viewer.ready ? copy.waitingRoomMessageReady : copy.waitingRoomMessage}
                     </p>
                     <div className="holdem-online-overlay-actions holdem-online-overlay-actions--center">
+                      {displaySnapshot.viewer.isCaptain ? (
+                        <button
+                          type="button"
+                          className="holdem-online-overlay-secondary"
+                          onClick={() => setShowSettings(true)}
+                        >
+                          {copy.settings}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className={tableStyles.startButton}
                         onClick={() => sendEvent(displaySnapshot.viewer.ready ? 'table:unset_ready' : 'table:set_ready')}
                       >
                         {displaySnapshot.viewer.ready ? copy.cancelReady : copy.ready}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {displaySnapshot && displaySnapshot.viewer.isCaptain && showSettings ? (
+                <div className={tableStyles.startOverlay}>
+                  <div className={`${tableStyles.startCard} holdem-online-overlay-card`}>
+                    <span className={tableStyles.startEyebrow}>{copy.settings}</span>
+                    <h2 className={tableStyles.startTitle}>{copy.settingsTitle}</h2>
+                    <p className={tableStyles.startCopy}>{copy.settingsBody}</p>
+                    <div className="holdem-online-settings-grid">
+                      <label className={tableStyles.startField}>
+                        <span className={tableStyles.startFieldLabel}>{copy.actionTimeoutSetting}</span>
+                        <select
+                          className={tableStyles.startInput}
+                          value={settingsActionTimeout}
+                          onChange={(event) => setSettingsActionTimeout(Number(event.target.value))}
+                        >
+                          {ACTION_TIMEOUT_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}s
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className={tableStyles.startField}>
+                        <span className={tableStyles.startFieldLabel}>{copy.betweenHandsDelaySetting}</span>
+                        <select
+                          className={tableStyles.startInput}
+                          value={settingsBetweenHandsDelay}
+                          onChange={(event) => setSettingsBetweenHandsDelay(Number(event.target.value))}
+                        >
+                          {BETWEEN_HANDS_DELAY_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}s
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="holdem-online-overlay-actions">
+                      <button type="button" className="holdem-online-overlay-secondary" onClick={() => setShowSettings(false)}>
+                        {copy.closeSettings}
+                      </button>
+                      <button type="button" className={tableStyles.startButton} onClick={handleSaveSettings}>
+                        {copy.saveSettings}
                       </button>
                     </div>
                   </div>
@@ -1041,6 +1186,7 @@ export function HoldemTournamentOnline({
                       isButton={currentViewerSeat.seatIndex === displaySnapshot.buttonSeatIndex}
                       isSmallBlind={currentViewerSeat.seatIndex === displaySnapshot.smallBlindSeatIndex}
                       isBigBlind={currentViewerSeat.seatIndex === displaySnapshot.bigBlindSeatIndex}
+                      countdownSeconds={currentViewerSeat.seatIndex === displaySnapshot.actingSeatIndex ? countdownSeconds : null}
                       lang={lang}
                     />
                   ) : null}

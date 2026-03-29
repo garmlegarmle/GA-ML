@@ -13,6 +13,10 @@ interface SeatViewProps {
   isSmallBlind: boolean;
   isBigBlind: boolean;
   showCards: boolean;
+  revealedCardCount?: number;
+  canRevealCards?: boolean;
+  onRevealCards?: () => void;
+  countdownSeconds?: number | null;
   showHoleCards?: boolean;
   isMobileLayout?: boolean;
   lang: HoldemLang;
@@ -27,6 +31,10 @@ export function SeatView({
   isSmallBlind,
   isBigBlind,
   showCards,
+  revealedCardCount = 0,
+  canRevealCards = false,
+  onRevealCards,
+  countdownSeconds = null,
   showHoleCards = true,
   isMobileLayout = false,
   lang,
@@ -35,6 +43,29 @@ export function SeatView({
   const position = layout[seat.seatIndex] ?? layout[0]!;
   const isFoldedOut = seat.status === 'busted' || seat.hasFolded;
   const copy = getGameUiText(lang);
+  const visibleCardCount = showCards
+    ? seat.holeCards.length
+    : Math.max(0, Math.min(revealedCardCount, seat.holeCards.length));
+
+  const cardNodes =
+    seat.holeCards.length > 0 ? (
+      seat.holeCards.map((card, index) => (
+        <CardView
+          key={`${handNumber}-${seat.playerId}-${card.code}-${index}`}
+          card={card}
+          hidden={index >= visibleCardCount}
+          hero={seat.isHuman}
+          animate
+          delayMs={seat.seatIndex * 42 + index * 90}
+          motion="hole"
+        />
+      ))
+    ) : (
+      <>
+        <CardView hidden />
+        <CardView hidden />
+      </>
+    );
 
   return (
     <div
@@ -57,27 +88,15 @@ export function SeatView({
         <span className={styles.name}>{seat.name}</span>
       </div>
       <div className={styles.stack}>{formatChipStack(seat.stack, lang)}</div>
+      {countdownSeconds !== null ? <div className={styles.timer}>{countdownSeconds}s</div> : null}
       {showHoleCards && (
-        <div className={styles.cards}>
-          {seat.holeCards.length > 0 ? (
-            seat.holeCards.map((card, index) => (
-              <CardView
-                key={`${handNumber}-${seat.playerId}-${card.code}-${index}`}
-                card={card}
-                hidden={!showCards}
-                hero={seat.isHuman}
-                animate
-                delayMs={seat.seatIndex * 42 + index * 90}
-                motion="hole"
-              />
-            ))
-          ) : (
-            <>
-              <CardView hidden />
-              <CardView hidden />
-            </>
-          )}
-        </div>
+        canRevealCards ? (
+          <button type="button" className={`${styles.cards} ${styles.cardsButton}`} onClick={onRevealCards}>
+            {cardNodes}
+          </button>
+        ) : (
+          <div className={styles.cards}>{cardNodes}</div>
+        )
       )}
       <div className={styles.statusRow}>
         {seat.hasFolded && seat.status === 'active' && <span className={styles.status}>{copy.folded}</span>}

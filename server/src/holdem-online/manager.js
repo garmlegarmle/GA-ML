@@ -3,6 +3,7 @@ import { WebSocketServer } from 'ws';
 import {
   HOLDEM_ONLINE_ACTION_PHASES,
   HOLDEM_ONLINE_ACTION_TIMEOUT_MS,
+  HOLDEM_ONLINE_BETWEEN_HANDS_DELAY_MS,
   HOLDEM_ONLINE_DISCONNECT_GRACE_MS,
   HOLDEM_ONLINE_MAX_NAME_LENGTH,
   HOLDEM_ONLINE_MAX_PLAYERS,
@@ -30,6 +31,14 @@ function normalizeDisplayName(value) {
     .slice(0, HOLDEM_ONLINE_MAX_NAME_LENGTH);
 }
 
+function clampInteger(value, minimum, maximum, fallback) {
+  const normalized = Math.round(Number(value));
+  if (!Number.isFinite(normalized)) {
+    return fallback;
+  }
+  return Math.max(minimum, Math.min(maximum, normalized));
+}
+
 function createTable(tableId) {
   return {
     id: tableId,
@@ -41,6 +50,10 @@ function createTable(tableId) {
     autoAdvanceTimeout: null,
     disconnectTimers: new Map(),
     lastTournamentResult: null,
+    settings: {
+      actionTimeoutMs: HOLDEM_ONLINE_ACTION_TIMEOUT_MS,
+      betweenHandsDelayMs: HOLDEM_ONLINE_BETWEEN_HANDS_DELAY_MS,
+    },
   };
 }
 
@@ -154,6 +167,19 @@ function collectWinningPlayerIds(game) {
   return new Set();
 }
 
+function getCaptainParticipant(table) {
+  return [...table.participants.values()]
+    .sort((left, right) => left.joinedAt - right.joinedAt)
+    .find(Boolean) || null;
+}
+
+function buildTableSettingsSnapshot(table) {
+  return {
+    actionTimeoutSeconds: Math.round(table.settings.actionTimeoutMs / 1000),
+    betweenHandsDelaySeconds: Math.round(table.settings.betweenHandsDelayMs / 1000),
+  };
+}
+
 function seatVisibleCards(seat, viewerPlayerId, revealAll = false) {
   if (revealAll || seat.playerId === viewerPlayerId || seat.hasShownCards) {
     return seat.holeCards;
@@ -189,6 +215,7 @@ function buildSeatSnapshot(seat, viewerPlayerId, revealAll = false, winningPlaye
 
 function buildTableSummary(table) {
   const connectedParticipants = [...table.participants.values()].filter((participant) => participant.connected);
+  const captain = getCaptainParticipant(table);
   const readyCount = table.status === 'waiting'
     ? connectedParticipants.filter((participant) => participant.ready).length
     : connectedParticipants.filter((participant) => participant.nextTournamentReady).length;
@@ -204,6 +231,9 @@ function buildTableSummary(table) {
     level: table.game?.currentLevel.level ?? null,
     smallBlind: table.game?.currentLevel.smallBlind ?? null,
     bigBlind: table.game?.currentLevel.bigBlind ?? null,
+    captainPlayerId: captain?.playerId ?? null,
+    captainDisplayName: captain?.displayName ?? null,
+    settings: buildTableSettingsSnapshot(table),
   };
 }
 
@@ -237,10 +267,11 @@ function hasConnectedSeatedPlayers(table) {
 function buildTableSnapshot(table, viewerPlayerId) {
   const participant = table.participants.get(viewerPlayerId) || null;
   const game = table.game;
+  const captain = getCaptainParticipant(table);
   const actingSeat = findActingSeat(game);
   const viewerSeat = game?.seats.find((seat) => seat.playerId === viewerPlayerId) || null;
   const viewerEliminated = Boolean(viewerSeat && viewerSeat.status === 'busted');
-  const revealAll = game?.phase === 'tournament_complete';
+  const revealAll = false;
   const winningPlayerIds = collectWinningPlayerIds(game);
   const legalActions = viewerSeat ? getLegalActions(game, viewerPlayerId) : [];
   const amountToCall = viewerSeat ? getAmountToCall(game, viewerSeat) : 0;
@@ -256,6 +287,7 @@ function buildTableSnapshot(table, viewerPlayerId) {
       ready: Boolean(participant?.ready),
       nextTournamentReady: Boolean(participant?.nextTournamentReady),
       seatIndex: viewerSeat && viewerSeat.status === 'active' ? viewerSeat.seatIndex : null,
+      isCaptain: captain?.playerId === viewerPlayerId,
     },
     actionDeadlineAt: table.actionTimeout?.deadlineAt ?? null,
     actingSeatIndex: actingSeat?.seatIndex ?? null,
@@ -283,11 +315,13 @@ function buildTableSnapshot(table, viewerPlayerId) {
         nextTournamentReady: entry.nextTournamentReady,
         seated: hasActiveSeat(table, entry.playerId),
         seatIndex: entry.currentSeatIndex,
+        isCaptain: captain?.playerId === entry.playerId,
       }))
       .sort((left, right) => left.displayName.localeCompare(right.displayName)),
     legalActions,
     amountToCall,
     lastTournamentResult: table.lastTournamentResult,
+    settings: buildTableSettingsSnapshot(table),
   };
 }
 
@@ -463,7 +497,8 @@ export function createHoldemOnlineManager() {
     const actingSeat = findActingSeat(table.game);
     if (!actingSeat) return;
 
-    const deadlineAt = now() + HOLDEM_ONLINE_ACTION_TIMEOUT_MS;
+    const timeoutMs = table.settings.actionTimeoutMs;
+    const deadlineAt = now() + timeoutMs;
     const handNumber = table.game.hand.handNumber;
     const phase = table.game.phase;
     const timer = setTimeout(() => {
@@ -486,7 +521,7 @@ export function createHoldemOnlineManager() {
         },
       }));
       driveTable(table);
-    }, HOLDEM_ONLINE_ACTION_TIMEOUT_MS);
+    }, timeoutMs);
 
     table.actionTimeout = {
       playerId: actingSeat.playerId,
@@ -497,7 +532,7 @@ export function createHoldemOnlineManager() {
     };
   }
 
-  function getAutoAdvanceDelay(previousState, nextState, eventType) {
+  function getAutoAdvanceDelay(table, previousState, nextState, eventType) {
     const allInRunout = getPlayersAbleToAct(nextState.seats).length < 2;
 
     if (nextState.phase === 'tournament_complete') {
@@ -543,7 +578,7 @@ export function createHoldemOnlineManager() {
       case 'level_up_check':
         return 780;
       case 'next_hand':
-        return 1480;
+        return table.settings.betweenHandsDelayMs;
       default:
         return 480;
     }
@@ -610,7 +645,7 @@ export function createHoldemOnlineManager() {
     broadcastTables();
 
     if (nextState.phase === 'tournament_complete') {
-      scheduleAutoAdvance(table, getAutoAdvanceDelay(previousState, nextState, eventType));
+      scheduleAutoAdvance(table, getAutoAdvanceDelay(table, previousState, nextState, eventType));
       return;
     }
 
@@ -622,7 +657,7 @@ export function createHoldemOnlineManager() {
       return;
     }
 
-    scheduleAutoAdvance(table, getAutoAdvanceDelay(previousState, nextState, eventType));
+    scheduleAutoAdvance(table, getAutoAdvanceDelay(table, previousState, nextState, eventType));
   }
 
   function startTournament(table) {
@@ -990,6 +1025,32 @@ export function createHoldemOnlineManager() {
       applyParticipantUpdate(table, connection.playerId, (participant) => {
         participant.nextTournamentReady = type === 'table:set_next_tournament_ready';
       });
+      return;
+    }
+
+    if (type === 'table:update_settings') {
+      const table = connection.tableId ? tables.get(connection.tableId) : null;
+      if (!table) {
+        send(ws, 'error', { message: 'No table selected.' });
+        return;
+      }
+
+      if (getCaptainParticipant(table)?.playerId !== connection.playerId) {
+        send(ws, 'error', { message: 'Only the table captain can change settings.' });
+        return;
+      }
+
+      table.settings.actionTimeoutMs =
+        clampInteger(payload?.actionTimeoutSeconds, 10, 60, Math.round(table.settings.actionTimeoutMs / 1000)) * 1000;
+      table.settings.betweenHandsDelayMs =
+        clampInteger(payload?.betweenHandsDelaySeconds, 5, 20, Math.round(table.settings.betweenHandsDelayMs / 1000)) * 1000;
+
+      if (table.game && HOLDEM_ONLINE_ACTION_PHASES.has(table.game.phase) && table.actionTimeout) {
+        scheduleActionTimeout(table);
+      }
+
+      broadcastTable(table);
+      broadcastTables();
       return;
     }
 

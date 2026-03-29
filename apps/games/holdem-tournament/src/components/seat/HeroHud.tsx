@@ -10,10 +10,20 @@ interface HeroHudProps {
   isButton: boolean;
   isSmallBlind: boolean;
   isBigBlind: boolean;
+  countdownSeconds?: number | null;
   lang: HoldemLang;
 }
 
-export function HeroHud({ seat, handNumber, isWinner = false, isButton, isSmallBlind, isBigBlind, lang }: HeroHudProps) {
+export function HeroHud({
+  seat,
+  handNumber,
+  isWinner = false,
+  isButton,
+  isSmallBlind,
+  isBigBlind,
+  countdownSeconds = null,
+  lang,
+}: HeroHudProps) {
   const copy = getGameUiText(lang);
 
   if (!seat || seat.status !== 'active') {
@@ -35,6 +45,8 @@ export function HeroHud({ seat, handNumber, isWinner = false, isButton, isSmallB
           {seat.isAllIn && <span className={styles.state}>{copy.allIn}</span>}
         </div>
       </div>
+
+      {countdownSeconds !== null ? <div className={styles.timer}>{countdownSeconds}s</div> : null}
 
       <div className={styles.cards}>
         {seat.holeCards.length > 0 ? (

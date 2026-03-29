@@ -1839,7 +1839,7 @@ body.is-resizing-editor-image {
 @media (max-width: 760px) {
   .holdem-game-stage,
   .holdem-game-shell--embedded .holdem-game-stage {
-    min-height: auto;
+    min-height: 100svh;
   }
 }
 
@@ -2896,12 +2896,12 @@ body.is-resizing-editor-image {
   display: grid;
   gap: 18px;
   height: 100%;
-  min-height: 100%;
+  min-height: 720px;
 }
 
 .holdem-online-page {
   height: 100%;
-  min-height: 100%;
+  min-height: 720px;
 }
 
 .holdem-online-tablebar,
@@ -3099,10 +3099,15 @@ body.is-resizing-editor-image {
 .holdem-online-overlay-card .startCopy,
 .holdem-online-overlay-card .startFieldLabel,
 .holdem-online-overlay-card .startInput,
+.holdem-online-overlay-card select.startInput,
 .holdem-online-overlay-card .startInput::placeholder,
 .holdem-online-waiting-card .startTitle,
 .holdem-online-waiting-card .startCopy {
   color: rgba(255, 248, 228, 0.94);
+}
+
+.holdem-online-overlay-card option {
+  color: #111417;
 }
 
 .holdem-online-result-card {
@@ -3165,6 +3170,12 @@ body.is-resizing-editor-image {
 .holdem-online-overlay-actions--center {
   justify-content: center;
   margin-bottom: 0;
+}
+
+.holdem-online-settings-grid {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
 }
 
 .holdem-online-overlay-secondary {
@@ -3278,6 +3289,12 @@ body.is-resizing-editor-image {
   .holdem-game-stage__mode-button {
     top: 12px;
     left: 12px;
+  }
+
+  .holdem-online-shell,
+  .holdem-online-page {
+    height: auto;
+    min-height: 100svh;
   }
 }
 
