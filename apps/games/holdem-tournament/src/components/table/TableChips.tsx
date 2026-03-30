@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { MOBILE_TABLE_SEAT_LAYOUT, TABLE_SEAT_LAYOUT } from 'holdem/config/theme';
+import { playBetSoundBurst, playPotSoundBurst } from 'holdem/app/soundEffects';
 import type { GameState, Seat } from 'holdem/types/engine';
 import styles from 'holdem/components/table/TableChips.module.css';
 
@@ -193,6 +194,22 @@ export function TableChips({
 
     if (pendingEffects.length === 0) {
       return;
+    }
+
+    const betEffects = pendingEffects.filter((effect) => effect.kind === 'bet');
+    const collectEffects = pendingEffects.filter((effect) => effect.kind === 'collect');
+    const winEffects = pendingEffects.filter((effect) => effect.kind === 'win');
+
+    if (betEffects.length > 0) {
+      playBetSoundBurst(betEffects.length, 96);
+    }
+
+    if (collectEffects.length > 0) {
+      playPotSoundBurst(1, 180, 60);
+    }
+
+    if (winEffects.length > 0) {
+      playPotSoundBurst(winEffects.length, 180, collectEffects.length > 0 ? 260 : 80);
     }
 
     setEffects((current) => [...current, ...pendingEffects]);

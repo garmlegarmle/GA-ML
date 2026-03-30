@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { HoldemTournamentEmbed } from 'holdem/embed';
+import { useHoldemAiSoundEffects, useHoldemSoundActivation } from 'holdem/app/soundEffects';
 import { getHoldemStats, recordHoldemCompletion, recordHoldemPlayStart } from '../lib/api';
 import { HoldemTournamentOnline } from './HoldemTournamentOnline';
 import { useHoldemBackgroundMusic } from './useHoldemBackgroundMusic';
@@ -119,6 +120,7 @@ function formatDate(value: string | null, lang: SiteLang) {
 export function HoldemTournamentGameContent({ lang, embedded = false }: { lang: SiteLang; embedded?: boolean }) {
   const copy = COPY[lang];
   useHoldemBackgroundMusic(true);
+  useHoldemSoundActivation(true);
   const seedRef = useRef(Math.floor(Date.now() % 2147483647) || 1);
   const [mode, setMode] = useState<'ai' | 'online' | null>(null);
   const [playerName, setPlayerName] = useState(() => {
@@ -138,6 +140,8 @@ export function HoldemTournamentGameContent({ lang, embedded = false }: { lang: 
   const [loading, setLoading] = useState(true);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [runToken, setRunToken] = useState<string | null>(null);
+
+  useHoldemAiSoundEffects(mode === 'ai');
 
   useEffect(() => {
     let cancelled = false;

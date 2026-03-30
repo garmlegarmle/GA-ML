@@ -4,6 +4,7 @@ import infoPanelStyles from 'holdem/components/panels/InfoPanels.module.css';
 import { HeroHud } from 'holdem/components/seat/HeroHud';
 import { SeatView } from 'holdem/components/seat/SeatView';
 import { TableChips } from 'holdem/components/table/TableChips';
+import { playCardSoundBurst } from 'holdem/app/soundEffects';
 import bettingStyles from 'holdem/components/betting/BettingControls.module.css';
 import tableStyles from 'holdem/components/table/TableScreen.module.css';
 import appStyles from 'holdem/app/App.module.css';
@@ -661,6 +662,17 @@ export function HoldemTournamentOnline({
         }
 
         if (type === 'table:snapshot' || type === 'table:user_joined' || type === 'turn:started' || type === 'action:applied' || type === 'turn:auto_action' || type === 'hand:starting' || type === 'hand:flop' || type === 'hand:turn' || type === 'hand:river' || type === 'showdown:started' || type === 'tournament:result_snapshot' || type === 'game:starting') {
+          if (type === 'hand:starting' && payload.table) {
+            const seatedCount = Array.isArray(payload.table.seats)
+              ? payload.table.seats.filter((seat: { status?: string }) => seat?.status === 'active').length
+              : 0;
+            playCardSoundBurst(seatedCount * 2, 105, 60);
+          } else if (type === 'hand:flop') {
+            playCardSoundBurst(3, 160, 110);
+          } else if (type === 'hand:turn' || type === 'hand:river') {
+            playCardSoundBurst(1, 120, 140);
+          }
+
           if (payload.table) {
             setSnapshot(payload.table as HoldemOnlineTableSnapshot);
             setCurrentTableId(String((payload.table as HoldemOnlineTableSnapshot).tableId || ''));
