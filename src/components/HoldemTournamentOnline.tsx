@@ -62,7 +62,6 @@ const COPY = {
     nextTournamentReady: 'Join next tournament',
     cancelNextTournamentReady: 'Cancel next tournament',
     spectators: 'Participants',
-    logs: 'Action log',
     loadingTable: 'Joining table…',
     noTable: 'Choose a table to watch or play.',
     acting: 'to act',
@@ -138,7 +137,6 @@ const COPY = {
     nextTournamentReady: '다음 토너먼트 참가',
     cancelNextTournamentReady: '다음 토너먼트 취소',
     spectators: '참가자',
-    logs: '액션 로그',
     loadingTable: '테이블에 참가하는 중…',
     noTable: '테이블을 선택하면 관전하거나 참가할 수 있습니다.',
     acting: '차례',
@@ -753,7 +751,7 @@ export function HoldemTournamentOnline({
 
     const tick = () => setDeadlineNow(Date.now());
     tick();
-    const timer = window.setInterval(tick, 250);
+    const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
   }, [displaySnapshot?.actionDeadlineAt, displaySnapshot?.actingSeatIndex]);
 

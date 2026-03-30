@@ -130,6 +130,21 @@ function findActingSeat(game) {
   return game.seats.find((seat) => seat.seatIndex === game.betting.actingSeatIndex) || null;
 }
 
+function getNextStreetPhase(street) {
+  switch (street) {
+    case 'preflop':
+      return 'deal_flop';
+    case 'flop':
+      return 'deal_turn';
+    case 'turn':
+      return 'deal_river';
+    case 'river':
+    case 'showdown':
+    default:
+      return 'showdown';
+  }
+}
+
 function selectTotalPot(game) {
   if (!game) return 0;
   return game.seats.reduce((sum, seat) => sum + seat.totalCommitted, 0);
@@ -308,7 +323,6 @@ function buildTableSnapshot(table, viewerPlayerId) {
     smallBlindSeatIndex: game ? getSmallBlindSeatIndex(game.seats, game.buttonSeatIndex) : null,
     bigBlindSeatIndex: game ? getBigBlindSeatIndex(game.seats, game.buttonSeatIndex) : null,
     handMessage: game?.hand.winnerMessage || null,
-    logs: (game?.log ?? []).slice(-60),
     seats: game
       ? game.seats.map((seat) => buildSeatSnapshot(seat, viewerPlayerId, revealAll, winningPlayerIds))
       : [],
@@ -503,7 +517,10 @@ export function createHoldemOnlineManager() {
     const actingSeat = findActingSeat(table.game);
     if (!actingSeat) return;
 
-    const timeoutMs = table.settings.actionTimeoutMs;
+    const actingParticipant = table.participants.get(actingSeat.playerId);
+    const timeoutMs = actingParticipant?.connected === false
+      ? Math.min(5_000, table.settings.actionTimeoutMs)
+      : table.settings.actionTimeoutMs;
     const deadlineAt = now() + timeoutMs;
     const handNumber = table.game.hand.handNumber;
     const phase = table.game.phase;
@@ -535,6 +552,37 @@ export function createHoldemOnlineManager() {
       handNumber,
       phase,
       timer,
+    };
+  }
+
+  function repairActionPhaseState(game) {
+    if (!game || !HOLDEM_ONLINE_ACTION_PHASES.has(game.phase)) {
+      return game;
+    }
+
+    const actingSeat = findActingSeat(game);
+    if (actingSeat && getLegalActions(game, actingSeat.playerId).length > 0) {
+      return game;
+    }
+
+    const fallbackSeat = game.seats.find((seat) => getLegalActions(game, seat.playerId).length > 0) || null;
+    if (fallbackSeat) {
+      return {
+        ...game,
+        betting: {
+          ...game.betting,
+          actingSeatIndex: fallbackSeat.seatIndex,
+        },
+      };
+    }
+
+    return {
+      ...game,
+      betting: {
+        ...game.betting,
+        actingSeatIndex: null,
+      },
+      phase: getNextStreetPhase(game.betting.street),
     };
   }
 
@@ -607,6 +655,15 @@ export function createHoldemOnlineManager() {
     }
 
     syncParticipantSeatState(table);
+
+    const repairedActionState = repairActionPhaseState(table.game);
+    if (repairedActionState !== table.game) {
+      const previousState = table.game;
+      table.game = repairedActionState;
+      syncParticipantSeatState(table);
+      broadcastTable(table, eventTypeForTransition(previousState, repairedActionState));
+      broadcastTables();
+    }
 
     if (table.game.phase === 'tournament_complete') {
       if (table.status === 'tournament_complete') {

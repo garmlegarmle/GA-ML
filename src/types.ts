@@ -273,19 +273,6 @@ export interface HoldemOnlineSeat {
   isWinner: boolean;
 }
 
-export interface HoldemOnlineLogEntry {
-  id: string;
-  handNumber: number;
-  level: number;
-  street: string;
-  seatIndex: number;
-  playerId: string;
-  name: string;
-  type: string;
-  amount: number;
-  text: string;
-}
-
 export interface HoldemTournamentResultEntry {
   playerId: string;
   playerName: string;
@@ -333,7 +320,6 @@ export interface HoldemOnlineTableSnapshot extends HoldemOnlineTableSummary {
   smallBlindSeatIndex: number | null;
   bigBlindSeatIndex: number | null;
   handMessage: string | null;
-  logs: HoldemOnlineLogEntry[];
   seats: HoldemOnlineSeat[];
   participants: HoldemOnlineParticipant[];
   legalActions: HoldemOnlineLegalAction[];
