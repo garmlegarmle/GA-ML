@@ -32,7 +32,7 @@ export function HeroHud({
 }: HeroHudProps) {
   const copy = getGameUiText(lang);
 
-  if (!seat || (seat.status !== 'active' && !canRevealCards)) {
+  if (!seat) {
     return null;
   }
 
@@ -67,6 +67,7 @@ export function HeroHud({
           {isBigBlind && <span className={styles.badge}>BB</span>}
           {seat.hasFolded && <span className={styles.state}>{copy.folded}</span>}
           {seat.isAllIn && <span className={styles.state}>{copy.allIn}</span>}
+          {seat.status === 'busted' && <span className={styles.state}>{copy.busted}</span>}
         </div>
       </div>
 

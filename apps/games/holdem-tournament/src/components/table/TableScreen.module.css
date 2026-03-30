@@ -204,6 +204,8 @@
 .controlDock {
   width: 100%;
   margin: 0 auto;
+  position: relative;
+  z-index: 9;
 }
 
 .bottomRail {
@@ -218,6 +220,8 @@
 .leftDock {
   min-height: 176px;
   align-self: flex-end;
+  position: relative;
+  z-index: 9;
 }
 
 .rightDock {
@@ -225,6 +229,8 @@
   align-self: flex-end;
   display: flex;
   align-items: flex-end;
+  position: relative;
+  z-index: 9;
 }
 
 .nextHandCard {

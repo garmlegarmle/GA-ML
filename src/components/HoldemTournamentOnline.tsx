@@ -545,6 +545,7 @@ export function HoldemTournamentOnline({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const onPlayerNameChangeRef = useRef(onPlayerNameChange);
+  const lastViewerSeatRef = useRef<HoldemOnlineTableSnapshot['seats'][number] | null>(null);
 
   useEffect(() => {
     onPlayerNameChangeRef.current = onPlayerNameChange;
@@ -769,8 +770,43 @@ export function HoldemTournamentOnline({
     if (!displaySnapshot || !playerId) {
       return null;
     }
-    return displaySnapshot.seats.find((seat) => seat.playerId === playerId) || null;
+
+    return (
+      displaySnapshot.seats.find((seat) => seat.playerId === playerId) ||
+      (displaySnapshot.viewer.role === 'player' && displaySnapshot.viewer.seatIndex !== null
+        ? displaySnapshot.seats.find((seat) => seat.seatIndex === displaySnapshot.viewer.seatIndex) || null
+        : null)
+    );
   }, [displaySnapshot, playerId]);
+
+  useEffect(() => {
+    if (!displaySnapshot) {
+      lastViewerSeatRef.current = null;
+      return;
+    }
+
+    if (currentViewerSeat) {
+      lastViewerSeatRef.current = currentViewerSeat;
+      return;
+    }
+
+    const lastSeat = lastViewerSeatRef.current;
+    if (!lastSeat) {
+      return;
+    }
+
+    const tableChanged = lastSeat.playerId && playerId && lastSeat.playerId !== playerId;
+    const handReset =
+      displaySnapshot.handNumber === 0 ||
+      displaySnapshot.status === 'waiting' ||
+      displaySnapshot.status === 'tournament_complete';
+
+    if (tableChanged || handReset) {
+      lastViewerSeatRef.current = null;
+    }
+  }, [currentViewerSeat, displaySnapshot, playerId]);
+
+  const heroSeat = currentViewerSeat ?? lastViewerSeatRef.current;
 
   function handleJoinTable(tableId: string) {
     setCurrentTableId(tableId);
@@ -1144,7 +1180,7 @@ export function HoldemTournamentOnline({
                       lang={lang}
                       legalActions={displaySnapshot.legalActions}
                       amountToCall={displaySnapshot.amountToCall}
-                      currentBet={currentViewerSeat?.currentBet ?? 0}
+                      currentBet={heroSeat?.currentBet ?? 0}
                       potSize={displaySnapshot.totalPot}
                       bigBlind={displaySnapshot.currentLevel?.bigBlind ?? 0}
                       disabled={displaySnapshot.actingSeatIndex !== displaySnapshot.viewer.seatIndex}
@@ -1175,19 +1211,22 @@ export function HoldemTournamentOnline({
                 </div>
 
                 <div className={tableStyles.rightDock}>
-                  {currentViewerSeat ? (
+                  {heroSeat ? (
                     <HeroHud
-                      seat={currentViewerSeat as unknown as HoldemSeat}
+                      seat={heroSeat as unknown as HoldemSeat}
                       handNumber={displaySnapshot.handNumber}
-                      isWinner={currentViewerSeat.isWinner}
-                      isButton={currentViewerSeat.seatIndex === displaySnapshot.buttonSeatIndex}
-                      isSmallBlind={currentViewerSeat.seatIndex === displaySnapshot.smallBlindSeatIndex}
-                      isBigBlind={currentViewerSeat.seatIndex === displaySnapshot.bigBlindSeatIndex}
-                      countdownSeconds={currentViewerSeat.seatIndex === displaySnapshot.actingSeatIndex ? countdownSeconds : null}
+                      isWinner={heroSeat.isWinner}
+                      isButton={heroSeat.seatIndex === displaySnapshot.buttonSeatIndex}
+                      isSmallBlind={heroSeat.seatIndex === displaySnapshot.smallBlindSeatIndex}
+                      isBigBlind={heroSeat.seatIndex === displaySnapshot.bigBlindSeatIndex}
+                      countdownSeconds={heroSeat.seatIndex === displaySnapshot.actingSeatIndex ? countdownSeconds : null}
                       canRevealCards={
                         displaySnapshot.status === 'showdown' &&
-                        currentViewerSeat.hasShownCards &&
-                        currentViewerSeat.revealedCardCount < currentViewerSeat.holeCardCount
+                        Boolean(currentViewerSeat?.hasShownCards) &&
+                        Boolean(
+                          currentViewerSeat &&
+                          currentViewerSeat.revealedCardCount < currentViewerSeat.holeCardCount,
+                        )
                       }
                       onRevealCards={handleRevealOwnCard}
                       revealHint={copy.revealOwnCards}
