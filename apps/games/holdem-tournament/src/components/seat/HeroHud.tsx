@@ -11,6 +11,9 @@ interface HeroHudProps {
   isSmallBlind: boolean;
   isBigBlind: boolean;
   countdownSeconds?: number | null;
+  canRevealCards?: boolean;
+  onRevealCards?: () => void;
+  revealHint?: string | null;
   lang: HoldemLang;
 }
 
@@ -22,13 +25,34 @@ export function HeroHud({
   isSmallBlind,
   isBigBlind,
   countdownSeconds = null,
+  canRevealCards = false,
+  onRevealCards,
+  revealHint = null,
   lang,
 }: HeroHudProps) {
   const copy = getGameUiText(lang);
 
-  if (!seat || seat.status !== 'active') {
+  if (!seat || (seat.status !== 'active' && !canRevealCards)) {
     return null;
   }
+
+  const cardNodes = seat.holeCards.length > 0 ? (
+    seat.holeCards.map((card, index) => (
+      <CardView
+        key={`${handNumber}-${seat.playerId}-hero-${card.code}-${index}`}
+        card={card}
+        hero
+        animate
+        delayMs={160 + index * 100}
+        motion="hole"
+      />
+    ))
+  ) : (
+    <>
+      <CardView hidden hero />
+      <CardView hidden hero />
+    </>
+  );
 
   return (
     <section className={[styles.hud, isWinner ? styles.winner : ''].join(' ')}>
@@ -48,25 +72,15 @@ export function HeroHud({
 
       {countdownSeconds !== null ? <div className={styles.timer}>{countdownSeconds}s</div> : null}
 
-      <div className={styles.cards}>
-        {seat.holeCards.length > 0 ? (
-          seat.holeCards.map((card, index) => (
-            <CardView
-              key={`${handNumber}-${seat.playerId}-hero-${card.code}-${index}`}
-              card={card}
-              hero
-              animate
-              delayMs={160 + index * 100}
-              motion="hole"
-            />
-          ))
-        ) : (
-          <>
-            <CardView hidden hero />
-            <CardView hidden hero />
-          </>
-        )}
-      </div>
+      {canRevealCards ? (
+        <button type="button" className={styles.cardsButton} onClick={onRevealCards}>
+          <div className={styles.cards}>{cardNodes}</div>
+        </button>
+      ) : (
+        <div className={styles.cards}>{cardNodes}</div>
+      )}
+
+      {canRevealCards && revealHint ? <div className={styles.revealHint}>{revealHint}</div> : null}
 
       <div className={styles.betLine}>{seat.currentBet > 0 ? copy.currentBet(seat.currentBet) : ' '}</div>
     </section>

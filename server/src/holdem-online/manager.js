@@ -181,8 +181,12 @@ function buildTableSettingsSnapshot(table) {
 }
 
 function seatVisibleCards(seat, viewerPlayerId, revealAll = false) {
-  if (revealAll || seat.playerId === viewerPlayerId || seat.hasShownCards) {
+  if (revealAll || seat.playerId === viewerPlayerId) {
     return seat.holeCards;
+  }
+
+  if (seat.revealedCardCount > 0) {
+    return seat.holeCards.slice(0, seat.revealedCardCount);
   }
 
   return [];
@@ -198,9 +202,11 @@ function buildSeatSnapshot(seat, viewerPlayerId, revealAll = false, winningPlaye
     status: seat.status,
     eliminationOrder: seat.eliminationOrder,
     holeCards: seatVisibleCards(seat, viewerPlayerId, revealAll),
+    holeCardCount: seat.holeCards.length,
     hasFolded: seat.hasFolded,
     isAllIn: seat.isAllIn,
     hasShownCards: seat.hasShownCards,
+    revealedCardCount: seat.revealedCardCount || 0,
     currentBet: seat.currentBet,
     totalCommitted: seat.totalCommitted,
     actedThisStreet: seat.actedThisStreet,
@@ -867,6 +873,32 @@ export function createHoldemOnlineManager() {
     driveTable(table);
   }
 
+  function handleRevealNextCard(ws, connection) {
+    const table = connection.tableId ? tables.get(connection.tableId) : null;
+    if (!table || !table.game || !connection.playerId) {
+      send(ws, 'error', { message: 'No active table is selected.' });
+      return;
+    }
+
+    if (table.status !== 'showdown') {
+      send(ws, 'error', { message: 'Cards can only be revealed after betting is over.' });
+      return;
+    }
+
+    const seat = table.game.seats.find((entry) => entry.playerId === connection.playerId) || null;
+    if (!seat || !seat.hasShownCards || seat.holeCards.length === 0) {
+      send(ws, 'error', { message: 'Only your own showdown cards can be revealed.' });
+      return;
+    }
+
+    if ((seat.revealedCardCount || 0) >= seat.holeCards.length) {
+      return;
+    }
+
+    seat.revealedCardCount = Math.min((seat.revealedCardCount || 0) + 1, seat.holeCards.length);
+    broadcastTable(table);
+  }
+
   function issueSession({ displayName, sessionToken } = {}) {
     const normalizedName = normalizeDisplayName(displayName);
     if (!normalizedName) {
@@ -1056,6 +1088,11 @@ export function createHoldemOnlineManager() {
 
     if (type === 'ping') {
       send(ws, 'pong', { now: Date.now() });
+      return;
+    }
+
+    if (type === 'table:reveal_next_card') {
+      handleRevealNextCard(ws, connection);
       return;
     }
 

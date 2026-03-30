@@ -91,6 +91,7 @@ const COPY = {
     eliminatedMessage: 'You are not active in the current tournament.',
     spectatingMessage: 'You are spectating this tournament.',
     waitingForTurn: 'Waiting for your turn.',
+    revealOwnCards: 'Click your cards to reveal them to the table one at a time.',
     waitingRoomMessage: 'The table is waiting to start. Once at least two connected players are ready, the next tournament begins.',
     waitingRoomMessageReady: 'You are marked ready. The next tournament starts when every connected player is ready.',
     spectatorNextTournament: 'You are watching this tournament. You can join only after it ends.',
@@ -166,6 +167,7 @@ const COPY = {
     eliminatedMessage: '현재 토너먼트에서는 탈락한 상태입니다.',
     spectatingMessage: '현재 토너먼트를 관전 중입니다.',
     waitingForTurn: '내 차례를 기다리는 중입니다.',
+    revealOwnCards: '내 카드를 눌러 테이블에 한 장씩 공개합니다.',
     waitingRoomMessage: '테이블이 시작을 기다리는 중입니다. 접속한 플레이어가 2명 이상이고 모두 준비되면 다음 토너먼트가 시작됩니다.',
     waitingRoomMessageReady: '준비 완료 상태입니다. 접속한 플레이어 전원이 준비되면 다음 토너먼트가 시작됩니다.',
     spectatorNextTournament: '현재 토너먼트는 관전만 가능하며, 종료 후 다음 토너먼트부터 참가할 수 있습니다.',
@@ -538,7 +540,6 @@ export function HoldemTournamentOnline({
   const [showSettings, setShowSettings] = useState(false);
   const [settingsActionTimeout, setSettingsActionTimeout] = useState(30);
   const [settingsBetweenHandsDelay, setSettingsBetweenHandsDelay] = useState(10);
-  const [revealedCardsBySeat, setRevealedCardsBySeat] = useState<Record<string, number>>({});
   const [deadlineNow, setDeadlineNow] = useState(() => Date.now());
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -727,10 +728,6 @@ export function HoldemTournamentOnline({
       : null;
 
   useEffect(() => {
-    setRevealedCardsBySeat({});
-  }, [displaySnapshot?.tableId, displaySnapshot?.handNumber]);
-
-  useEffect(() => {
     if (!displaySnapshot?.settings || showSettings) return;
     setSettingsActionTimeout(displaySnapshot.settings.actionTimeoutSeconds);
     setSettingsBetweenHandsDelay(displaySnapshot.settings.betweenHandsDelaySeconds);
@@ -757,13 +754,11 @@ export function HoldemTournamentOnline({
   };
 
   const currentViewerSeat = useMemo(() => {
-    if (!displaySnapshot?.viewer?.seatIndex) {
-      return displaySnapshot?.viewer?.seatIndex === 0
-        ? displaySnapshot.seats.find((seat) => seat.seatIndex === 0) || null
-        : null;
+    if (!displaySnapshot || !playerId) {
+      return null;
     }
-    return displaySnapshot.seats.find((seat) => seat.seatIndex === displaySnapshot.viewer.seatIndex) || null;
-  }, [displaySnapshot]);
+    return displaySnapshot.seats.find((seat) => seat.playerId === playerId) || null;
+  }, [displaySnapshot, playerId]);
 
   function handleJoinTable(tableId: string) {
     setCurrentTableId(tableId);
@@ -795,16 +790,16 @@ export function HoldemTournamentOnline({
     setShowSettings(false);
   }
 
-  function handleRevealSeatCards(seatPlayerId: string, maxCards: number) {
-    if (!displaySnapshot || maxCards <= 0) {
+  function handleRevealOwnCard() {
+    if (!displaySnapshot || !currentViewerSeat) {
       return;
     }
 
-    const key = `${displaySnapshot.handNumber}:${seatPlayerId}`;
-    setRevealedCardsBySeat((current) => ({
-      ...current,
-      [key]: Math.min((current[key] || 0) + 1, maxCards),
-    }));
+    if (!currentViewerSeat.hasShownCards || currentViewerSeat.revealedCardCount >= currentViewerSeat.holeCardCount) {
+      return;
+    }
+
+    sendEvent('table:reveal_next_card', {});
   }
 
   function handleContinueToTables() {
@@ -890,15 +885,6 @@ export function HoldemTournamentOnline({
               </div>
 
               {displaySnapshot?.seats.map((seat) => {
-                const revealKey = `${displaySnapshot.handNumber}:${seat.playerId}`;
-                const revealCount =
-                  seat.playerId === playerId
-                    ? seat.holeCards.length
-                    : seat.hasShownCards
-                      ? Math.min(revealedCardsBySeat[revealKey] || 0, seat.holeCards.length)
-                      : 0;
-                const canRevealCards = seat.playerId !== playerId && seat.hasShownCards && seat.holeCards.length > 0;
-
                 return (
                   <SeatView
                     key={`${displaySnapshot.handNumber}-${seat.playerId}`}
@@ -910,9 +896,8 @@ export function HoldemTournamentOnline({
                     isSmallBlind={seat.seatIndex === displaySnapshot.smallBlindSeatIndex}
                     isBigBlind={seat.seatIndex === displaySnapshot.bigBlindSeatIndex}
                     showCards={false}
-                    revealedCardCount={revealCount}
-                    canRevealCards={canRevealCards}
-                    onRevealCards={() => handleRevealSeatCards(seat.playerId, seat.holeCards.length)}
+                    totalHoleCards={seat.holeCardCount}
+                    revealedCardCount={seat.revealedCardCount}
                     countdownSeconds={seat.seatIndex === displaySnapshot.actingSeatIndex ? countdownSeconds : null}
                     showHoleCards={seat.playerId !== playerId}
                     isMobileLayout={isMobileLayout}
@@ -1187,6 +1172,13 @@ export function HoldemTournamentOnline({
                       isSmallBlind={currentViewerSeat.seatIndex === displaySnapshot.smallBlindSeatIndex}
                       isBigBlind={currentViewerSeat.seatIndex === displaySnapshot.bigBlindSeatIndex}
                       countdownSeconds={currentViewerSeat.seatIndex === displaySnapshot.actingSeatIndex ? countdownSeconds : null}
+                      canRevealCards={
+                        displaySnapshot.status === 'showdown' &&
+                        currentViewerSeat.hasShownCards &&
+                        currentViewerSeat.revealedCardCount < currentViewerSeat.holeCardCount
+                      }
+                      onRevealCards={handleRevealOwnCard}
+                      revealHint={copy.revealOwnCards}
                       lang={lang}
                     />
                   ) : null}

@@ -13,6 +13,7 @@ interface SeatViewProps {
   isSmallBlind: boolean;
   isBigBlind: boolean;
   showCards: boolean;
+  totalHoleCards?: number;
   revealedCardCount?: number;
   canRevealCards?: boolean;
   onRevealCards?: () => void;
@@ -31,6 +32,7 @@ export function SeatView({
   isSmallBlind,
   isBigBlind,
   showCards,
+  totalHoleCards,
   revealedCardCount = 0,
   canRevealCards = false,
   onRevealCards,
@@ -46,20 +48,26 @@ export function SeatView({
   const visibleCardCount = showCards
     ? seat.holeCards.length
     : Math.max(0, Math.min(revealedCardCount, seat.holeCards.length));
+  const cardSlotCount = Math.max(totalHoleCards ?? seat.holeCards.length, seat.holeCards.length, 2);
 
   const cardNodes =
-    seat.holeCards.length > 0 ? (
-      seat.holeCards.map((card, index) => (
+    cardSlotCount > 0 ? (
+      Array.from({ length: cardSlotCount }, (_, index) => {
+        const card = seat.holeCards[index];
+        const showCardFace = Boolean(card) && (showCards || index < visibleCardCount);
+
+        return (
         <CardView
-          key={`${handNumber}-${seat.playerId}-${card.code}-${index}`}
+          key={`${handNumber}-${seat.playerId}-${card?.code || 'hidden'}-${index}`}
           card={card}
-          hidden={index >= visibleCardCount}
+          hidden={!showCardFace}
           hero={seat.isHuman}
           animate
           delayMs={seat.seatIndex * 42 + index * 90}
           motion="hole"
         />
-      ))
+        );
+      })
     ) : (
       <>
         <CardView hidden />

@@ -62,6 +62,7 @@ function resetSeatForNewHand(seat) {
       hasFolded: true,
       isAllIn: false,
       hasShownCards: false,
+      revealedCardCount: 0,
       currentBet: 0,
       totalCommitted: 0,
       actedThisStreet: false,
@@ -78,6 +79,7 @@ function resetSeatForNewHand(seat) {
     hasFolded: false,
     isAllIn: false,
     hasShownCards: false,
+    revealedCardCount: 0,
     currentBet: 0,
     totalCommitted: 0,
     actedThisStreet: false,
@@ -142,6 +144,7 @@ export function createOnlineGameState(players, seed, lang = 'en') {
       hasFolded: false,
       isAllIn: false,
       hasShownCards: false,
+      revealedCardCount: 0,
       currentBet: 0,
       totalCommitted: 0,
       actedThisStreet: false,
@@ -347,25 +350,8 @@ function runShowdown(state) {
   nextState.hand.showdown = resolved.showdown;
   nextState.hand.winnerMessage = resolved.winnerMessage;
   nextState.seats.forEach((seat) => {
-    if (!seat.hasFolded) {
-      seat.hasShownCards = seat.holeCards.length === 2;
-
-      if (seat.hasShownCards) {
-        appendLogEntry(
-          nextState,
-          createLogEntry(
-            nextState,
-            seat.seatIndex,
-            seat.playerId,
-            seat.name,
-            'showdown',
-            'showdown',
-            0,
-            `${seat.name} shows ${seat.holeCards.map((card) => card.code).join(' ')}`,
-          ),
-        );
-      }
-    }
+    seat.hasShownCards = !seat.hasFolded && seat.holeCards.length === 2;
+    seat.revealedCardCount = 0;
   });
   nextState.phase = 'award_pots';
 

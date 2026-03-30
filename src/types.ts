@@ -257,9 +257,11 @@ export interface HoldemOnlineSeat {
   status: 'active' | 'busted';
   eliminationOrder: number | null;
   holeCards: HoldemCard[];
+  holeCardCount: number;
   hasFolded: boolean;
   isAllIn: boolean;
   hasShownCards: boolean;
+  revealedCardCount: number;
   currentBet: number;
   totalCommitted: number;
   actedThisStreet: boolean;
