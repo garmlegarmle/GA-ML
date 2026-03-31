@@ -298,6 +298,38 @@ The tournament flow, betting logic, eliminations, and showdown resolution all ru
 토너먼트 진행, 베팅 로직, 탈락 처리, 쇼다운 계산이 모두 페이지 안에서 바로 돌아갑니다. 그래서 재시작이 빠르고, 여러 번 반복 플레이하며 연습하기에 적합합니다.`,
       lang: 'ko',
       tags: ['홀덤', '포커']
+    },
+    {
+      slug: 'mine-cart-duel',
+      section: 'games',
+      title: 'Mine Cart Duel',
+      excerpt: 'Use webcam hand tracking to duel a CPU opponent in a fast mine-cart shooter embedded directly in the page.',
+      content:
+        '# Mine Cart Duel\n\nPlay a hand-tracking duel game directly in the page below. Allow camera access inside the game when you press Start Game.',
+      cleanupExcerpt:
+        'Use webcam hand tracking to duel a CPU opponent in a fast mine-cart shooter embedded directly in the page.',
+      cleanupContent:
+        '# Mine Cart Duel\n\nPlay a hand-tracking duel game directly in the page below. Allow camera access inside the game when you press Start Game.',
+      cleanupBefore: '',
+      cleanupAfter: '',
+      lang: 'en',
+      tags: ['duel', 'shooter']
+    },
+    {
+      slug: 'mine-cart-duel',
+      section: 'games',
+      title: '마인 카트 듀얼',
+      excerpt: '웹캠 손 추적으로 CPU 상대와 빠른 광차 슈팅 듀얼을 플레이할 수 있는 내장 게임입니다.',
+      content:
+        '# 마인 카트 듀얼\n\n아래 내장 게임에서 손 추적 광차 듀얼을 바로 플레이할 수 있습니다. 게임 안에서 Start Game을 눌러 카메라 권한을 허용하세요.',
+      cleanupExcerpt:
+        '웹캠 손 추적으로 CPU 상대와 빠른 광차 슈팅 듀얼을 플레이할 수 있는 내장 게임입니다.',
+      cleanupContent:
+        '# 마인 카트 듀얼\n\n아래 내장 게임에서 손 추적 광차 듀얼을 바로 플레이할 수 있습니다. 게임 안에서 Start Game을 눌러 카메라 권한을 허용하세요.',
+      cleanupBefore: '',
+      cleanupAfter: '',
+      lang: 'ko',
+      tags: ['듀얼', '슈터']
     }
   ];
 

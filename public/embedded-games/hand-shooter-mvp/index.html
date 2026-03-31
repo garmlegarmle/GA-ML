@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mine Cart Duel</title>
+    <script type="module" crossorigin src="/embedded-games/hand-shooter-mvp/assets/index-Db3rvzkM.js"></script>
+    <link rel="stylesheet" crossorigin href="/embedded-games/hand-shooter-mvp/assets/index-CqJEw4he.css">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game-canvas" aria-label="Mine cart duel game canvas"></canvas>
+
+      <section class="preview-panel" id="preview-panel">
+        <div class="preview-header-row">
+          <div class="preview-header">Webcam Preview</div>
+          <button
+            class="preview-toggle-button"
+            id="camera-toggle-button"
+            type="button"
+            aria-label="Hide camera preview"
+          >
+            Hide
+          </button>
+        </div>
+        <video id="webcam-video" autoplay playsinline muted></video>
+        <div class="preview-caption" id="preview-caption">Camera idle. Start when ready.</div>
+      </section>
+
+      <button class="preview-restore-button is-hidden" id="camera-restore-button" type="button">
+        Camera
+      </button>
+
+      <section class="settings-panel is-hidden" id="settings-panel" aria-live="polite">
+        <div class="settings-title-row">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h2 class="settings-title">Duel Desk</h2>
+          </div>
+          <button
+            class="settings-close-button"
+            id="settings-close-button"
+            type="button"
+            aria-label="Close settings"
+          >
+            Close
+          </button>
+        </div>
+
+        <div class="settings-actions">
+          <div class="settings-group">
+            <span class="status-label">CPU Skill</span>
+            <div class="difficulty-chip-row" id="difficulty-chip-row">
+              <button class="difficulty-chip" data-difficulty="easy" type="button">Easy</button>
+              <button class="difficulty-chip is-active" data-difficulty="medium" type="button">Medium</button>
+              <button class="difficulty-chip" data-difficulty="hard" type="button">Hard</button>
+            </div>
+          </div>
+          <button class="control-button control-button--secondary" id="preview-visibility-button" type="button">
+            Hide Camera
+          </button>
+          <button class="control-button control-button--secondary" id="reset-button" type="button">
+            Restart Duel
+          </button>
+        </div>
+
+        <div class="status-list">
+          <div class="status-row">
+            <span class="status-label">Webcam</span>
+            <span class="status-value" id="webcam-status">Idle</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Hand</span>
+            <span class="status-value" id="hand-status">No</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Aim</span>
+            <span class="status-value" id="aim-status">Searching</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Duel</span>
+            <span class="status-value" id="duel-status">Start Camera</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Event</span>
+            <span class="status-value" id="event-status">Idle</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Debug</span>
+            <span class="status-value" id="debug-status">Space shoot / R reload / Enter restart</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">CPU Skill</span>
+            <span class="status-value" id="difficulty-status">Medium</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="bottom-dock">
+        <button class="settings-fab" id="settings-button" type="button" aria-label="Open settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M19.14 12.94a7.94 7.94 0 0 0 .06-.94 7.94 7.94 0 0 0-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.22-1.12.53-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.72 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.94 7.94 0 0 0-.06.94c0 .32.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.41 1.04.72 1.62.94l.36 2.54a.5.5 0 0 0 .49.42h3.8a.5.5 0 0 0 .49-.42l.36-2.54c.58-.22 1.12-.53 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+
+        <section class="status-bar" aria-live="polite">
+          <div class="bar-item">
+            <span class="bar-label">YOU</span>
+            <span class="bar-value" id="player-hits-value">0 / 5</span>
+          </div>
+          <div class="bar-item">
+            <span class="bar-label">CPU</span>
+            <span class="bar-value" id="enemy-hits-value">0 / 5</span>
+          </div>
+          <div class="bar-item">
+            <span class="bar-label">Ammo</span>
+            <span class="bar-value" id="ammo-value">6 / 6</span>
+          </div>
+          <div class="bar-item">
+            <span class="bar-label">Reload</span>
+            <span class="bar-value" id="reload-value">Ready</span>
+          </div>
+          <div class="bar-item">
+            <span class="bar-label">Aim Mode</span>
+            <span class="bar-value" id="range-value">Direct</span>
+          </div>
+          <div class="bar-item bar-item--state">
+            <span class="bar-label">Round State</span>
+            <span class="bar-value" id="state-value">Start Camera</span>
+          </div>
+        </section>
+      </section>
+
+      <section class="start-overlay" id="start-overlay">
+        <div class="overlay-card">
+          <section class="overlay-panel" id="mode-panel">
+            <p class="eyebrow">Choose Mode</p>
+            <h1>Mine Cart Duel</h1>
+            <p class="overlay-copy">
+              먼저 대전 방식을 고른다. CPU 대전은 난이도 선택 후 튜토리얼로,
+              다른 참가자와 대결은 튜토리얼 후 매칭 플로우로 이어진다.
+            </p>
+            <div class="mode-grid">
+              <button class="mode-choice" id="mode-cpu-button" type="button">
+                <span class="mode-choice__eyebrow">Solo</span>
+                <strong>컴퓨터와 대결</strong>
+                <span>난이도 선택 후 바로 튜토리얼과 결투로 이어진다.</span>
+              </button>
+              <button class="mode-choice" id="mode-multiplayer-button" type="button">
+                <span class="mode-choice__eyebrow">Online Preview</span>
+                <strong>다른 참가자와 대결</strong>
+                <span>멀티플레이 로비와 매칭 화면 순서만 먼저 확인한다.</span>
+              </button>
+            </div>
+            <p class="overlay-status">대결 모드를 선택해 다음 단계로 이동한다.</p>
+          </section>
+
+          <section class="overlay-panel overlay-panel--narrow is-hidden" id="cpu-difficulty-panel">
+            <p class="eyebrow">CPU Difficulty</p>
+            <h1>난이도 선택</h1>
+            <p class="overlay-copy">
+              CPU 대전 난이도를 먼저 고른다. 선택한 난이도는 설정 패널과 게임 HUD에도 그대로 반영된다.
+            </p>
+            <div class="difficulty-chip-row difficulty-chip-row--overlay">
+              <button class="difficulty-chip difficulty-chip--overlay" data-start-difficulty="easy" type="button">Easy</button>
+              <button class="difficulty-chip difficulty-chip--overlay" data-start-difficulty="medium" type="button">Medium</button>
+              <button class="difficulty-chip difficulty-chip--overlay" data-start-difficulty="hard" type="button">Hard</button>
+            </div>
+            <div class="overlay-actions">
+              <button class="start-button start-button--secondary" id="cpu-difficulty-back-button" type="button">
+                Back
+              </button>
+            </div>
+            <p class="overlay-status">난이도를 누르면 바로 튜토리얼로 이동한다.</p>
+          </section>
+
+          <section class="overlay-panel is-hidden" id="tutorial-panel">
+            <p class="eyebrow" id="tutorial-eyebrow">CPU Duel</p>
+            <h1 id="tutorial-title">튜토리얼</h1>
+            <p class="overlay-copy" id="tutorial-copy">
+              게임 시작을 누르면 브라우저가 카메라 사용 여부를 묻는다.
+              조준은 손끝으로 하고, 엄지를 접어 발사하고, 다른 손으로 슬라이드하듯 훑어 재장전한다.
+            </p>
+            <div class="instruction-grid" aria-label="Game controls guide">
+              <article class="instruction-card">
+                <span class="instruction-tag">Aim Pose</span>
+                <div class="instruction-illustration" aria-hidden="true">
+                  <img src="/embedded-games/hand-shooter-mvp/ui/hand-pose.png" alt="Finger gun pose guide" />
+                </div>
+                <p class="instruction-copy">
+                  검지와 엄지를 편 총 모양을 유지하면 조준 상태가 된다.
+                </p>
+              </article>
+
+              <article class="instruction-card">
+                <span class="instruction-tag">Shoot</span>
+                <div class="instruction-illustration" aria-hidden="true">
+                  <img src="/embedded-games/hand-shooter-mvp/ui/shoot-guide.png" alt="Shoot gesture guide" />
+                </div>
+                <p class="instruction-copy">
+                  총 모양을 유지한 채 엄지를 접으면 발사된다.
+                </p>
+                <p class="instruction-hint">Debug: <strong>Space</strong></p>
+              </article>
+
+              <article class="instruction-card">
+                <span class="instruction-tag">Reload</span>
+                <div class="instruction-illustration" aria-hidden="true">
+                  <img src="/embedded-games/hand-shooter-mvp/ui/reload-guide.png" alt="Reload gesture guide" />
+                </div>
+                <p class="instruction-copy">
+                  다른 손을 총 위로 가져가 엄지 쪽을 따라 좌우로 훑으면 재장전된다.
+                </p>
+                <p class="instruction-hint">Debug: <strong>R</strong></p>
+              </article>
+            </div>
+
+            <div class="overlay-actions">
+              <button class="start-button start-button--secondary" id="tutorial-back-button" type="button">
+                Back
+              </button>
+              <button class="start-button" id="tutorial-start-button" type="button">
+                Start Game
+              </button>
+            </div>
+            <p class="overlay-status" id="tutorial-status">
+              Press Start Game to grant webcam permission and begin the duel.
+            </p>
+          </section>
+
+          <section class="overlay-panel overlay-panel--narrow is-hidden" id="matching-panel">
+            <p class="eyebrow">Multiplayer Preview</p>
+            <h1>매칭 중</h1>
+            <p class="overlay-copy">
+              실제 멀티플레이 네트워크는 아직 연결하지 않았다. 지금은 로비와 매칭 화면 순서만 먼저 확인할 수 있다.
+            </p>
+            <div class="matching-spinner" aria-hidden="true"></div>
+            <p class="matching-status" id="matching-status">
+              상대를 찾는 중...
+            </p>
+            <p class="overlay-status" id="matching-copy">
+              매칭이 완료되면 자동으로 게임 화면으로 전환된다.
+            </p>
+          </section>
+        </div>
+      </section>
+    </div>
+
+  </body>
+</html>

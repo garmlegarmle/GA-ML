@@ -474,6 +474,32 @@ main {
   color: var(--text);
 }
 
+.hand-shooter-game {
+  display: grid;
+  gap: 12px;
+}
+
+.hand-shooter-game__frame-shell {
+  border: 1px solid var(--border);
+  background: #050505;
+  overflow: hidden;
+}
+
+.hand-shooter-game__frame {
+  display: block;
+  width: 100%;
+  height: clamp(760px, 86vh, 980px);
+  border: 0;
+  background: #050505;
+}
+
+.hand-shooter-game__hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
 .detail-layout__content {
   max-width: 100%;
 }
@@ -2432,6 +2458,10 @@ body.is-resizing-editor-image {
   .detail-program__placeholder {
     min-height: 140px;
     font-size: 14px;
+  }
+
+  .hand-shooter-game__frame {
+    height: max(78vh, 680px);
   }
 
   .content-prose p,

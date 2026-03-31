@@ -7,6 +7,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminPasswordModal } from './components/AdminPasswordModal';
 import { EntryCard } from './components/EntryCard';
 import { HoldemTournamentGameContent, TEXAS_HOLDEM_TOURNAMENT_SLUG } from './components/HoldemTournamentGame';
+import { HandShooterGameContent, MINE_CART_DUEL_SLUG } from './components/HandShooterGame';
 import { PageManagerModal } from './components/PageManagerModal';
 import { PostEditorModal } from './components/PostEditorModal';
 import { SiteFooter } from './components/SiteFooter';
@@ -947,7 +948,8 @@ function DetailPage({
   const isStandalonePage = section === 'pages';
   const isTrendAnalyzerTool = section === 'tools' && slug === TREND_ANALYZER_TOOL_SLUG;
   const isHoldemTournamentGame = section === 'games' && slug === TEXAS_HOLDEM_TOURNAMENT_SLUG;
-  const isEmbeddedProgramPost = isTrendAnalyzerTool || isHoldemTournamentGame;
+  const isMineCartDuelGame = section === 'games' && slug === MINE_CART_DUEL_SLUG;
+  const isEmbeddedProgramPost = isTrendAnalyzerTool || isHoldemTournamentGame || isMineCartDuelGame;
   const programTopHtml = useMemo(
     () => (isEmbeddedProgramPost ? renderRichContent(post?.content_before_md) : ''),
     [isEmbeddedProgramPost, post?.content_before_md]
@@ -999,7 +1001,7 @@ function DetailPage({
     >
       <article className="page-section">
         <div
-          className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}${isHoldemTournamentGame ? ' detail-layout--game' : ''}`}
+          className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}${isHoldemTournamentGame || isMineCartDuelGame ? ' detail-layout--game' : ''}`}
         >
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
@@ -1068,6 +1070,10 @@ function DetailPage({
               ) : isHoldemTournamentGame ? (
                 <section className="detail-program detail-program--game" aria-label="Game area">
                   <HoldemTournamentGameContent lang={lang} embedded />
+                </section>
+              ) : isMineCartDuelGame ? (
+                <section className="detail-program detail-program--game" aria-label="Game area">
+                  <HandShooterGameContent lang={lang} embedded />
                 </section>
               ) : (section === 'tools' || section === 'games') && (
                 <section className="detail-program" aria-label="Program area">

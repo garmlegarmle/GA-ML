@@ -143,7 +143,7 @@ function shouldTrackViewCount(row) {
 function hasEmbeddedProgram(section, slug) {
   return (
     (section === 'tools' && slug === 'trend-analyzer') ||
-    (section === 'games' && slug === 'texas-holdem-tournament')
+    (section === 'games' && (slug === 'texas-holdem-tournament' || slug === 'mine-cart-duel'))
   );
 }
 

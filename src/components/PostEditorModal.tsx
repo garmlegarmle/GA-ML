@@ -246,7 +246,8 @@ function isLockedBuiltinProgramPost(post: PostItem | null | undefined): boolean 
   return Boolean(
     post &&
       ((post.section === 'tools' && post.slug === 'trend-analyzer') ||
-        (post.section === 'games' && post.slug === 'texas-holdem-tournament'))
+        (post.section === 'games' &&
+          (post.slug === 'texas-holdem-tournament' || post.slug === 'mine-cart-duel')))
   );
 }
 
@@ -254,7 +255,8 @@ function hasEmbeddedProgram(section: SiteSection, slug: string): boolean {
   const normalizedSlug = slugify(slug);
   return (
     (section === 'tools' && normalizedSlug === 'trend-analyzer') ||
-    (section === 'games' && normalizedSlug === 'texas-holdem-tournament')
+    (section === 'games' &&
+      (normalizedSlug === 'texas-holdem-tournament' || normalizedSlug === 'mine-cart-duel'))
   );
 }
 
