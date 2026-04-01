@@ -76,12 +76,8 @@ function buildEnemyPose(timestampMs, opponent = {}) {
   };
 }
 
-function localizeServerTime(serverTimestamp, serverOffsetMs) {
-  return serverTimestamp - serverOffsetMs;
-}
-
-function trimEvents(items, timestampMs, maxAgeMs) {
-  return items.filter((entry) => timestampMs - entry.createdAt <= maxAgeMs);
+function trimEvents(items, clientNowMs, maxAgeMs) {
+  return items.filter((entry) => clientNowMs - entry.createdAt <= maxAgeMs);
 }
 
 function createGuestName() {
@@ -116,6 +112,8 @@ export class OnlineMatchController {
     this.recentImpacts = [];
     this.playerHitFlashUntil = 0;
     this.playerCameraKickUntil = 0;
+    this.lastShootPressed = false;
+    this.lastReloadPressed = false;
     this.ignoreClose = false;
     this.error = "";
     this.lastFrameState = this.composeIdleFrame(0, { visible: false, x: 0, y: 0 });
@@ -224,6 +222,8 @@ export class OnlineMatchController {
     this.processedEvents.clear();
     this.recentShots = [];
     this.recentImpacts = [];
+    this.lastShootPressed = false;
+    this.lastReloadPressed = false;
     this.status = "idle";
     this.statusText = "온라인 상대를 기다리는 중...";
     this.error = "";
@@ -292,10 +292,7 @@ export class OnlineMatchController {
         continue;
       }
       this.processedEvents.add(entry.id);
-      const localCreatedAt = localizeServerTime(
-        Number(entry.createdAt || Date.now()),
-        this.serverOffsetMs,
-      );
+      const localCreatedAt = Date.now();
 
       if (entry.type === "shot") {
         const team = entry.actorId === this.playerId ? "player" : "enemy";
@@ -326,8 +323,9 @@ export class OnlineMatchController {
         if (entry.hit) {
           this.soundEffects.playHurt(team === "player" ? "enemy" : "player");
           if (team === "enemy") {
-            this.playerHitFlashUntil = localCreatedAt + PLAYER_HIT_FLASH_MS;
-            this.playerCameraKickUntil = localCreatedAt + PLAYER_CAMERA_KICK_MS;
+            const clientNowMs = Date.now();
+            this.playerHitFlashUntil = clientNowMs + PLAYER_HIT_FLASH_MS;
+            this.playerCameraKickUntil = clientNowMs + PLAYER_CAMERA_KICK_MS;
           }
         }
       }
@@ -347,20 +345,25 @@ export class OnlineMatchController {
 
   update(timestampMs, inputState) {
     const crosshair = inputState.crosshair ?? { visible: false, x: 0, y: 0 };
+    const clientNowMs = Date.now();
     if (!this.snapshot) {
+      this.lastShootPressed = false;
+      this.lastReloadPressed = false;
       this.lastFrameState = this.composeIdleFrame(timestampMs, crosshair);
       return this.lastFrameState;
     }
 
     const serverNow = Date.now() + this.serverOffsetMs;
     const you = this.snapshot.you;
+    const shootPressed = Boolean(inputState.shootPressed);
+    const reloadPressed = Boolean(inputState.reloadPressed);
 
     if (this.snapshot.phase === "duel" && you) {
-      if (inputState.reloadPressed) {
+      if (reloadPressed && !this.lastReloadPressed) {
         this.sendAction({ type: "action:reload" });
       }
 
-      if (inputState.shootPressed) {
+      if (shootPressed && !this.lastShootPressed) {
         const target = inputState.shotCrosshair ?? crosshair;
         this.sendAction({
           type: "action:shoot",
@@ -370,9 +373,12 @@ export class OnlineMatchController {
       }
     }
 
-    this.recentShots = trimEvents(this.recentShots, timestampMs, SHOT_TRAIL_MS);
-    this.recentImpacts = trimEvents(this.recentImpacts, timestampMs, IMPACT_MARK_MS);
-    this.lastFrameState = this.composeFrameState(timestampMs, crosshair, serverNow);
+    this.lastShootPressed = shootPressed;
+    this.lastReloadPressed = reloadPressed;
+
+    this.recentShots = trimEvents(this.recentShots, clientNowMs, SHOT_TRAIL_MS);
+    this.recentImpacts = trimEvents(this.recentImpacts, clientNowMs, IMPACT_MARK_MS);
+    this.lastFrameState = this.composeFrameState(timestampMs, crosshair, serverNow, clientNowMs);
     return this.lastFrameState;
   }
 
@@ -428,7 +434,7 @@ export class OnlineMatchController {
     };
   }
 
-  composeFrameState(timestampMs, crosshair, serverNow) {
+  composeFrameState(timestampMs, crosshair, serverNow, clientNowMs) {
     const you = this.snapshot.you || {};
     const opponent = this.snapshot.opponent || {};
     const playerReloading = Number(you.reloadUntil || 0) > serverNow;
@@ -493,8 +499,8 @@ export class OnlineMatchController {
         reloadProgress: playerReloadProgress,
       },
       playerHitFx: {
-        flash: clamp((this.playerHitFlashUntil - timestampMs) / PLAYER_HIT_FLASH_MS, 0, 1),
-        kick: clamp((this.playerCameraKickUntil - timestampMs) / PLAYER_CAMERA_KICK_MS, 0, 1),
+        flash: clamp((this.playerHitFlashUntil - clientNowMs) / PLAYER_HIT_FLASH_MS, 0, 1),
+        kick: clamp((this.playerCameraKickUntil - clientNowMs) / PLAYER_CAMERA_KICK_MS, 0, 1),
       },
       cameraBobY: (enemyPose.playerTrackLift ?? 0) * 18 + Math.sin(timestampMs * 0.0051 + 0.8) * 1.4,
       hud: {

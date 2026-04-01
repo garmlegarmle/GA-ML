@@ -76,14 +76,32 @@ function createMatch(left, right) {
   };
 }
 
+function refreshPlayerState(player, timestamp) {
+  if (!player) return;
+
+  if (player.reloadUntil > 0 && timestamp >= player.reloadUntil) {
+    player.reloadUntil = 0;
+    player.reloadStartedAt = 0;
+    player.ammo = MAGAZINE_SIZE;
+  }
+}
+
+function refreshMatchState(match, timestamp) {
+  for (const player of match.players.values()) {
+    refreshPlayerState(player, timestamp);
+  }
+}
+
 function buildViewerSnapshot(match, viewerId) {
+  const timestamp = now();
+  refreshMatchState(match, timestamp);
   const viewer = match.players.get(viewerId);
   const opponent = [...match.players.values()].find((entry) => entry.playerId !== viewerId) || null;
 
   return {
     matchId: match.id,
     phase: match.phase,
-    serverTime: now(),
+    serverTime: timestamp,
     countdownEndAt: match.countdownEndAt,
     winnerId: match.winnerId,
     message: match.message,
@@ -261,6 +279,7 @@ export function createMineCartDuelOnlineManager() {
   function handleShoot(match, session, payload) {
     if (match.phase !== 'duel') return;
     const timestamp = now();
+    refreshMatchState(match, timestamp);
     const actor = match.players.get(session.playerId);
     const targetPlayer = [...match.players.values()].find((entry) => entry.playerId !== session.playerId);
     if (!actor || !targetPlayer) return;
@@ -310,6 +329,7 @@ export function createMineCartDuelOnlineManager() {
   function handleReload(match, session) {
     if (match.phase !== 'duel') return;
     const timestamp = now();
+    refreshMatchState(match, timestamp);
     const actor = match.players.get(session.playerId);
     if (!actor) return;
     if (timestamp < actor.reloadUntil || actor.ammo === MAGAZINE_SIZE) {
@@ -318,7 +338,6 @@ export function createMineCartDuelOnlineManager() {
 
     actor.reloadStartedAt = timestamp;
     actor.reloadUntil = timestamp + RELOAD_MS;
-    actor.ammo = MAGAZINE_SIZE;
     match.message = `${actor.displayName} is reloading`;
 
     const events = [
