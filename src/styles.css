@@ -584,6 +584,27 @@ main {
   padding-left: 1.15em;
 }
 
+.content-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 1rem 0 1.5rem;
+  font-size: 14px;
+}
+
+.content-prose th,
+.content-prose td {
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.content-prose th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
 .content-prose code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.86em;
@@ -2845,6 +2866,27 @@ body.is-resizing-editor-image {
 
 .editor-surface p {
   margin: 0 0 0.8em;
+}
+
+.editor-surface table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 10px 0 14px;
+}
+
+.editor-surface th,
+.editor-surface td {
+  min-width: 80px;
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  vertical-align: top;
+  background: #fff;
+}
+
+.editor-surface th {
+  background: var(--surface);
+  font-weight: 600;
 }
 
 .editor-surface img.editor-inline-image {

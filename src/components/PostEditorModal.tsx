@@ -51,6 +51,18 @@ const CARD_TITLE_SIZE_OPTIONS: Array<{ label: string; value: CardTitleSize }> = 
   { label: 'Ultra Tight', value: 'ultra-tight' }
 ];
 
+const TABLE_COLUMN_WIDTH_OPTIONS = [
+  { label: 'Auto', value: 'auto' },
+  { label: '15%', value: '15%' },
+  { label: '20%', value: '20%' },
+  { label: '25%', value: '25%' },
+  { label: '33%', value: '33%' },
+  { label: '40%', value: '40%' },
+  { label: '50%', value: '50%' },
+  { label: '60%', value: '60%' },
+  { label: '75%', value: '75%' }
+] as const;
+
 function slugify(value: string): string {
   return String(value || '')
     .toLowerCase()
@@ -307,6 +319,7 @@ export function PostEditorModal({
   const [linkDraft, setLinkDraft] = useState('');
   const [linkResults, setLinkResults] = useState<PostItem[]>([]);
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
+  const [tableColumnWidth, setTableColumnWidth] = useState('auto');
   const [activeEditor, setActiveEditor] = useState<EditorPaneKey>('body');
 
   const [loading, setLoading] = useState(false);
@@ -726,6 +739,161 @@ export function PostEditorModal({
     clearEdgeHoverStyles(editor);
   }
 
+  function closestElementFromRange(range: Range | null): HTMLElement | null {
+    if (!range) return null;
+    const node = range.commonAncestorContainer;
+    if (node instanceof HTMLElement) return node;
+    return node.parentElement;
+  }
+
+  function getCurrentTableCell(key: EditorPaneKey = preferredEditorKey()): HTMLTableCellElement | null {
+    const range = getUsableSelectionRange(key, { preferRemembered: true });
+    const element = closestElementFromRange(range);
+    if (!element) return null;
+    return element.closest('td, th');
+  }
+
+  function getCurrentTable(key: EditorPaneKey = preferredEditorKey()): HTMLTableElement | null {
+    const cell = getCurrentTableCell(key);
+    if (cell) return cell.closest('table');
+    const range = getUsableSelectionRange(key, { preferRemembered: true });
+    const element = closestElementFromRange(range);
+    return element?.closest('table') || null;
+  }
+
+  function getCellIndex(cell: HTMLTableCellElement): number {
+    return Array.from(cell.parentElement?.children || []).indexOf(cell);
+  }
+
+  function syncCurrentTableColumnWidth() {
+    const cell = getCurrentTableCell();
+    if (!cell) {
+      setTableColumnWidth('auto');
+      return;
+    }
+    setTableColumnWidth(cell.style.width || 'auto');
+  }
+
+  function createEditableTable(doc: Document, rows = 3, columns = 3): HTMLTableElement {
+    const table = doc.createElement('table');
+    table.className = 'editor-table';
+    const tbody = doc.createElement('tbody');
+
+    for (let rowIndex = 0; rowIndex < rows; rowIndex += 1) {
+      const row = doc.createElement('tr');
+      for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+        const cell = doc.createElement(rowIndex === 0 ? 'th' : 'td');
+        cell.innerHTML = rowIndex === 0 ? `Heading ${columnIndex + 1}` : '<br>';
+        row.appendChild(cell);
+      }
+      tbody.appendChild(row);
+    }
+
+    table.appendChild(tbody);
+    return table;
+  }
+
+  function insertTable() {
+    const table = createEditableTable(document);
+    insertNodeAtCursor(table);
+    insertNodeAtCursor(createEditorParagraph(document));
+    const firstBodyCell = table.querySelector('tbody tr:nth-child(2) td') as HTMLTableCellElement | null;
+    if (firstBodyCell) {
+      const range = document.createRange();
+      range.selectNodeContents(firstBodyCell);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      savedSelectionRef.current = {
+        key: preferredEditorKey(),
+        range: range.cloneRange()
+      };
+    }
+    syncCurrentTableColumnWidth();
+  }
+
+  function addTableRow() {
+    const cell = getCurrentTableCell();
+    if (!cell) return;
+    const row = cell.parentElement as HTMLTableRowElement | null;
+    if (!row) return;
+    const nextRow = document.createElement('tr');
+    const cells = Array.from(row.children) as HTMLTableCellElement[];
+    cells.forEach((currentCell) => {
+      const tagName = currentCell.tagName.toLowerCase() === 'th' ? 'th' : 'td';
+      const nextCell = document.createElement(tagName);
+      nextCell.style.width = currentCell.style.width;
+      nextCell.innerHTML = tagName === 'th' ? 'Heading' : '<br>';
+      nextRow.appendChild(nextCell);
+    });
+    row.insertAdjacentElement('afterend', nextRow);
+  }
+
+  function removeTableRow() {
+    const cell = getCurrentTableCell();
+    if (!cell) return;
+    const row = cell.parentElement as HTMLTableRowElement | null;
+    const table = cell.closest('table');
+    if (!row || !table) return;
+    row.remove();
+    if (table.querySelectorAll('tr').length === 0) {
+      table.replaceWith(createEditorParagraph(document));
+    }
+  }
+
+  function addTableColumn() {
+    const cell = getCurrentTableCell();
+    const table = getCurrentTable();
+    if (!cell || !table) return;
+    const columnIndex = getCellIndex(cell);
+    table.querySelectorAll('tr').forEach((row) => {
+      const rowElement = row as HTMLTableRowElement;
+      const sourceCell = rowElement.children[columnIndex] as HTMLTableCellElement | undefined;
+      const tagName = sourceCell?.tagName?.toLowerCase() === 'th' ? 'th' : 'td';
+      const nextCell = document.createElement(tagName);
+      nextCell.innerHTML = tagName === 'th' ? 'Heading' : '<br>';
+      const insertAfter = rowElement.children[columnIndex];
+      if (insertAfter) {
+        insertAfter.insertAdjacentElement('afterend', nextCell);
+      } else {
+        rowElement.appendChild(nextCell);
+      }
+    });
+  }
+
+  function removeTableColumn() {
+    const cell = getCurrentTableCell();
+    const table = getCurrentTable();
+    if (!cell || !table) return;
+    const columnIndex = getCellIndex(cell);
+    table.querySelectorAll('tr').forEach((row) => {
+      const target = row.children[columnIndex];
+      if (target) target.remove();
+    });
+    const hasAnyCells = Array.from(table.querySelectorAll('tr')).some((row) => row.children.length > 0);
+    if (!hasAnyCells) {
+      table.replaceWith(createEditorParagraph(document));
+    }
+  }
+
+  function applyCurrentTableColumnWidth(width: string) {
+    const cell = getCurrentTableCell();
+    const table = getCurrentTable();
+    if (!cell || !table) {
+      setTableColumnWidth(width);
+      return;
+    }
+    const columnIndex = getCellIndex(cell);
+    table.querySelectorAll('tr').forEach((row) => {
+      const targetCell = row.children[columnIndex] as HTMLElement | undefined;
+      if (!targetCell) return;
+      if (width === 'auto') targetCell.style.removeProperty('width');
+      else targetCell.style.width = width;
+    });
+    setTableColumnWidth(width);
+  }
+
   function startImageResize(event: ReactMouseEvent<HTMLDivElement>, key: EditorPaneKey) {
     const target = event.target as HTMLElement | null;
     if (!(target instanceof HTMLImageElement)) return;
@@ -1088,11 +1256,16 @@ export function PostEditorModal({
           className="editor-surface content-prose"
           contentEditable
           suppressContentEditableWarning
-          onFocus={() => setActiveEditor(key)}
+          onFocus={() => {
+            setActiveEditor(key);
+            syncCurrentTableColumnWidth();
+          }}
           onClick={(event) => {
             setActiveEditor(key);
             setSelectedImageFromEvent(event.target);
+            syncCurrentTableColumnWidth();
           }}
+          onKeyUp={syncCurrentTableColumnWidth}
           onMouseMove={handleEditorMouseMove}
           onMouseLeave={() => clearEdgeHoverStyles(ref.current)}
           onMouseDown={(event) => startImageResize(event, key)}
@@ -1418,6 +1591,35 @@ export function PostEditorModal({
                   <button type="button" onClick={() => exec('insertOrderedList')} aria-label="Numbered list">
                     1. List
                   </button>
+                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={insertTable} aria-label="Insert table">
+                    Table
+                  </button>
+                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={addTableRow} aria-label="Add table row">
+                    +Row
+                  </button>
+                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={addTableColumn} aria-label="Add table column">
+                    +Col
+                  </button>
+                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={removeTableRow} aria-label="Remove table row">
+                    -Row
+                  </button>
+                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={removeTableColumn} aria-label="Remove table column">
+                    -Col
+                  </button>
+                  <label className="editor-toolbar__label">
+                    Column
+                    <select
+                      className="editor-toolbar__select"
+                      value={tableColumnWidth}
+                      onChange={(event) => applyCurrentTableColumnWidth(event.target.value)}
+                    >
+                      {TABLE_COLUMN_WIDTH_OPTIONS.map((option) => (
+                        <option key={`table-width-${option.value}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <button
                     type="button"
                     onMouseDown={() => rememberSelection(preferredEditorKey())}
