@@ -15,13 +15,14 @@ const COPY = {
 
 export function HandShooterGameContent({ lang, embedded = false }: { lang: SiteLang; embedded?: boolean }) {
   const copy = COPY[lang];
+  const iframeSrc = `/embedded-games/hand-shooter-mvp/index.html?lang=${lang}`;
 
   return (
     <div className={`hand-shooter-game${embedded ? ' hand-shooter-game--embedded' : ''}`}>
       <div className="hand-shooter-game__frame-shell">
         <iframe
           className="hand-shooter-game__frame"
-          src="/embedded-games/hand-shooter-mvp/index.html"
+          src={iframeSrc}
           title={copy.title}
           loading="lazy"
           allow="camera; microphone; autoplay; fullscreen"

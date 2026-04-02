@@ -1,5 +1,6 @@
 import { SketchRenderer } from "./sketchRenderer.js";
 import { clamp } from "./sceneMath.js";
+import { getCopy } from "./locale.js";
 
 const PHASE = {
   BOOT: "boot",
@@ -96,13 +97,14 @@ export class OnlineMatchController {
   constructor(canvasElement, soundEffects, options = {}) {
     this.renderer = new SketchRenderer(canvasElement);
     this.soundEffects = soundEffects;
+    this.copy = options.copy || getCopy();
     this.onMatched = options.onMatched ?? (() => {});
     this.onMatchEnded = options.onMatchEnded ?? (() => {});
     this.width = 0;
     this.height = 0;
     this.socket = null;
     this.status = "idle";
-    this.statusText = "온라인 상대를 기다리는 중...";
+    this.statusText = this.copy.waitingOnline;
     this.playerId = null;
     this.displayName = createGuestName();
     this.snapshot = null;
@@ -154,7 +156,7 @@ export class OnlineMatchController {
     this.displayName = normalizeName(displayName) || createGuestName();
     window.localStorage.setItem("mine-cart-duel.online-name", this.displayName);
     this.status = "connecting";
-    this.statusText = "서버에 연결 중...";
+      this.statusText = this.copy.connectingServer;
     this.error = "";
     this.ignoreClose = false;
 
@@ -186,19 +188,19 @@ export class OnlineMatchController {
         }
         if (this.status === "matched") {
           this.status = "waiting";
-          this.statusText = "상대 연결이 끊겼습니다. 다시 대기열로 이동합니다.";
+          this.statusText = this.copy.opponentDisconnectedReturn;
           this.onMatchEnded();
           return;
         }
 
         if (this.status === "connecting" || this.status === "waiting") {
-          this.error = "온라인 매치 서버와 연결이 끊겼습니다.";
+          this.error = this.copy.connectionLost;
           this.status = "error";
         }
       });
 
       socket.addEventListener("error", () => {
-        this.error = "온라인 매치 서버에 연결하지 못했습니다.";
+        this.error = this.copy.cannotConnect;
         this.status = "error";
         reject(new Error(this.error));
       });
@@ -225,7 +227,7 @@ export class OnlineMatchController {
     this.lastShootPressed = false;
     this.lastReloadPressed = false;
     this.status = "idle";
-    this.statusText = "온라인 상대를 기다리는 중...";
+    this.statusText = this.copy.waitingOnline;
     this.error = "";
   }
 
@@ -246,13 +248,13 @@ export class OnlineMatchController {
     if (payload.type === "hello:ok") {
       this.playerId = payload.playerId;
       this.status = "waiting";
-      this.statusText = "상대방 기다리는 중...";
+      this.statusText = this.copy.waitingOpponent;
       return;
     }
 
     if (payload.type === "queue:waiting") {
       this.status = "waiting";
-      this.statusText = payload.message || "상대방 기다리는 중...";
+      this.statusText = payload.message || this.copy.waitingOpponent;
       return;
     }
 
@@ -261,7 +263,7 @@ export class OnlineMatchController {
       this.error = "";
       this.snapshot = payload.snapshot;
       this.serverOffsetMs = Number(payload.snapshot?.serverTime || Date.now()) - Date.now();
-      this.statusText = payload.snapshot?.message || "매칭 완료";
+      this.statusText = payload.snapshot?.message || this.copy.matchFound;
       this.processEvents(payload.events || []);
       if (payload.type === "match:found") {
         this.onMatched();
@@ -272,7 +274,7 @@ export class OnlineMatchController {
     if (payload.type === "match:ended") {
       this.snapshot = null;
       this.status = "waiting";
-      this.statusText = payload.message || "상대 연결이 끊겼습니다. 다시 대기 중...";
+      this.statusText = payload.message || this.copy.matchEndedWait;
       this.onMatchEnded();
       if (this.socket?.readyState === WebSocket.OPEN) {
         this.socket.send(JSON.stringify({ type: "queue:join" }));
@@ -281,7 +283,7 @@ export class OnlineMatchController {
     }
 
     if (payload.type === "error") {
-      this.error = payload.message || "온라인 매치 오류";
+      this.error = payload.message || this.copy.onlineMatchError;
       this.status = "error";
     }
   }
@@ -427,8 +429,8 @@ export class OnlineMatchController {
         ammo: `0 / ${MAGAZINE_SIZE}`,
         reload: "Ready",
         aimRange: "Direct",
-        difficulty: "Online",
-        state: "Waiting",
+        difficulty: this.copy.onlineDifficulty,
+        state: this.copy.waiting,
         event: this.getStatusText(),
       },
     };
@@ -466,8 +468,8 @@ export class OnlineMatchController {
       roundOverTitle:
         this.snapshot.phase === PHASE.ROUND_OVER
           ? this.snapshot.winnerId === this.playerId
-            ? "YOU WIN"
-            : `${(opponent.displayName || "RIVAL").toUpperCase()} WINS`
+            ? this.copy.youWin.toUpperCase()
+            : `${(opponent.displayName || "RIVAL").toUpperCase()} ${this.copy.cpuWins.toUpperCase()}`
           : "",
       roundOverSubtitle:
         this.snapshot.phase === PHASE.ROUND_OVER
@@ -507,17 +509,17 @@ export class OnlineMatchController {
         playerHits: `${Number(you.hitsLanded || 0)} / ${WIN_HITS}`,
         enemyHits: `${Number(opponent.hitsLanded || 0)} / ${WIN_HITS}`,
         ammo: `${Number(you.ammo || 0)} / ${MAGAZINE_SIZE}`,
-        reload: playerReloading ? "Reloading" : Number(you.ammo || 0) === 0 ? "Needed" : "Ready",
+        reload: playerReloading ? this.copy.reloading : Number(you.ammo || 0) === 0 ? this.copy.needed : this.copy.ready,
         aimRange: "Direct",
-        difficulty: opponent.displayName || "Online",
+        difficulty: opponent.displayName || this.copy.onlineDifficulty,
         state:
           this.snapshot.phase === PHASE.COUNTDOWN
-            ? `Countdown ${countdownValue}`
+            ? this.copy.countdown(countdownValue)
             : this.snapshot.phase === PHASE.DUEL
-              ? "Live"
+              ? this.copy.live
               : this.snapshot.phase === PHASE.ROUND_OVER
-                ? "Round Over"
-                : "Waiting",
+                ? this.copy.roundOver
+                : this.copy.waiting,
         event: this.snapshot.message || this.getStatusText(),
       },
     };

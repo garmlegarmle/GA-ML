@@ -5,6 +5,7 @@ import {
   getPlayerImpactPoint,
   pointInEnemyRider,
 } from "./sceneMath.js";
+import { getCopy } from "./locale.js";
 import { SketchRenderer } from "./sketchRenderer.js";
 
 const PHASE = {
@@ -36,8 +37,9 @@ function randomBetween(min, max) {
 }
 
 export class DuelGame {
-  constructor(canvasElement) {
+  constructor(canvasElement, options = {}) {
     this.renderer = new SketchRenderer(canvasElement);
+    this.copy = options.copy || getCopy();
     this.cpuController = new CpuOpponentController();
     this.width = 0;
     this.height = 0;
@@ -61,7 +63,7 @@ export class DuelGame {
     this.playerCameraKickUntil = 0;
     this.countdownEndAt = 0;
     this.winner = null;
-    this.lastMessage = "Start camera to duel";
+    this.lastMessage = this.copy.startCameraToDuel;
     this.recentShots = [];
     this.recentImpacts = [];
     this.enemyAimWeight = 0.12;
@@ -100,7 +102,7 @@ export class DuelGame {
 
   beginAimRangeSetup() {
     this.phase = PHASE.AIM_RANGE_SETUP;
-    this.lastMessage = "Trace your reachable corners";
+    this.lastMessage = this.copy.traceCorners;
   }
 
   setRangeReady(ready) {
@@ -111,7 +113,7 @@ export class DuelGame {
     this.resetRoundState(timestampMs);
     this.phase = PHASE.COUNTDOWN;
     this.countdownEndAt = timestampMs + COUNTDOWN_MS;
-    this.lastMessage = "Duel starts in 3";
+    this.lastMessage = this.copy.duelStartsIn3;
   }
 
   restartRound(timestampMs) {
@@ -146,7 +148,7 @@ export class DuelGame {
       case PHASE.COUNTDOWN:
         if (timestampMs >= this.countdownEndAt) {
           this.phase = PHASE.DUEL;
-          this.lastMessage = "Draw";
+          this.lastMessage = this.copy.draw;
         }
         break;
       case PHASE.DUEL:
@@ -202,13 +204,13 @@ export class DuelGame {
     if (this.playerReloadUntil > 0 && timestampMs >= this.playerReloadUntil) {
       this.playerReloadUntil = 0;
       this.playerAmmo = MAGAZINE_SIZE;
-      this.lastMessage = "장전 완료 / Reloaded";
+      this.lastMessage = this.copy.reloaded;
     }
 
     if (this.enemyReloadUntil > 0 && timestampMs >= this.enemyReloadUntil) {
       this.enemyReloadUntil = 0;
       this.enemyAmmo = MAGAZINE_SIZE;
-      this.lastMessage = "상대 장전 완료 / CPU Reloaded";
+      this.lastMessage = this.copy.cpuReloaded;
     }
   }
 
@@ -250,17 +252,17 @@ export class DuelGame {
     }
 
     if (this.isPlayerReloading(timestampMs)) {
-      this.lastMessage = "장전중 / Reloading";
+      this.lastMessage = this.copy.reloading;
       return;
     }
 
     if (this.playerAmmo === MAGAZINE_SIZE) {
-      this.lastMessage = "Cylinder full";
+      this.lastMessage = this.copy.cylinderFull;
       return;
     }
 
     this.playerReloadUntil = timestampMs + this.playerReloadDurationMs;
-    this.lastMessage = "장전중 / Reloading";
+    this.lastMessage = this.copy.reloading;
     this.queueAudioEvent("reload", { actor: "player" });
   }
 
@@ -270,7 +272,7 @@ export class DuelGame {
     }
 
     this.enemyReloadUntil = timestampMs + this.enemyReloadDurationMs;
-    this.lastMessage = "상대 장전중 / CPU Reloading";
+    this.lastMessage = this.copy.cpuReloading;
     this.queueAudioEvent("reload", { actor: "enemy" });
   }
 
@@ -284,12 +286,12 @@ export class DuelGame {
     }
 
     if (this.isPlayerReloading(timestampMs)) {
-      this.lastMessage = "Reloading...";
+      this.lastMessage = this.copy.reloading;
       return;
     }
 
     if (this.playerAmmo <= 0) {
-      this.lastMessage = "Empty. Reload";
+      this.lastMessage = this.copy.emptyReload;
       return;
     }
 
@@ -329,14 +331,14 @@ export class DuelGame {
       this.enemyHitReactUntil = timestampMs + ENEMY_HIT_REACT_MS;
       this.enemyStunUntil = timestampMs + ENEMY_STUN_MS;
       this.cpuController.cancelTelegraph(timestampMs);
-      this.lastMessage = "CPU hit";
+      this.lastMessage = this.copy.cpuHit;
       this.queueAudioEvent("hurt", { actor: "enemy" });
     } else {
-      this.lastMessage = "Missed";
+      this.lastMessage = this.copy.missed;
     }
 
     if (this.playerAmmo === 0 && this.phase === PHASE.DUEL) {
-      this.lastMessage = hit ? "CPU hit. Reload now" : "Empty. Reload";
+      this.lastMessage = hit ? this.copy.cpuHitReloadNow : this.copy.emptyReload;
     }
   }
 
@@ -414,10 +416,10 @@ export class DuelGame {
       this.enemyHits += 1;
       this.playerHitFlashUntil = timestampMs + PLAYER_HIT_FLASH_MS;
       this.playerCameraKickUntil = timestampMs + PLAYER_CAMERA_KICK_MS;
-      this.lastMessage = "CPU landed a hit";
+      this.lastMessage = this.copy.cpuLandedHit;
       this.queueAudioEvent("hurt", { actor: "player" });
     } else {
-      this.lastMessage = "CPU missed";
+      this.lastMessage = this.copy.missed;
     }
   }
 
@@ -425,14 +427,14 @@ export class DuelGame {
     if (this.playerHits >= WIN_HITS) {
       this.phase = PHASE.ROUND_OVER;
       this.winner = "player";
-      this.lastMessage = "You win the duel";
+      this.lastMessage = this.copy.youWinDuel;
       return;
     }
 
     if (this.enemyHits >= WIN_HITS) {
       this.phase = PHASE.ROUND_OVER;
       this.winner = "cpu";
-      this.lastMessage = "CPU wins the duel";
+      this.lastMessage = this.copy.cpuWinsDuel;
     }
   }
 
@@ -574,10 +576,10 @@ export class DuelGame {
         enemyHits: `${this.enemyHits} / ${WIN_HITS}`,
         ammo: `${this.playerAmmo} / ${MAGAZINE_SIZE}`,
         reload: playerReloading
-          ? "Reloading"
+          ? this.copy.reloading
           : this.playerAmmo === 0
-            ? "Needed"
-            : "Ready",
+            ? this.copy.needed
+            : this.copy.ready,
         aimRange: "Direct",
         difficulty: this.getCpuDifficultyLabel(),
         state: this.getRoundStateLabel(timestampMs),
@@ -588,11 +590,11 @@ export class DuelGame {
 
   getEventMessage(timestampMs) {
     if (this.isPlayerReloading(timestampMs)) {
-      return "장전중 / Reloading";
+      return this.copy.reloading;
     }
 
     if (this.isEnemyReloading(timestampMs)) {
-      return "상대 장전중 / CPU Reloading";
+      return this.copy.cpuReloading;
     }
 
     return this.lastMessage;
@@ -601,26 +603,25 @@ export class DuelGame {
   getRoundStateLabel(timestampMs) {
     switch (this.phase) {
       case PHASE.BOOT:
-        return "Start Camera";
+        return this.copy.startCamera;
       case PHASE.AIM_RANGE_SETUP:
-        return "Aim Range Setup";
+        return this.copy.aimRangeSetup;
       case PHASE.COUNTDOWN:
-        return `Countdown ${Math.max(
-          1,
-          Math.ceil((this.countdownEndAt - timestampMs) / 1000),
-        )}`;
+        return this.copy.countdown(
+          Math.max(1, Math.ceil((this.countdownEndAt - timestampMs) / 1000)),
+        );
       case PHASE.DUEL:
         if (this.isPlayerReloading(timestampMs)) {
-          return "Reloading";
+          return this.copy.reloading;
         }
         if (this.isEnemyReloading(timestampMs)) {
-          return "CPU Reloading";
+          return this.copy.cpuReloading;
         }
-        return "Live";
+        return this.copy.live;
       case PHASE.ROUND_OVER:
-        return this.winner === "player" ? "You Win" : "CPU Wins";
+        return this.winner === "player" ? this.copy.youWin : this.copy.cpuWins;
       default:
-        return "Idle";
+        return this.copy.waiting;
     }
   }
 }

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mine Cart Duel</title>
-    <script type="module" crossorigin src="/embedded-games/hand-shooter-mvp/assets/index-ClevE-iu.js"></script>
+    <title>마인 카트 듀얼</title>
+    <script type="module" crossorigin src="/embedded-games/hand-shooter-mvp/assets/index-D4DKl5rg.js"></script>
     <link rel="stylesheet" crossorigin href="/embedded-games/hand-shooter-mvp/assets/index-CfIp7CCR.css">
   </head>
   <body>
@@ -13,7 +13,7 @@
 
       <section class="preview-panel" id="preview-panel">
         <div class="preview-header-row">
-          <div class="preview-header">Webcam Preview</div>
+          <div class="preview-header" id="preview-header">웹캠 미리보기</div>
           <button
             class="preview-toggle-button"
             id="camera-toggle-button"
@@ -24,7 +24,7 @@
           </button>
         </div>
         <video id="webcam-video" autoplay playsinline muted></video>
-        <div class="preview-caption" id="preview-caption">Camera idle. Start when ready.</div>
+        <div class="preview-caption" id="preview-caption">카메라 대기 중. 준비되면 시작하세요.</div>
       </section>
 
       <button class="preview-restore-button is-hidden" id="camera-restore-button" type="button">
@@ -42,8 +42,8 @@
       <section class="settings-panel is-hidden" id="settings-panel" aria-live="polite">
         <div class="settings-title-row">
           <div>
-            <p class="eyebrow">Settings</p>
-            <h2 class="settings-title">Duel Desk</h2>
+            <p class="eyebrow" id="settings-eyebrow">설정</p>
+            <h2 class="settings-title" id="settings-title">대결 데스크</h2>
           </div>
           <button
             class="settings-close-button"
@@ -57,7 +57,7 @@
 
         <div class="settings-actions">
           <div class="settings-group">
-            <span class="status-label">CPU Skill</span>
+            <span class="status-label" id="settings-cpu-skill-label">CPU 난이도</span>
             <div class="difficulty-chip-row" id="difficulty-chip-row">
               <button class="difficulty-chip" data-difficulty="easy" type="button">Easy</button>
               <button class="difficulty-chip is-active" data-difficulty="medium" type="button">Medium</button>
@@ -74,31 +74,31 @@
 
         <div class="status-list">
           <div class="status-row">
-            <span class="status-label">Webcam</span>
+            <span class="status-label" id="label-webcam">웹캠</span>
             <span class="status-value" id="webcam-status">Idle</span>
           </div>
           <div class="status-row">
-            <span class="status-label">Hand</span>
+            <span class="status-label" id="label-hand">손 인식</span>
             <span class="status-value" id="hand-status">No</span>
           </div>
           <div class="status-row">
-            <span class="status-label">Aim</span>
+            <span class="status-label" id="label-aim">조준</span>
             <span class="status-value" id="aim-status">Searching</span>
           </div>
           <div class="status-row">
-            <span class="status-label">Duel</span>
+            <span class="status-label" id="label-duel">대결</span>
             <span class="status-value" id="duel-status">Start Camera</span>
           </div>
           <div class="status-row">
-            <span class="status-label">Event</span>
+            <span class="status-label" id="label-event">이벤트</span>
             <span class="status-value" id="event-status">Idle</span>
           </div>
           <div class="status-row">
-            <span class="status-label">Debug</span>
+            <span class="status-label" id="label-debug">디버그</span>
             <span class="status-value" id="debug-status">Space shoot / R reload / Enter restart</span>
           </div>
           <div class="status-row">
-            <span class="status-label">CPU Skill</span>
+            <span class="status-label" id="label-difficulty">CPU 난이도</span>
             <span class="status-value" id="difficulty-status">Medium</span>
           </div>
         </div>
@@ -119,31 +119,31 @@
       <section class="start-overlay" id="start-overlay">
         <div class="overlay-card">
           <section class="overlay-panel" id="mode-panel">
-            <p class="eyebrow">Choose Mode</p>
+            <p class="eyebrow" id="mode-eyebrow">모드 선택</p>
             <h1>Mine Cart Duel</h1>
-            <p class="overlay-copy">
+            <p class="overlay-copy" id="mode-copy">
               먼저 대전 방식을 고른다. CPU 대전은 난이도 선택 후 튜토리얼로,
               다른 참가자와 대결은 튜토리얼 후 실제 온라인 매칭 플로우로 이어진다.
             </p>
             <div class="mode-grid">
               <button class="mode-choice" id="mode-cpu-button" type="button">
-                <span class="mode-choice__eyebrow">Solo</span>
-                <strong>컴퓨터와 대결</strong>
-                <span>난이도 선택 후 바로 튜토리얼과 결투로 이어진다.</span>
+                <span class="mode-choice__eyebrow" id="mode-cpu-eyebrow">Solo</span>
+                <strong id="mode-cpu-title">컴퓨터와 대결</strong>
+                <span id="mode-cpu-body">난이도 선택 후 바로 튜토리얼과 결투로 이어진다.</span>
               </button>
               <button class="mode-choice" id="mode-multiplayer-button" type="button">
-                <span class="mode-choice__eyebrow">Online Match</span>
-                <strong>다른 참가자와 대결</strong>
-                <span>다른 접속자와 1대1 광차 결투에 바로 매칭된다.</span>
+                <span class="mode-choice__eyebrow" id="mode-multi-eyebrow">Online Match</span>
+                <strong id="mode-multi-title">다른 참가자와 대결</strong>
+                <span id="mode-multi-body">다른 접속자와 1대1 광차 결투에 바로 매칭된다.</span>
               </button>
             </div>
-            <p class="overlay-status">대결 모드를 선택해 다음 단계로 이동한다.</p>
+            <p class="overlay-status" id="mode-status">대결 모드를 선택해 다음 단계로 이동한다.</p>
           </section>
 
           <section class="overlay-panel overlay-panel--narrow is-hidden" id="cpu-difficulty-panel">
-            <p class="eyebrow">CPU Difficulty</p>
-            <h1>난이도 선택</h1>
-            <p class="overlay-copy">
+            <p class="eyebrow" id="difficulty-eyebrow">CPU Difficulty</p>
+            <h1 id="difficulty-title">난이도 선택</h1>
+            <p class="overlay-copy" id="difficulty-copy">
               CPU 대전 난이도를 먼저 고른다. 선택한 난이도는 설정 패널과 게임 HUD에도 그대로 반영된다.
             </p>
             <div class="difficulty-chip-row difficulty-chip-row--overlay">
@@ -156,7 +156,7 @@
                 Back
               </button>
             </div>
-            <p class="overlay-status">난이도를 누르면 바로 튜토리얼로 이동한다.</p>
+            <p class="overlay-status" id="difficulty-status-copy">난이도를 누르면 바로 튜토리얼로 이동한다.</p>
           </section>
 
           <section class="overlay-panel is-hidden" id="tutorial-panel">
@@ -168,32 +168,32 @@
             </p>
             <div class="instruction-grid" aria-label="Game controls guide">
               <article class="instruction-card">
-                <span class="instruction-tag">Aim Pose</span>
+                <span class="instruction-tag" id="instruction-aim-tag">Aim Pose</span>
                 <div class="instruction-illustration" aria-hidden="true">
                   <img src="./ui/hand-pose.png" alt="Finger gun pose guide" />
                 </div>
-                <p class="instruction-copy">
+                <p class="instruction-copy" id="instruction-aim-copy">
                   검지와 엄지를 편 총 모양을 유지하면 조준 상태가 된다.
                 </p>
               </article>
 
               <article class="instruction-card">
-                <span class="instruction-tag">Shoot</span>
+                <span class="instruction-tag" id="instruction-shoot-tag">Shoot</span>
                 <div class="instruction-illustration" aria-hidden="true">
                   <img src="./ui/shoot-guide.png" alt="Shoot gesture guide" />
                 </div>
-                <p class="instruction-copy">
+                <p class="instruction-copy" id="instruction-shoot-copy">
                   총 모양을 유지한 채 엄지를 접으면 발사된다.
                 </p>
                 <p class="instruction-hint">Debug: <strong>Space</strong></p>
               </article>
 
               <article class="instruction-card">
-                <span class="instruction-tag">Reload</span>
+                <span class="instruction-tag" id="instruction-reload-tag">Reload</span>
                 <div class="instruction-illustration" aria-hidden="true">
                   <img src="./ui/reload-guide.png" alt="Reload gesture guide" />
                 </div>
-                <p class="instruction-copy">
+                <p class="instruction-copy" id="instruction-reload-copy">
                   다른 손을 총 위로 가져가 엄지 쪽을 따라 좌우로 훑으면 재장전된다.
                 </p>
                 <p class="instruction-hint">Debug: <strong>R</strong></p>
@@ -214,9 +214,9 @@
           </section>
 
           <section class="overlay-panel overlay-panel--narrow is-hidden" id="matching-panel">
-            <p class="eyebrow">Online Match</p>
-            <h1>매칭 중</h1>
-            <p class="overlay-copy">
+            <p class="eyebrow" id="matching-eyebrow">Online Match</p>
+            <h1 id="matching-title">매칭 중</h1>
+            <p class="overlay-copy" id="matching-copy-lede">
               온라인 상대를 찾는 중입니다. 다른 플레이어가 접속하면 바로 같은 광차 결투에 매칭됩니다.
             </p>
             <div class="matching-spinner" aria-hidden="true"></div>

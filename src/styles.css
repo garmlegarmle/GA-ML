@@ -511,7 +511,7 @@ main {
 .hand-shooter-game__frame {
   display: block;
   width: 100%;
-  height: clamp(760px, 86vh, 980px);
+  height: clamp(840px, 92vh, 1080px);
   border: 0;
   background: #050505;
 }
@@ -2505,7 +2505,7 @@ body.is-resizing-editor-image {
   }
 
   .hand-shooter-game__frame {
-    height: max(78vh, 680px);
+    height: max(84vh, 760px);
   }
 
   .content-prose p,

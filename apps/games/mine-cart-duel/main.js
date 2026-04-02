@@ -2,6 +2,7 @@ import "./style.css";
 import { assetUrl } from "./assetPaths.js";
 import { DuelGame } from "./game.js";
 import { HandTrackingController } from "./handTracking.js";
+import { COPY, LANG, getCopy } from "./locale.js";
 import { OnlineMatchController } from "./onlineMatchController.js";
 import { SoundEffects } from "./soundEffects.js";
 
@@ -56,6 +57,39 @@ const difficultyButtons = [
 ];
 const ammoIndicator = document.querySelector("#ammo-indicator");
 const ammoIndicatorImage = document.querySelector("#ammo-indicator-image");
+const previewHeader = document.querySelector("#preview-header");
+const settingsEyebrow = document.querySelector("#settings-eyebrow");
+const settingsTitle = document.querySelector("#settings-title");
+const settingsCpuSkillLabel = document.querySelector("#settings-cpu-skill-label");
+const modeEyebrow = document.querySelector("#mode-eyebrow");
+const modeCopy = document.querySelector("#mode-copy");
+const modeCpuEyebrow = document.querySelector("#mode-cpu-eyebrow");
+const modeCpuTitle = document.querySelector("#mode-cpu-title");
+const modeCpuBody = document.querySelector("#mode-cpu-body");
+const modeMultiEyebrow = document.querySelector("#mode-multi-eyebrow");
+const modeMultiTitle = document.querySelector("#mode-multi-title");
+const modeMultiBody = document.querySelector("#mode-multi-body");
+const modeStatus = document.querySelector("#mode-status");
+const difficultyEyebrow = document.querySelector("#difficulty-eyebrow");
+const difficultyTitle = document.querySelector("#difficulty-title");
+const difficultyCopy = document.querySelector("#difficulty-copy");
+const difficultyStatusCopy = document.querySelector("#difficulty-status-copy");
+const instructionAimTag = document.querySelector("#instruction-aim-tag");
+const instructionAimCopy = document.querySelector("#instruction-aim-copy");
+const instructionShootTag = document.querySelector("#instruction-shoot-tag");
+const instructionShootCopy = document.querySelector("#instruction-shoot-copy");
+const instructionReloadTag = document.querySelector("#instruction-reload-tag");
+const instructionReloadCopy = document.querySelector("#instruction-reload-copy");
+const matchingEyebrow = document.querySelector("#matching-eyebrow");
+const matchingTitle = document.querySelector("#matching-title");
+const matchingCopyLede = document.querySelector("#matching-copy-lede");
+const labelWebcam = document.querySelector("#label-webcam");
+const labelHand = document.querySelector("#label-hand");
+const labelAim = document.querySelector("#label-aim");
+const labelDuel = document.querySelector("#label-duel");
+const labelEvent = document.querySelector("#label-event");
+const labelDebug = document.querySelector("#label-debug");
+const labelDifficulty = document.querySelector("#label-difficulty");
 
 const statNodes = {
   webcam: document.querySelector("#webcam-status"),
@@ -67,13 +101,15 @@ const statNodes = {
   difficulty: document.querySelector("#difficulty-status"),
 };
 
+const copy = getCopy();
 let cpuDifficulty = loadCpuDifficulty();
-const game = new DuelGame(canvas);
+const game = new DuelGame(canvas, { copy });
 game.setCpuDifficulty(cpuDifficulty);
 game.setRangeReady(true);
 const tracker = new HandTrackingController(video);
 const soundEffects = new SoundEffects();
 const onlineMatch = new OnlineMatchController(canvas, soundEffects, {
+  copy,
   onMatched: handleOnlineMatched,
   onMatchEnded: handleOnlineMatchEnded,
 });
@@ -101,6 +137,55 @@ let lastLoopAt = 0;
 let currentOverlayView = START_FLOW_VIEW.MODE;
 let activeGameplayMode = LOBBY_MODE.CPU;
 let currentAmmoFrame = -1;
+
+function applyStaticCopy() {
+  document.documentElement.lang = LANG;
+  document.title = copy.pageTitle;
+  setText(previewHeader, copy.webcamPreview);
+  setText(settingsEyebrow, copy.settings);
+  setText(settingsTitle, copy.duelDesk);
+  setText(settingsCpuSkillLabel, copy.cpuSkill);
+  setText(modeEyebrow, copy.chooseMode);
+  setText(modeCopy, copy.modeIntro);
+  setText(modeCpuEyebrow, copy.soloEyebrow);
+  setText(modeCpuTitle, copy.soloTitle);
+  setText(modeCpuBody, copy.soloBody);
+  setText(modeMultiEyebrow, copy.onlineEyebrow);
+  setText(modeMultiTitle, copy.onlineTitle);
+  setText(modeMultiBody, copy.onlineBody);
+  setText(modeStatus, copy.modeStatus);
+  setText(difficultyEyebrow, copy.cpuSkill);
+  setText(difficultyTitle, copy.difficultyTitle);
+  setText(difficultyCopy, copy.difficultyCopy);
+  setText(difficultyStatusCopy, copy.difficultyStatus);
+  setText(instructionAimTag, copy.aimPose);
+  setText(instructionAimCopy, copy.aimPoseBody);
+  setText(instructionShootTag, copy.shoot);
+  setText(instructionShootCopy, copy.shootBody);
+  setText(instructionReloadTag, copy.reload);
+  setText(instructionReloadCopy, copy.reloadBody);
+  setText(matchingEyebrow, copy.onlineEyebrow);
+  setText(matchingTitle, copy.matchingTitle);
+  setText(matchingCopyLede, copy.matchingCopy);
+  setText(labelWebcam, copy.webcam);
+  setText(labelHand, copy.hand);
+  setText(labelAim, copy.aim);
+  setText(labelDuel, copy.duel);
+  setText(labelEvent, copy.event);
+  setText(labelDebug, copy.debug);
+  setText(labelDifficulty, copy.cpuSkill);
+  setText(cameraToggleButton, copy.hide);
+  setText(cameraRestoreButton, copy.showCamera);
+  setText(settingsCloseButton, copy.close);
+  setText(previewVisibilityButton, copy.showCamera);
+  setText(resetButton, copy.restartDuel);
+  setText(cpuDifficultyBackButton, "Back");
+  setText(tutorialBackButton, "Back");
+  setText(tutorialStartButton, "Start Game");
+  setText(previewCaption, copy.cameraIdle);
+  setText(matchingStatus, copy.matchingStatus);
+  setText(matchingCopy, copy.matchingAuto);
+}
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
@@ -239,7 +324,9 @@ function setPreviewVisible(visible) {
   const panelVisible = cameraStarted && visible;
   previewPanel.classList.toggle("is-hidden", !panelVisible);
   cameraRestoreButton.classList.toggle("is-hidden", !cameraStarted || visible);
-  previewVisibilityButton.textContent = visible ? "Hide Camera" : "Show Camera";
+  cameraToggleButton.textContent = copy.hide;
+  cameraRestoreButton.textContent = copy.showCamera;
+  previewVisibilityButton.textContent = visible ? copy.hide : copy.showCamera;
 }
 
 function setSettingsOpen(open) {
@@ -282,7 +369,7 @@ function updateHud(frameState) {
 
   previewCaption.textContent =
     latestTracking.error ||
-    `${latestTracking.webcamStatus}. Thumb fold shoots, support-hand rack reloads.`;
+    `${latestTracking.webcamStatus}. ${copy.cameraGuide}`;
 
   syncAmmoIndicator(frameState);
 }
@@ -353,11 +440,9 @@ function openModeSelect() {
   activeGameplayMode = LOBBY_MODE.CPU;
   tutorialStartButton.disabled = false;
   tutorialStartButton.textContent = "Start Game";
-  tutorialStatus.textContent =
-    "Press Start Game to grant webcam permission and begin the duel.";
-  matchingStatus.textContent = "상대를 찾는 중...";
-  matchingCopy.textContent =
-    "매칭이 완료되면 자동으로 게임 화면으로 전환됩니다.";
+  tutorialStatus.textContent = copy.tutorialCpuStatus;
+  matchingStatus.textContent = copy.matchingStatus;
+  matchingCopy.textContent = copy.matchingAuto;
   setOverlayView(START_FLOW_VIEW.MODE);
 }
 
@@ -377,18 +462,14 @@ function openTutorial(mode) {
 
   if (mode === LOBBY_MODE.CPU) {
     tutorialEyebrow.textContent = "CPU Duel";
-    tutorialTitle.textContent = "튜토리얼";
-    tutorialCopy.textContent =
-      `선택 난이도는 ${game.getCpuDifficultyLabel()}다. Start Game을 누르면 카메라 권한 요청 후 바로 결투 카운트다운이 시작된다.`;
-    tutorialStatus.textContent =
-      "Start Game을 누르면 카메라 권한을 요청하고 바로 결투를 시작한다.";
+    tutorialTitle.textContent = copy.tutorialTitleCpu;
+    tutorialCopy.textContent = copy.tutorialCpuCopy(game.getCpuDifficultyLabel());
+    tutorialStatus.textContent = copy.tutorialCpuStatus;
   } else {
     tutorialEyebrow.textContent = "Online Match";
-    tutorialTitle.textContent = "멀티플레이 튜토리얼";
-    tutorialCopy.textContent =
-      "조작은 CPU 대전과 같다. Start Game을 누르면 카메라 권한 요청 후 실제 온라인 매칭 화면으로 이동하고, 다른 플레이어가 들어오면 바로 1대1 결투에 연결된다.";
-    tutorialStatus.textContent =
-      "Start Game을 누르면 카메라 권한을 요청하고 매칭을 시작한다.";
+    tutorialTitle.textContent = copy.tutorialTitleMulti;
+    tutorialCopy.textContent = copy.tutorialMultiCopy;
+    tutorialStatus.textContent = copy.tutorialMultiStatus;
   }
 
   setOverlayView(START_FLOW_VIEW.TUTORIAL);
@@ -421,9 +502,8 @@ async function startOnlineMatchmaking() {
   setOverlayView(START_FLOW_VIEW.MATCHING);
   startOverlay.classList.remove("is-hidden");
   activeGameplayMode = LOBBY_MODE.MULTI;
-  matchingStatus.textContent = "상대를 찾는 중...";
-  matchingCopy.textContent =
-    "다른 플레이어가 접속하면 바로 같은 광차 결투에 매칭됩니다.";
+  matchingStatus.textContent = copy.matchingStatus;
+  matchingCopy.textContent = copy.matchingCopy;
 
   try {
     await onlineMatch.start();
@@ -434,9 +514,9 @@ async function startOnlineMatchmaking() {
     tutorialStatus.textContent =
       error instanceof Error
         ? error.message
-        : "온라인 매치 서버에 연결하지 못했습니다.";
+        : copy.cannotConnect;
     tutorialStartButton.disabled = false;
-    tutorialStartButton.textContent = "Retry Start Game";
+    tutorialStartButton.textContent = copy.retryStartGame;
   }
 }
 
@@ -455,13 +535,12 @@ function handleOnlineMatchEnded() {
   setOverlayView(START_FLOW_VIEW.MATCHING);
   startOverlay.classList.remove("is-hidden");
   matchingStatus.textContent = onlineMatch.getStatusText();
-  matchingCopy.textContent =
-    "다른 플레이어가 접속하면 바로 같은 광차 결투에 다시 매칭됩니다.";
+  matchingCopy.textContent = copy.matchingAutoRetry;
 }
 
 async function handleTutorialStart() {
   tutorialStartButton.disabled = true;
-  tutorialStatus.textContent = "Requesting webcam permission...";
+  tutorialStatus.textContent = copy.requestingCamera;
 
   try {
     await ensureMediaReady();
@@ -473,9 +552,9 @@ async function handleTutorialStart() {
 
     startGameplayFromOverlay();
   } catch (error) {
-    tutorialStatus.textContent = error.message;
+    tutorialStatus.textContent = error instanceof Error ? error.message : copy.cannotConnect;
     tutorialStartButton.disabled = false;
-    tutorialStartButton.textContent = "Retry Start Game";
+    tutorialStartButton.textContent = copy.retryStartGame;
   }
 }
 
@@ -612,6 +691,7 @@ window.addEventListener("beforeunload", () => {
 
 setPreviewVisible(false);
 setSettingsOpen(false);
+applyStaticCopy();
 syncDifficultyButtons();
 syncLayout();
 updateHud(latestFrame);
