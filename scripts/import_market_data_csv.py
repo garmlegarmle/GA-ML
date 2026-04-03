@@ -18,6 +18,17 @@ if str(PROJECT_ROOT) not in sys.path:
 from market_data_store import MarketCode, PostgresDailyPriceStore, normalize_ticker
 
 
+def default_schema_path() -> str:
+    candidates = [
+        PROJECT_ROOT / "server" / "sql" / "market_data.pg.sql",
+        PROJECT_ROOT / "sql" / "market_data.pg.sql",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return str(candidates[0])
+
+
 @dataclass(slots=True)
 class ImportSummary:
     market: MarketCode
@@ -32,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--market", choices=("us", "kr"), required=True)
     parser.add_argument("--input-dir", required=True, help="Directory containing one CSV per ticker.")
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL") or os.getenv("MARKET_DATA_DATABASE_URL") or "")
-    parser.add_argument("--schema-path", default=str(PROJECT_ROOT / "server" / "sql" / "market_data.pg.sql"))
+    parser.add_argument("--schema-path", default=default_schema_path())
     parser.add_argument("--retain-max-rows", type=int, default=int(os.getenv("MARKET_DATA_RETAIN_MAX_ROWS", "260")))
     return parser.parse_args()
 
