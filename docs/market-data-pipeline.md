@@ -2,6 +2,14 @@
 
 This repo now supports a daily OHLCV pipeline where GitHub Actions collects market data and upserts it into PostgreSQL, and the ticker-based chart analysis service reads from PostgreSQL instead of calling public market-data APIs from the VPS.
 
+The ticker flow for both `Trend Analyzer` and `Chart Interpretation` is now:
+
+1. Check PostgreSQL for the requested ticker
+2. If the ticker is missing, too short, or stale, dispatch a GitHub Actions sync for that ticker
+3. Wait for the workflow to finish
+4. Trim stored rows down to the latest `260`
+5. Run the analysis from PostgreSQL
+
 ## What was added
 
 - Workflows:
@@ -85,6 +93,12 @@ The workflows are already scheduled in UTC:
 
 Both workflows also support manual `workflow_dispatch`.
 
+For on-demand server-triggered syncs, the workflows also accept:
+
+- `request_id`
+- `retain_max_rows`
+- `initial_lookback_days`
+
 ## VPS / service setup
 
 If the Node API and the market-data tables share the same PostgreSQL database, nothing special is required beyond `DATABASE_URL`.
@@ -100,12 +114,26 @@ Example in `deploy/vps/env/utility-box.api.env`:
 ```text
 DATABASE_URL=postgres://utilitybox:change-me@utility-box-db:5432/utility_box
 MARKET_DATA_DATABASE_URL=postgres://utilitybox:change-me@utility-box-db:5432/utility_box
+MARKET_DATA_RETAIN_ROWS=260
+MARKET_DATA_INITIAL_LOOKBACK_DAYS=730
+MARKET_DATA_MAX_STALENESS_DAYS=5
+MARKET_DATA_GITHUB_TOKEN=github_pat_xxx
+MARKET_DATA_GITHUB_OWNER=garmlegarmle
+MARKET_DATA_GITHUB_REPO=GA-ML
+MARKET_DATA_GITHUB_REF=main
+MARKET_DATA_US_WORKFLOW=market-data-us.yml
+MARKET_DATA_KR_WORKFLOW=market-data-kr.yml
+MARKET_DATA_GITHUB_TIMEOUT_MS=120000
+MARKET_DATA_GITHUB_POLL_MS=4000
 ```
 
 The shared Python DB module resolves the connection string in this order:
 
 1. `MARKET_DATA_DATABASE_URL`
 2. `DATABASE_URL`
+
+`MARKET_DATA_GITHUB_TOKEN` must be a token that can dispatch workflows on the repository.
+In practice that means a PAT or fine-grained token with repository Actions write access.
 
 ## Manual backfill
 
@@ -129,19 +157,23 @@ Behavior:
 
 - If a ticker has no rows yet, the script backfills roughly the last 730 calendar days.
 - If a ticker already exists, the script refetches from `latest_trade_date - 10 days` and upserts.
+- After each sync, rows older than the most recent `260` trading sessions for that ticker are deleted.
 - Each ticker is retried up to 3 times before the run fails.
 
 ## How the analysis service now reads from DB
 
-`server/scripts/chart_interpretation_run.py` no longer downloads ticker data directly in ticker mode.
+`server/scripts/chart_interpretation_run.py` and `server/scripts/trend_analyze_ticker.py`
+no longer download ticker data directly in ticker mode.
 
-It now:
+They now:
 
 1. Reads the latest 260 daily rows from PostgreSQL
 2. Infers market automatically from the ticker
    - `005930` / `005930.KS` / `005930.KQ` -> `kr`
    - everything else -> `us`
-3. Runs chart interpretation on the DB-backed dataframe
+3. If needed, asks GitHub Actions to sync that ticker first
+4. Trims stored history back down to `260` rows
+5. Runs the analysis on the DB-backed dataframe
 
 CSV upload mode is unchanged.
 

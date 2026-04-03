@@ -100,6 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schema-path", default=str(PROJECT_ROOT / "server" / "sql" / "market_data.pg.sql"))
     parser.add_argument("--initial-lookback-days", type=int, default=730)
     parser.add_argument("--overlap-days", type=int, default=10)
+    parser.add_argument("--retain-max-rows", type=int, default=int(os.getenv("MARKET_DATA_RETAIN_MAX_ROWS", "260")))
     parser.add_argument("--retries", type=int, default=int(os.getenv("MARKET_DATA_FETCH_RETRIES", "3")))
     parser.add_argument("--retry-delay-seconds", type=float, default=2.0)
     return parser.parse_args()
@@ -168,6 +169,7 @@ def sync_one_ticker(
     end_date: date,
     initial_lookback_days: int,
     overlap_days: int,
+    retain_max_rows: int,
     retries: int,
     retry_delay_seconds: float,
 ) -> SyncSummary:
@@ -184,6 +186,7 @@ def sync_one_ticker(
         )
         frame = collector.fetch(normalized_ticker, fetch_start, end_date)
         rows_upserted = store.upsert_frame(market, normalized_ticker, frame)
+        store.trim_to_recent_rows(market, normalized_ticker, retain_max_rows)
         cleaned = store.prepare_frame(frame)
         return SyncSummary(
             market=market,
@@ -218,6 +221,7 @@ def main() -> None:
                 end_date=end_date,
                 initial_lookback_days=args.initial_lookback_days,
                 overlap_days=args.overlap_days,
+                retain_max_rows=args.retain_max_rows,
                 retries=args.retries,
                 retry_delay_seconds=args.retry_delay_seconds,
             )

@@ -116,6 +116,42 @@ class PostgresDailyPriceStore:
             row = conn.execute(query, (normalized_ticker,)).fetchone()
             return row["max_date"] if row else None
 
+    def trim_to_recent_rows(
+        self,
+        market: MarketCode | Literal["auto"],
+        ticker: str,
+        keep_rows: int,
+        *,
+        connection: psycopg.Connection | None = None,
+    ) -> int:
+        normalized_ticker, resolved_market = normalize_ticker(ticker, market)
+        table = MARKET_TABLES[resolved_market]
+        safe_keep_rows = max(1, int(keep_rows))
+        sql = f"""
+            WITH ranked_rows AS (
+              SELECT trade_date,
+                     ROW_NUMBER() OVER (ORDER BY trade_date DESC) AS row_number
+              FROM {table}
+              WHERE ticker = %s
+            )
+            DELETE FROM {table}
+            WHERE ticker = %s
+              AND trade_date IN (
+                SELECT trade_date
+                FROM ranked_rows
+                WHERE row_number > %s
+              )
+        """
+
+        if connection is not None:
+            cursor = connection.execute(sql, (normalized_ticker, normalized_ticker, safe_keep_rows))
+            return cursor.rowcount or 0
+
+        with self.connect() as conn:
+            cursor = conn.execute(sql, (normalized_ticker, normalized_ticker, safe_keep_rows))
+            conn.commit()
+            return cursor.rowcount or 0
+
     def upsert_frame(
         self,
         market: MarketCode | Literal["auto"],

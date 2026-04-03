@@ -39,6 +39,9 @@ export function getConfig() {
     siteOrigin: String(process.env.SITE_ORIGIN || '').trim(),
     trendAnalyzerPythonBin: defaultPythonBin,
     trendAnalyzerScript: String(process.env.TREND_ANALYZER_SCRIPT || path.join(process.cwd(), 'scripts', 'trend_analyze_csv.py')).trim(),
+    trendAnalyzerTickerScript: String(
+      process.env.TREND_ANALYZER_TICKER_SCRIPT || path.join(process.cwd(), 'scripts', 'trend_analyze_ticker.py')
+    ).trim(),
     trendAnalyzerBestParamsCsv: String(
       process.env.TREND_ANALYZER_BEST_PARAMS_CSV ||
         path.join(process.cwd(), 'web_backend_bundle', 'best_params', 'optimizer_best_params_by_head.csv')
@@ -51,6 +54,17 @@ export function getConfig() {
     chartInterpretationWorkspaceRoot: String(
       process.env.CHART_INTERPRETATION_WORKSPACE_ROOT || path.join(uploadRoot, 'chart-interpretation')
     ).trim(),
-    chartInterpretationTimeoutMs: Number(process.env.CHART_INTERPRETATION_TIMEOUT_MS || 45000)
+    chartInterpretationTimeoutMs: Number(process.env.CHART_INTERPRETATION_TIMEOUT_MS || 45000),
+    marketDataRetainRows: Number(process.env.MARKET_DATA_RETAIN_ROWS || 260),
+    marketDataInitialLookbackDays: Number(process.env.MARKET_DATA_INITIAL_LOOKBACK_DAYS || 730),
+    marketDataMaxStalenessDays: Number(process.env.MARKET_DATA_MAX_STALENESS_DAYS || 5),
+    marketDataGithubToken: String(process.env.MARKET_DATA_GITHUB_TOKEN || '').trim(),
+    marketDataGithubOwner: String(process.env.MARKET_DATA_GITHUB_OWNER || 'garmlegarmle').trim(),
+    marketDataGithubRepo: String(process.env.MARKET_DATA_GITHUB_REPO || 'GA-ML').trim(),
+    marketDataGithubRef: String(process.env.MARKET_DATA_GITHUB_REF || 'main').trim(),
+    marketDataGithubTimeoutMs: Number(process.env.MARKET_DATA_GITHUB_TIMEOUT_MS || 120000),
+    marketDataGithubPollMs: Number(process.env.MARKET_DATA_GITHUB_POLL_MS || 4000),
+    marketDataUsWorkflow: String(process.env.MARKET_DATA_US_WORKFLOW || 'market-data-us.yml').trim(),
+    marketDataKrWorkflow: String(process.env.MARKET_DATA_KR_WORKFLOW || 'market-data-kr.yml').trim()
   };
 }

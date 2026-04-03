@@ -72,6 +72,7 @@ import {
 } from './media.js';
 import { createHoldemOnlineManager } from './holdem-online/manager.js';
 import { createMineCartDuelOnlineManager } from './mine-cart-duel-online/manager.js';
+import { ensureMarketDataReady } from './market-data.js';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
@@ -83,6 +84,7 @@ const SITEMAP_LANGS = ['en', 'ko'];
 const SITEMAP_SECTIONS = ['tools', 'games', 'blog'];
 const VIEW_COUNT_EXCLUDED_PAGE_SLUGS = new Set(['about', 'contact', 'privacy-policy']);
 const CHART_INTERPRETATION_TOOL_SLUG = 'chart-interpretation';
+const MARKET_DATA_REQUIRED_ROWS = 260;
 const HOLDEM_GAME_SLUG = 'texas-holdem-tournament';
 const MAX_HOLDEM_PLAYER_NAME_LENGTH = 24;
 const HOLDEM_MAX_PLAYERS = 9;
@@ -228,6 +230,13 @@ function validateChartInterpretationResult(payload, stderr = '') {
   }
 }
 
+function validateTrendAnalysisPayload(payload, stderr = '') {
+  if (!payload?.meta || !payload?.current_state || !Array.isArray(payload?.chart_200d?.candles)) {
+    const detail = String(stderr || '').trim();
+    throw new Error(detail || 'Trend analyzer returned an invalid payload');
+  }
+}
+
 function chartInterpretationTickerMissingDataMessage(ticker) {
   const safeTicker = normalizeTrendTicker(ticker) || 'the requested ticker';
   return `No stored daily market data is available for ${safeTicker} yet. Ticker mode now reads from the GA-ML PostgreSQL market database, not a live external API. Run the GitHub Actions market-data sync first, or upload a CSV instead.`;
@@ -360,14 +369,35 @@ async function analyzeTrendCsvUpload(file, ticker) {
     });
 
     const payload = JSON.parse(String(stdout || '').trim() || '{}');
-    if (!payload?.meta || !payload?.current_state || !Array.isArray(payload?.chart_200d?.candles)) {
-      const detail = String(stderr || '').trim();
-      throw new Error(detail || 'Trend analyzer returned an invalid payload');
-    }
+    validateTrendAnalysisPayload(payload, stderr);
     return payload;
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function analyzeTrendTicker(ticker) {
+  await ensureMarketDataReady(pool, config, {
+    ticker,
+    requiredRows: MARKET_DATA_REQUIRED_ROWS,
+    retainRows: config.marketDataRetainRows
+  });
+
+  const args = [config.trendAnalyzerTickerScript, ticker, '--rows', String(MARKET_DATA_REQUIRED_ROWS), '--window-bars', '200'];
+  if (config.trendAnalyzerBestParamsCsv) {
+    args.push('--best-params-csv', config.trendAnalyzerBestParamsCsv);
+  } else {
+    args.push('--use-default-config');
+  }
+
+  const { stdout, stderr } = await execFileAsync(config.trendAnalyzerPythonBin, args, {
+    timeout: config.trendAnalyzerTimeoutMs + config.marketDataGithubTimeoutMs,
+    maxBuffer: 6 * 1024 * 1024
+  });
+
+  const payload = JSON.parse(String(stdout || '').trim() || '{}');
+  validateTrendAnalysisPayload(payload, stderr);
+  return payload;
 }
 
 async function analyzeChartInterpretationTicker(ticker) {
@@ -376,12 +406,20 @@ async function analyzeChartInterpretationTicker(ticker) {
   await fs.mkdir(runDir, { recursive: true });
 
   try {
+    await ensureMarketDataReady(pool, config, {
+      ticker,
+      requiredRows: MARKET_DATA_REQUIRED_ROWS,
+      retainRows: config.marketDataRetainRows
+    });
+
     const { stdout, stderr } = await execFileAsync(
       config.chartInterpretationPythonBin,
       [
         config.chartInterpretationScript,
         'ticker',
         ticker,
+        '--rows',
+        String(MARKET_DATA_REQUIRED_ROWS),
         '--output-dir',
         runDir
       ],
@@ -915,6 +953,23 @@ app.get('/api/tags', async (req, res, next) => {
     next(error);
   }
 });
+
+app.post(
+  '/api/tools/trend-analyzer/analyze-ticker',
+  rateLimit({ namespace: 'trend-analyzer-ticker', max: 12, windowMs: 10 * 60 * 1000 }),
+  async (req, res, next) => {
+    try {
+      const ticker = normalizeTrendTicker(req.body?.ticker);
+      if (!ticker) return jsonError(res, 400, 'ticker is required');
+
+      const payload = await analyzeTrendTicker(ticker);
+      res.setHeader('Cache-Control', 'no-store');
+      jsonOk(res, { ok: true, payload });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 app.post(
   '/api/tools/trend-analyzer/analyze',

@@ -1,4 +1,5 @@
 name: Sync US Market Data
+run-name: Sync US Market Data / ${{ github.event.inputs.request_id || github.event.inputs.tickers || 'schedule' }}
 
 on:
   schedule:
@@ -7,6 +8,18 @@ on:
     inputs:
       tickers:
         description: Optional override for US tickers (comma, space, or newline separated)
+        required: false
+        type: string
+      request_id:
+        description: Optional request id for on-demand sync tracking
+        required: false
+        type: string
+      retain_max_rows:
+        description: Maximum number of recent rows to keep per ticker after sync
+        required: false
+        type: string
+      initial_lookback_days:
+        description: Initial backfill lookback in calendar days for new tickers
         required: false
         type: string
 
@@ -20,6 +33,8 @@ jobs:
     env:
       MARKET_DATA_DATABASE_URL: ${{ secrets.MARKET_DATA_DATABASE_URL }}
       MARKET_DATA_US_TICKERS: ${{ github.event.inputs.tickers || vars.MARKET_DATA_US_TICKERS }}
+      MARKET_DATA_RETAIN_MAX_ROWS: ${{ github.event.inputs.retain_max_rows || vars.MARKET_DATA_RETAIN_MAX_ROWS || '260' }}
+      MARKET_DATA_INITIAL_LOOKBACK_DAYS: ${{ github.event.inputs.initial_lookback_days || vars.MARKET_DATA_INITIAL_LOOKBACK_DAYS || '730' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -44,4 +59,6 @@ jobs:
           python scripts/sync_market_data.py \
             --market us \
             --tickers "$MARKET_DATA_US_TICKERS" \
+            --initial-lookback-days "$MARKET_DATA_INITIAL_LOOKBACK_DAYS" \
+            --retain-max-rows "$MARKET_DATA_RETAIN_MAX_ROWS" \
             --retries 3

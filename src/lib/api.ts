@@ -252,6 +252,16 @@ export async function analyzeTrendCsv(file: File): Promise<TrendAnalysisResponse
   });
 }
 
+export async function analyzeTrendTicker(ticker: string): Promise<TrendAnalysisResponse> {
+  return apiFetch<TrendAnalysisResponse>('/api/tools/trend-analyzer/analyze-ticker', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ ticker })
+  });
+}
+
 export async function analyzeChartInterpretationTicker(ticker: string): Promise<ChartInterpretationAnalysisResponse> {
   return apiFetch<ChartInterpretationAnalysisResponse>('/api/tools/chart-interpretation/analyze-ticker', {
     method: 'POST',
