@@ -2,8 +2,6 @@ name: Sync KR Market Data
 run-name: Sync KR Market Data / ${{ github.event.inputs.request_id || github.event.inputs.tickers || 'schedule' }}
 
 on:
-  schedule:
-    - cron: '0 7 * * 1-5'
   workflow_dispatch:
     inputs:
       tickers:

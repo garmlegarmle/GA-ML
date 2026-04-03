@@ -2,8 +2,6 @@ name: Sync US Market Data
 run-name: Sync US Market Data / ${{ github.event.inputs.request_id || github.event.inputs.tickers || 'schedule' }}
 
 on:
-  schedule:
-    - cron: '0 22 * * 1-5'
   workflow_dispatch:
     inputs:
       tickers:
