@@ -303,7 +303,6 @@ app.post('/api/posts', async (req, res, next) => {
     const title = String(payload.title || '').trim();
     const content = String(payload.content_md || '').trim();
     if (!title) return jsonError(res, 400, 'title is required');
-    if (!content) return jsonError(res, 400, 'content_md is required');
     const lang = normalizeLang(payload.lang || 'en');
     const section = normalizeSection(payload.section || 'blog');
     const slug = slugify(String(payload.slug || title));
@@ -324,6 +323,10 @@ app.post('/api/posts', async (req, res, next) => {
     const ogDescription = metaDescription || excerpt || null;
     const schemaTypeRaw = String(payload.schema_type || '').trim();
     const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
+    const toolLayoutRaw = payload.tool_layout;
+    const toolLayout = toolLayoutRaw && typeof toolLayoutRaw === 'object'
+      ? JSON.stringify(toolLayoutRaw)
+      : (typeof toolLayoutRaw === 'string' && toolLayoutRaw.trim() ? toolLayoutRaw.trim() : null);
 
     const existing = await pool.query(
       'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE LIMIT 1',
@@ -336,14 +339,15 @@ app.post('/api/posts', async (req, res, next) => {
         slug, title, excerpt, content_md, status, cover_image_id, published_at,
         lang, section, pair_slug, created_at, updated_at,
         card_title, card_category, card_tag, card_rank, card_image_id,
-        meta_title, meta_description, og_title, og_description, og_image_url, schema_type
+        meta_title, meta_description, og_title, og_description, og_image_url, schema_type,
+        tool_layout
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
       ) RETURNING id`,
       [
         slug, title, excerpt, content, status, null, publishedAt, lang, section, pairSlug, nowIso(), nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId, metaTitle, metaDescription,
-        ogTitle, ogDescription, null, schemaType
+        ogTitle, ogDescription, null, schemaType, toolLayout
       ]
     );
     const postId = Number(insert.rows[0].id);
@@ -367,7 +371,6 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const title = payload.title !== undefined ? String(payload.title || '').trim() : current.title;
     const content = payload.content_md !== undefined ? String(payload.content_md || '').trim() : current.content_md;
     if (!title) return jsonError(res, 400, 'title is required');
-    if (!content) return jsonError(res, 400, 'content_md is required');
     const lang = payload.lang !== undefined ? normalizeLang(payload.lang) : current.lang;
     const section = payload.section !== undefined ? normalizeSection(payload.section) : current.section;
     const slug = payload.slug !== undefined ? slugify(String(payload.slug || title)) : current.slug;
@@ -394,6 +397,12 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const ogDescription = metaDescription || excerpt || null;
     const schemaTypeRaw = payload.schema_type !== undefined ? String(payload.schema_type || '').trim() : current.schema_type || '';
     const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
+    const toolLayoutRaw = payload.tool_layout;
+    const toolLayout = payload.tool_layout !== undefined
+      ? (toolLayoutRaw && typeof toolLayoutRaw === 'object'
+          ? JSON.stringify(toolLayoutRaw)
+          : (typeof toolLayoutRaw === 'string' && toolLayoutRaw.trim() ? toolLayoutRaw.trim() : null))
+      : current.tool_layout || null;
 
     const existing = await pool.query(
       'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE AND id != $4 LIMIT 1',
@@ -406,12 +415,13 @@ app.put('/api/posts/:id', async (req, res, next) => {
          slug=$1, title=$2, excerpt=$3, content_md=$4, status=$5, cover_image_id=$6,
          published_at=$7, lang=$8, section=$9, pair_slug=$10, updated_at=$11,
          card_title=$12, card_category=$13, card_tag=$14, card_rank=$15, card_image_id=$16,
-         meta_title=$17, meta_description=$18, og_title=$19, og_description=$20, og_image_url=$21, schema_type=$22
-       WHERE id = $23`,
+         meta_title=$17, meta_description=$18, og_title=$19, og_description=$20, og_image_url=$21, schema_type=$22,
+         tool_layout=$23
+       WHERE id = $24`,
       [
         slug, title, excerpt, content, status, current.cover_image_id, publishedAt, lang, section, pairSlug, nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId,
-        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, postId
+        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, toolLayout, postId
       ]
     );
     if (payload.tags !== undefined) {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPost, deletePost, deleteTag, listPosts, listTags, updatePost, uploadMedia } from '../lib/api';
-import type { PostItem, PostSaveSnapshot, SiteLang, SiteSection } from '../types';
+import type { PostItem, PostSaveSnapshot, SiteLang, SiteSection, ToolLayout } from '../types';
+import { ToolLayoutEditor } from './ToolLayoutEditor';
 
 interface PostEditorModalProps {
   open: boolean;
@@ -217,6 +218,8 @@ export function PostEditorModal({
   const [internalLinkQuery, setInternalLinkQuery] = useState('');
   const [internalLinkResults, setInternalLinkResults] = useState<PostItem[]>([]);
 
+  const [toolLayout, setToolLayout] = useState<ToolLayout>({ sections: [] });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -264,6 +267,7 @@ export function PostEditorModal({
 
     selectedImageRef.current = null;
     resizeStateRef.current = null;
+    setToolLayout(initialPost?.tool_layout || { sections: [] });
     setError('');
     setLoading(false);
 
@@ -649,8 +653,8 @@ export function PostEditorModal({
     const rawHtml = syncEditorHtml().trim();
     const html = normalizeBodyHtml(rawHtml).trim();
 
-    if (!normalizedTitle || !normalizedSlug || isEditorHtmlEmpty(html)) {
-      setError('title, slug, content are required.');
+    if (!normalizedTitle || !normalizedSlug) {
+      setError('title and slug are required.');
       return;
     }
 
@@ -715,7 +719,8 @@ export function PostEditorModal({
         tag: derivedCardTag,
         rank: rankNumber ? String(rankNumber) : '',
         image_id: cardImageId
-      }
+      },
+      tool_layout: (section === 'tools' || section === 'games') ? toolLayout : null
     };
 
     setLoading(true);
@@ -971,6 +976,16 @@ export function PostEditorModal({
                 {cardImageUrl ? <img className="admin-preview-image" src={cardImageUrl} alt="Card preview" /> : null}
               </div>
             </div>
+
+            {(section === 'tools' || section === 'games') && (
+              <div className="admin-card-settings">
+                <h3>섹션 레이아웃</h3>
+                <p className="list-tags">
+                  도구/게임 페이지의 섹션 배치를 설정합니다. 드래그해서 순서를 바꾸고, 각 섹션의 표시 여부와 레이아웃을 지정할 수 있습니다.
+                </p>
+                <ToolLayoutEditor value={toolLayout} onChange={setToolLayout} />
+              </div>
+            )}
 
             <div className="admin-card-settings">
               <h3>Body</h3>
