@@ -1,18 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { AdminDock } from './components/AdminDock';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminPasswordModal } from './components/AdminPasswordModal';
+import { CHART_INTERPRETATION_TOOL_SLUG, ChartInterpretationToolContent } from './components/ChartInterpretationTool';
 import { EntryCard } from './components/EntryCard';
+import { HoldemTournamentGameContent, TEXAS_HOLDEM_TOURNAMENT_SLUG } from './components/HoldemTournamentGame';
+import { HandShooterGameContent, MINE_CART_DUEL_SLUG } from './components/HandShooterGame';
 import { PageManagerModal } from './components/PageManagerModal';
 import { PostEditorModal } from './components/PostEditorModal';
 import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
-import { changeAdminPassword, getPostBySlug, getSession, listPosts, listTagCounts, login, logout } from './lib/api';
+import { TREND_ANALYZER_TOOL_SLUG, TrendAnalyzerToolContent } from './components/TrendAnalyzerTool';
+import { trackPageView } from './lib/analytics';
+import { changeAdminPassword, getPostBySlug, getSession, listPosts, login, logout } from './lib/api';
 import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
-import type { PostItem, PostSaveSnapshot, SiteLang, SiteSection } from './types';
+import type { PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from './types';
 
 interface AdminState {
   loading: boolean;
@@ -28,13 +33,23 @@ interface EditorState {
   defaultSection: SiteSection;
 }
 
+interface LanguageToggleState {
+  languageSwitch?: boolean;
+  fallbackPath?: string;
+}
+
+type PostSortOrder = 'desc' | 'asc';
+
 function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
   return {
     id: snapshot.id,
     slug: snapshot.slug,
     title: snapshot.title,
     excerpt: snapshot.excerpt,
-    content_md: existing?.content_md || '',
+    content_md: (snapshot.content_md ?? existing?.content_md) || '',
+    content_before_md: snapshot.content_before_md ?? existing?.content_before_md ?? null,
+    content_after_md: snapshot.content_after_md ?? existing?.content_after_md ?? null,
+    layout_blocks: snapshot.layout_blocks ?? existing?.layout_blocks ?? null,
     status: snapshot.status,
     published_at: snapshot.status === 'published' ? existing?.published_at || snapshot.updated_at : null,
     created_at: existing?.created_at || snapshot.updated_at,
@@ -50,6 +65,38 @@ function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
     cover: existing?.cover || null,
     card: snapshot.card
   };
+}
+
+function renderRichContent(raw: string | null | undefined): string {
+  if (!raw) return '';
+
+  const value = String(raw || '');
+  if (/<[a-z][\s\S]*>/i.test(value)) {
+    return DOMPurify.sanitize(value);
+  }
+
+  const parsed = marked.parse(value, { async: false }) as string;
+  return DOMPurify.sanitize(parsed);
+}
+
+function resolveColumnSources(post: Pick<PostItem, 'content_md' | 'content_before_md' | 'content_after_md'> | null | undefined) {
+  const leftSource = String(post?.content_before_md || '').trim();
+  const rightSource = String(post?.content_after_md || '').trim();
+
+  if (leftSource || rightSource) {
+    return { leftSource, rightSource };
+  }
+
+  return {
+    leftSource: String(post?.content_md || '').trim(),
+    rightSource: ''
+  };
+}
+
+function sortLayoutBlocks(blocks: PostLayoutBlock[] | null | undefined, column: 'left' | 'right') {
+  return (Array.isArray(blocks) ? blocks : [])
+    .filter((block) => block.visible !== false && block.column === column)
+    .sort((left, right) => Number(left.order || 0) - Number(right.order || 0));
 }
 
 function upsertPost(list: PostItem[], snapshot: PostSaveSnapshot, maxItems?: number): PostItem[] {
@@ -79,6 +126,29 @@ function sortPostsByNewest(list: PostItem[]): PostItem[] {
   return [...list].sort((a, b) => {
     const diff = postDateValue(b) - postDateValue(a);
     if (diff !== 0) return diff;
+    return b.id - a.id;
+  });
+}
+
+function postRankValue(post: PostItem): number | null {
+  const value = post.card?.rankNumber;
+  return Number.isFinite(value) ? Number(value) : null;
+}
+
+function sortPostsByCardRank(list: PostItem[], order: PostSortOrder): PostItem[] {
+  return [...list].sort((a, b) => {
+    const leftRank = postRankValue(a);
+    const rightRank = postRankValue(b);
+
+    if (leftRank !== null || rightRank !== null) {
+      if (leftRank === null) return 1;
+      if (rightRank === null) return -1;
+      const rankDiff = order === 'desc' ? rightRank - leftRank : leftRank - rightRank;
+      if (rankDiff !== 0) return rankDiff;
+    }
+
+    const dateDiff = postDateValue(b) - postDateValue(a);
+    if (dateDiff !== 0) return dateDiff;
     return b.id - a.id;
   });
 }
@@ -150,6 +220,48 @@ function buildCopySeed(post: PostItem, slug: string): PostItem {
       title,
       tag: derivedTag || 'Tag'
     }
+  };
+}
+
+const VIEW_COUNT_EXCLUDED_PAGE_SLUGS = new Set(['about', 'contact', 'privacy-policy']);
+
+function shouldShowViewCount(post: Pick<PostItem, 'section' | 'slug'>): boolean {
+  return !(post.section === 'pages' && VIEW_COUNT_EXCLUDED_PAGE_SLUGS.has(post.slug));
+}
+
+function formatViewCount(value: number, lang: SiteLang): string {
+  return new Intl.NumberFormat(lang === 'ko' ? 'ko-KR' : 'en-US').format(Math.max(0, Number(value || 0)));
+}
+
+function oppositeLang(lang: SiteLang): SiteLang {
+  return lang === 'ko' ? 'en' : 'ko';
+}
+
+function buildSectionFallbackPath(lang: SiteLang, section: SiteSection | null): string {
+  if (!section || section === 'pages') return `/${lang}/`;
+  return `/${lang}/${section}/`;
+}
+
+function buildDetailLanguageToggle(
+  lang: SiteLang,
+  section: SiteSection | null,
+  slug: string,
+  pairSlug: string | null | undefined
+): { path: string; state: LanguageToggleState } {
+  const targetLang = oppositeLang(lang);
+  const fallbackPath = buildSectionFallbackPath(targetLang, section);
+  const targetSlug = String(pairSlug || slug || '').trim();
+
+  if (!section || !targetSlug) {
+    return {
+      path: fallbackPath,
+      state: { languageSwitch: true, fallbackPath }
+    };
+  }
+
+  return {
+    path: `/${targetLang}/${section}/${targetSlug}/`,
+    state: { languageSwitch: true, fallbackPath }
   };
 }
 
@@ -231,15 +343,19 @@ function useAdminSession() {
 function SiteShell({
   lang,
   active,
+  languageTogglePath,
+  languageToggleState,
   children
 }: {
   lang: SiteLang;
   active: 'home' | SiteSection;
+  languageTogglePath?: string;
+  languageToggleState?: LanguageToggleState | null;
   children: React.ReactNode;
 }) {
   return (
     <div className="site-shell">
-      <SiteHeader lang={lang} active={active} />
+      <SiteHeader lang={lang} active={active} languageTogglePath={languageTogglePath} languageToggleState={languageToggleState} />
       <main>{children}</main>
       <SiteFooter lang={lang} />
     </div>
@@ -274,6 +390,7 @@ function HomePage({
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'tools' | 'games' | 'blog'>('all');
   const [selectedTag, setSelectedTag] = useState('');
+  const [sortOrder, setSortOrder] = useState<PostSortOrder>('desc');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -378,6 +495,7 @@ function HomePage({
       item.tags.some((tag) => String(tag || '').trim().toLowerCase() === key)
     );
   }, [categoryPosts, selectedTag]);
+  const sortedVisiblePosts = useMemo(() => sortPostsByCardRank(visiblePosts, sortOrder), [sortOrder, visiblePosts]);
 
   const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
 
@@ -448,11 +566,25 @@ function HomePage({
                 </p>
               )}
             </div>
+
+            <div className="list-head__sort">
+              <label className="list-head__sort-label">
+                <span>{t(lang, 'common.sort')}</span>
+                <select
+                  className="list-head__sort-select"
+                  value={sortOrder}
+                  onChange={(event) => setSortOrder(event.target.value as PostSortOrder)}
+                >
+                  <option value="desc">{t(lang, 'common.descending')}</option>
+                  <option value="asc">{t(lang, 'common.ascending')}</option>
+                </select>
+              </label>
+            </div>
           </header>
 
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           <div className="listing-grid listing-grid--four listing-grid--center">
-            {visiblePosts.map((post) => (
+            {sortedVisiblePosts.map((post) => (
               <EntryCard
                 key={post.id}
                 post={post}
@@ -463,7 +595,7 @@ function HomePage({
             ))}
           </div>
 
-          {!loading && visiblePosts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
+          {!loading && sortedVisiblePosts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
         </div>
       </section>
 
@@ -516,9 +648,8 @@ function SectionListPage({
   const isValidSection = Boolean(section);
 
   const [posts, setPosts] = useState<PostItem[]>([]);
-  const [tagCounts, setTagCounts] = useState<Array<{ name: string; count: number }>>([]);
   const [selectedTag, setSelectedTag] = useState('');
-  const [sectionTotal, setSectionTotal] = useState(0);
+  const [sortOrder, setSortOrder] = useState<PostSortOrder>('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -530,40 +661,23 @@ function SectionListPage({
     async function load() {
       if (!isValidSection || !section) {
         setPosts([]);
-        setTagCounts([]);
-        setSectionTotal(0);
         setLoading(false);
         return;
       }
 
       try {
-        const [response, totals, tags] = await Promise.all([
-          listPosts({
-            lang,
-            section,
-            status: admin.isAdmin ? 'all' : 'published',
-            tag: selectedTag || undefined,
-            limit: 120,
-            page: 1
-          }),
-          listPosts({
-            lang,
-            section,
-            status: admin.isAdmin ? 'all' : 'published',
-            limit: 1,
-            page: 1
-          }),
-          listTagCounts({ lang, section })
-        ]);
+        const response = await listPosts({
+          lang,
+          section,
+          status: admin.isAdmin ? 'all' : 'published',
+          limit: 120,
+          page: 1
+        });
         if (canceled) return;
         setPosts(response.items);
-        setSectionTotal(Number(totals.total || 0));
-        setTagCounts(Array.isArray(tags.items) ? tags.items : []);
       } catch (err) {
         if (canceled) return;
         setPosts([]);
-        setTagCounts([]);
-        setSectionTotal(0);
         setError(err instanceof Error ? err.message : 'Failed to load posts');
       } finally {
         if (!canceled) setLoading(false);
@@ -574,7 +688,7 @@ function SectionListPage({
     return () => {
       canceled = true;
     };
-  }, [admin.isAdmin, isValidSection, lang, refreshKey, section, selectedTag]);
+  }, [admin.isAdmin, isValidSection, lang, refreshKey, section]);
 
   useEffect(() => {
     setSelectedTag('');
@@ -596,6 +710,33 @@ function SectionListPage({
   }, [admin.isAdmin, isValidSection, lang, savedPost, section, selectedTag]);
 
   const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
+  const sectionTotal = posts.length;
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of posts) {
+      const seen = new Set<string>();
+      for (const rawTag of item.tags || []) {
+        const tag = String(rawTag || '').trim();
+        if (!tag) continue;
+        const key = tag.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        counts.set(tag, (counts.get(tag) || 0) + 1);
+      }
+    }
+
+    return [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  }, [posts]);
+  const visiblePosts = useMemo(() => {
+    if (!selectedTag) return posts;
+    const key = selectedTag.trim().toLowerCase();
+    return posts.filter((item) =>
+      item.tags.some((tag) => String(tag || '').trim().toLowerCase() === key)
+    );
+  }, [posts, selectedTag]);
+  const sortedVisiblePosts = useMemo(() => sortPostsByCardRank(visiblePosts, sortOrder), [sortOrder, visiblePosts]);
 
   if (!isValidSection || !section) {
     return <Navigate to={`/${lang}/`} replace />;
@@ -646,13 +787,26 @@ function SectionListPage({
                 </p>
               )}
             </div>
+            <div className="list-head__sort">
+              <label className="list-head__sort-label">
+                <span>{t(lang, 'common.sort')}</span>
+                <select
+                  className="list-head__sort-select"
+                  value={sortOrder}
+                  onChange={(event) => setSortOrder(event.target.value as PostSortOrder)}
+                >
+                  <option value="desc">{t(lang, 'common.descending')}</option>
+                  <option value="asc">{t(lang, 'common.ascending')}</option>
+                </select>
+              </label>
+            </div>
           </header>
 
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
 
-          <div className="listing-grid listing-grid--four">
-            {posts.map((post) => (
+          <div className="listing-grid listing-grid--four listing-grid--center">
+            {sortedVisiblePosts.map((post) => (
               <EntryCard
                 key={post.id}
                 post={post}
@@ -663,7 +817,7 @@ function SectionListPage({
             ))}
           </div>
 
-          {!loading && posts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
+          {!loading && sortedVisiblePosts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
         </div>
       </section>
 
@@ -703,6 +857,8 @@ function DetailPage({
   savedPost: PostSaveSnapshot | null;
 }) {
   const params = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const lang = normalizeLang(params.lang);
   const section = normalizeSection(params.section || '') as SiteSection | null;
   const slug = String(params.slug || '');
@@ -714,6 +870,13 @@ function DetailPage({
   const [previousPost, setPreviousPost] = useState<PostItem | null>(null);
   const [nextPost, setNextPost] = useState<PostItem | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<PostItem[]>([]);
+  const languageToggle = useMemo(
+    () => buildDetailLanguageToggle(lang, section, slug, post?.pair_slug),
+    [lang, post?.pair_slug, section, slug]
+  );
+  const locationState = location.state as LanguageToggleState | null;
+  const languageSwitchFallback =
+    locationState?.languageSwitch && locationState.fallbackPath ? locationState.fallbackPath : null;
 
   useEffect(() => {
     let canceled = false;
@@ -733,8 +896,13 @@ function DetailPage({
         setPost(response.post);
       } catch (err) {
         if (canceled) return;
+        const message = err instanceof Error ? err.message : 'Failed to load post';
+        if (message === 'Post not found' && languageSwitchFallback) {
+          navigate(languageSwitchFallback, { replace: true });
+          return;
+        }
         setPost(null);
-        setError(err instanceof Error ? err.message : 'Failed to load post');
+        setError(message);
       } finally {
         if (!canceled) setLoading(false);
       }
@@ -744,7 +912,7 @@ function DetailPage({
     return () => {
       canceled = true;
     };
-  }, [isValidSection, lang, refreshKey, section, slug]);
+  }, [isValidSection, lang, languageSwitchFallback, navigate, refreshKey, section, slug]);
 
   useEffect(() => {
     if (!savedPost) return;
@@ -850,22 +1018,24 @@ function DetailPage({
     };
   }, [post]);
 
-  const html = useMemo(() => {
-    if (!post?.content_md) return '';
-
-    const raw = String(post.content_md || '');
-    if (/<[a-z][\s\S]*>/i.test(raw)) {
-      return DOMPurify.sanitize(raw);
-    }
-
-    const parsed = marked.parse(raw, { async: false }) as string;
-    return DOMPurify.sanitize(parsed);
-  }, [post?.content_md]);
+  const html = useMemo(() => renderRichContent(post?.content_md), [post?.content_md]);
 
   const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
   const enableHiddenPolicyLogin =
     section === 'pages' && lang === 'en' && slug === 'privacy-policy' && !admin.isAdmin;
   const isStandalonePage = section === 'pages';
+  const isChartInterpretationTool = section === 'tools' && slug === CHART_INTERPRETATION_TOOL_SLUG;
+  const isTrendAnalyzerTool = section === 'tools' && slug === TREND_ANALYZER_TOOL_SLUG;
+  const isHoldemTournamentGame = section === 'games' && slug === TEXAS_HOLDEM_TOURNAMENT_SLUG;
+  const isMineCartDuelGame = section === 'games' && slug === MINE_CART_DUEL_SLUG;
+  const usesSplitLayout = section !== 'games';
+  const isEmbeddedProgramPost = isChartInterpretationTool || isTrendAnalyzerTool || isHoldemTournamentGame || isMineCartDuelGame;
+  const hasBlockLayout = usesSplitLayout && Array.isArray(post?.layout_blocks) && post.layout_blocks.length > 0;
+  const columnSources = useMemo(() => resolveColumnSources(post), [post?.content_after_md, post?.content_before_md, post?.content_md]);
+  const leftColumnHtml = useMemo(() => renderRichContent(columnSources.leftSource), [columnSources.leftSource]);
+  const rightColumnHtml = useMemo(() => renderRichContent(columnSources.rightSource), [columnSources.rightSource]);
+  const leftLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'left'), [post?.layout_blocks]);
+  const rightLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'right'), [post?.layout_blocks]);
   const schemaJson = useMemo(() => {
     if (!post?.schemaType) return '';
 
@@ -892,12 +1062,43 @@ function DetailPage({
     });
   }, [post]);
 
+  function renderDetailLayoutBlock(block: PostLayoutBlock) {
+    if (block.type === 'tool') {
+      if (block.toolKey === CHART_INTERPRETATION_TOOL_SLUG) {
+        return (
+          <section key={block.id} className="detail-program detail-program--tool" aria-label="Tool area">
+            <ChartInterpretationToolContent lang={lang} embedded />
+          </section>
+        );
+      }
+      if (block.toolKey === TREND_ANALYZER_TOOL_SLUG) {
+        return (
+          <section key={block.id} className="detail-program detail-program--tool" aria-label="Tool area">
+            <TrendAnalyzerToolContent lang={lang} embedded />
+          </section>
+        );
+      }
+      return null;
+    }
+
+    const blockHtml = renderRichContent(block.html);
+    if (!blockHtml) return null;
+    return <section key={block.id} className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: blockHtml }} />;
+  }
+
   if (!isValidSection || !section) return <Navigate to={`/${lang}/`} replace />;
 
   return (
-    <SiteShell lang={lang} active={section}>
+    <SiteShell
+      lang={lang}
+      active={section}
+      languageTogglePath={languageToggle.path}
+      languageToggleState={languageToggle.state}
+    >
       <article className="page-section">
-        <div className="container detail-layout">
+        <div
+          className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}${isHoldemTournamentGame || isMineCartDuelGame ? ' detail-layout--game' : ''}${usesSplitLayout ? ' detail-layout--split' : ''}`}
+        >
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
           {!loading && !error && post ? (
@@ -939,8 +1140,13 @@ function DetailPage({
                       {post.updated_at && post.updated_at !== post.created_at
                         ? ` | ${t(lang, 'detail.updated')}: ${new Date(post.updated_at).toLocaleDateString()}`
                         : ''}
+                      {shouldShowViewCount(post) ? ` | ${t(lang, 'detail.views')}: ${formatViewCount(post.view_count, lang)}` : ''}
                     </p>
                   </>
+                ) : shouldShowViewCount(post) ? (
+                  <p className="detail-layout__date">
+                    {t(lang, 'detail.views')}: {formatViewCount(post.view_count, lang)}
+                  </p>
                 ) : null}
                 <div className="detail-layout__title-row">
                   <h1>
@@ -949,19 +1155,156 @@ function DetailPage({
                 </div>
               </header>
 
-              {(section === 'tools' || section === 'games') && (
-                <section className="detail-program" aria-label="Program area">
-                  {post.cover?.url ? (
-                    <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
-                  ) : (
-                    <div className="detail-program__placeholder">
-                      {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
-                    </div>
-                  )}
-                </section>
-              )}
+              {usesSplitLayout ? (
+                <div className="detail-layout__columns">
+                  <div className="detail-layout__column detail-layout__column--left">
+                    {hasBlockLayout
+                      ? leftLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
+                      : leftColumnHtml
+                        ? <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
+                        : null}
+                  </div>
 
-              <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: html }} />
+                  <div className="detail-layout__column detail-layout__column--right">
+                    {hasBlockLayout ? (
+                      rightLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
+                    ) : (
+                      <>
+                        {isChartInterpretationTool ? (
+                          <section className="detail-program detail-program--tool" aria-label="Tool area">
+                            <ChartInterpretationToolContent lang={lang} embedded />
+                          </section>
+                        ) : isTrendAnalyzerTool ? (
+                          <section className="detail-program detail-program--tool" aria-label="Tool area">
+                            <TrendAnalyzerToolContent lang={lang} embedded />
+                          </section>
+                        ) : isHoldemTournamentGame ? (
+                          <section className="detail-program detail-program--game" aria-label="Game area">
+                            <HoldemTournamentGameContent lang={lang} embedded />
+                          </section>
+                        ) : isMineCartDuelGame ? (
+                          <section className="detail-program detail-program--game" aria-label="Game area">
+                            <HandShooterGameContent lang={lang} embedded />
+                          </section>
+                        ) : (section === 'tools' || section === 'games') ? (() => {
+                          const tl = post.tool_layout;
+                          if (tl && tl.sections && tl.sections.length > 0) {
+                            return (
+                              <>
+                                {tl.sections.filter((s) => s.enabled).map((toolSection) => {
+                                  if (toolSection.layout === 'two-col') {
+                                    return (
+                                      <div key={toolSection.id} className="tool-section tool-section--two-col">
+                                        {toolSection.slots.map((slot, i) => (
+                                          <div key={i} className="tool-section__slot">
+                                            {slot.type === 'program' ? (
+                                              post.cover?.url ? (
+                                                <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" className="tool-section__cover" />
+                                              ) : (
+                                                <div className="detail-program__placeholder">
+                                                  {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                                                </div>
+                                              )
+                                            ) : (
+                                              <div
+                                                className="content-prose tool-section__text"
+                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
+                                              />
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+                                  const slot = toolSection.slots[0];
+                                  if (!slot) return null;
+                                  return (
+                                    <div key={toolSection.id} className="tool-section tool-section--full">
+                                      {slot.type === 'program' ? (
+                                        <section className="detail-program" aria-label="Program area">
+                                          {post.cover?.url ? (
+                                            <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                                          ) : (
+                                            <div className="detail-program__placeholder">
+                                              {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                                            </div>
+                                          )}
+                                        </section>
+                                      ) : (
+                                        <div
+                                          className="content-prose tool-section__text"
+                                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            );
+                          }
+                          return (
+                            <section className="detail-program" aria-label="Program area">
+                              {post.cover?.url ? (
+                                <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                              ) : (
+                                <div className="detail-program__placeholder">
+                                  {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                                </div>
+                              )}
+                            </section>
+                          );
+                        })() : null}
+
+                        {rightColumnHtml ? (
+                          <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {isEmbeddedProgramPost && leftColumnHtml ? (
+                    <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
+                  ) : null}
+
+                  {isChartInterpretationTool ? (
+                    <section className="detail-program detail-program--tool" aria-label="Tool area">
+                      <ChartInterpretationToolContent lang={lang} embedded />
+                    </section>
+                  ) : isTrendAnalyzerTool ? (
+                    <section className="detail-program detail-program--tool" aria-label="Tool area">
+                      <TrendAnalyzerToolContent lang={lang} embedded />
+                    </section>
+                  ) : isHoldemTournamentGame ? (
+                    <section className="detail-program detail-program--game" aria-label="Game area">
+                      <HoldemTournamentGameContent lang={lang} embedded />
+                    </section>
+                  ) : isMineCartDuelGame ? (
+                    <section className="detail-program detail-program--game" aria-label="Game area">
+                      <HandShooterGameContent lang={lang} embedded />
+                    </section>
+                  ) : section === 'games' && (
+                    <section className="detail-program" aria-label="Program area">
+                      {post.cover?.url ? (
+                        <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                      ) : (
+                        <div className="detail-program__placeholder">
+                          {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {isEmbeddedProgramPost ? (
+                    rightColumnHtml ? (
+                      <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
+                    ) : null
+                  ) : (
+                    <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: html }} />
+                  )}
+                </>
+              )}
               {!isStandalonePage && relatedPosts.length > 0 ? (
                 <section className="detail-related" aria-label={t(lang, 'detail.related')}>
                   <h2>{`${t(lang, 'detail.related')}: #${post.tags[0]}`}</h2>
@@ -1003,6 +1346,7 @@ function AppInner() {
   const location = useLocation();
   const navigate = useNavigate();
   const { state: admin, refresh } = useAdminSession();
+  const hasTrackedInitialPageView = useRef(false);
 
   const [editorState, setEditorState] = useState<EditorState>({
     open: false,
@@ -1021,6 +1365,16 @@ function AppInner() {
     const first = location.pathname.split('/').filter(Boolean)[0];
     return normalizeLang(first);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!hasTrackedInitialPageView.current) {
+      hasTrackedInitialPageView.current = true;
+      return;
+    }
+
+    const pagePath = `${location.pathname}${location.search}${location.hash}`;
+    trackPageView(pagePath);
+  }, [location.hash, location.pathname, location.search]);
 
   const requestAdmin = useCallback(() => {
     setLoginOpen(true);

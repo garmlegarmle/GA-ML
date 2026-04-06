@@ -1,7 +1,18 @@
-FROM node:20-alpine
+FROM node:20-bookworm-slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 python3-pip python3-venv \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY server/package*.json /app/
 RUN npm install --omit=dev
 COPY server /app
-ENV NODE_ENV=production
+COPY scripts /app/scripts
+COPY market_data_store /app/market_data_store
+COPY apps/games/holdem-tournament/src /app/apps/games/holdem-tournament/src
+RUN node scripts/build-holdem-online-engine.mjs
+COPY web_backend_bundle /app/web_backend_bundle
+RUN python3 -m venv /opt/trend-analyzer-venv \
+  && /opt/trend-analyzer-venv/bin/pip install --no-cache-dir -r /app/web_backend_bundle/requirements.txt
+ENV NODE_ENV=production \
+  TREND_ANALYZER_PYTHON_BIN=/opt/trend-analyzer-venv/bin/python
 CMD ["node", "src/app.js"]

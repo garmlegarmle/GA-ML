@@ -1,0 +1,1142 @@
+import { useState, type FormEvent } from 'react';
+import { analyzeTrendTicker } from '../lib/api';
+import type { SiteLang, TrendCandle, TrendPayload } from '../types';
+import rawSp500DemoPayload from '../../web_backend_bundle/samples/SPY_web_payload.json';
+
+export const TREND_ANALYZER_TOOL_SLUG = 'trend-analyzer';
+
+const TOOL_COPY = {
+  en: {
+    featureEyebrow: 'Built-in Tool',
+    featureTitle: 'Trend Analyzer',
+    featureDescription:
+      'Run one ticker directly to inspect the last 200 daily candles, moving averages, Ichimoku, MACD, RSI, breakdown risk, and the calibrated 10-day state-transition probability.',
+    featureCta: 'Open tool',
+    eyebrow: 'Tool / Market Trend',
+    title: 'Trend Analyzer',
+    description:
+      'Run one ticker directly, then review a trend analysis for the latest 200 daily sessions with structure, momentum, and confirmation indicators.',
+    introTitle: 'What This Page Does',
+    introBody:
+      'The tool analyzes one ticker from a direct symbol request, draws a 200-session daily candle chart, overlays moving averages and Ichimoku, and summarizes MACD, RSI, trend strength, confidence, breakdown risk, and the calibrated 10-day state-transition probability.',
+    usageTitle: 'How To Use It',
+    usageSteps: [
+      'Review the default S&P 500 demo snapshot first to see the expected output.',
+      'Enter one ticker symbol and run the analysis directly.',
+      'Review the key summary, chart overlays, range-based scores, and detailed interpretation.'
+    ],
+    demoTitle: 'Default demo snapshot',
+    demoBody:
+      'This page opens with a fixed S&P 500 demo based on a static SPY end-of-day snapshot. Run your own ticker when you want to analyze another market.',
+    demoNote:
+      'The built-in demo is a fixed example and does not auto-refresh. Use the ticker input below for your own symbols.',
+    demoReset: 'Show S&P 500 demo again',
+    analyzeTickerTitle: 'Analyze one ticker',
+    tickerLabel: 'Ticker',
+    tickerHint:
+      'The server checks the market-data DB first. If the ticker is missing or too short for analysis, it requests a GitHub Actions sync for that ticker, keeps only the latest 260 daily rows, and then runs the analysis.',
+    tickerPlaceholder: 'AAPL, NVDA, MSFT, 005930',
+    tickerSubmit: 'Analyze ticker',
+    tickerSourceLabel: 'Ticker request',
+    processing: 'Analyzing...',
+    activeTicker: 'Ticker',
+    sourceLabel: 'Source',
+    asOf: 'As of',
+    window: 'Window',
+    chartTitle: 'Candles + Indicator Stack',
+    chartSubtitle: 'Last 200 daily sessions with moving averages, Ichimoku, MACD, and RSI',
+    keySummaryTitle: 'Key Summary',
+    resultTitle: 'Analysis Result',
+    summaryTitle: 'Interpretation',
+    snapshotTitle: 'Latest Snapshot',
+    trend: 'Trend',
+    strength: 'Trend strength',
+    conviction: 'Trend conviction',
+    breakdownRisk: 'Breakdown risk',
+    transitionProbability: '10d state transition',
+    confidence: 'Confidence',
+    direction: 'Direction score',
+    momentum: 'Momentum score',
+    volatility: 'Volatility regime',
+    volume: 'Volume confirmation',
+    noDataTitle: 'Run a ticker to start',
+    noDataBody: 'Enter one ticker directly to start the analysis.',
+    demoSourceLabel: 'S&P 500 demo',
+    inputStatus: 'Current input',
+    lastClose: 'Last close',
+    lowLabel: 'Low',
+    midLabel: 'Mid',
+    highLabel: 'High',
+    bearishLabel: 'Bearish',
+    neutralLabel: 'Neutral',
+    bullishLabel: 'Bullish',
+    stableLabel: 'Stable',
+    elevatedLabel: 'Elevated',
+    riskHighLabel: 'High risk',
+    rangeLabel: 'Range',
+    zoneLabel: 'Current zone',
+    ema20Legend: 'EMA 20',
+    ema50Legend: 'EMA 50',
+    sma200Legend: 'SMA 200',
+    tenkanLegend: 'Tenkan',
+    kijunLegend: 'Kijun',
+    cloudLegend: 'Cloud',
+    macdLegend: 'MACD',
+    signalLegend: 'Signal',
+    rsiLegend: 'RSI'
+  },
+  ko: {
+    featureEyebrow: '내장 도구',
+    featureTitle: '추세 분석기',
+    featureDescription:
+      '티커를 바로 실행하면 최근 200일 일봉, 이동평균선, 일목균형표, MACD, RSI, 구조 붕괴 위험, 10거래일 상태 전환 확률을 함께 확인할 수 있습니다.',
+    featureCta: '도구 열기',
+    eyebrow: '도구 / 주식 추세',
+    title: '추세 분석기',
+    description:
+      '티커를 바로 실행하면, 최근 200개 일봉 세션을 기준으로 구조·모멘텀·확인 신호를 종합한 추세 분석 결과를 돌려줍니다.',
+    introTitle: '이 페이지는 무엇을 하나요',
+    introBody:
+      '직접 입력한 티커 데이터를 기준으로 200세션 일봉 차트를 만들고, 이동평균선, 일목균형표, MACD, RSI, 추세 강도, 신뢰도, 구조 붕괴 위험, 10거래일 상태 전환 확률을 함께 해석합니다.',
+    usageTitle: '이용 방법',
+    usageSteps: [
+      '먼저 기본으로 열리는 S&P 500 데모 결과를 보고 출력 형태를 확인합니다.',
+      '티커를 입력하고 바로 분석을 실행합니다.',
+      '상단 핵심 요약, 차트 오버레이, 범위형 점수, 상세 해석을 순서대로 확인합니다.'
+    ],
+    demoTitle: '기본 데모 스냅샷',
+    demoBody:
+      '이 페이지는 고정된 S&P 500 데모 결과를 기본으로 먼저 보여줍니다. 다른 티커를 보려면 아래 입력창에서 바로 실행하세요.',
+    demoNote:
+      '기본 데모는 자동으로 갱신되지 않는 고정 예시입니다. 원하는 종목은 아래 티커 입력으로 직접 분석할 수 있습니다.',
+    demoReset: 'S&P 500 데모 다시 보기',
+    analyzeTickerTitle: '티커 바로 분석',
+    tickerLabel: '티커',
+    tickerHint:
+      '서버가 먼저 시세 DB를 확인합니다. 필요한 티커 데이터가 없거나 길이가 부족하면 GitHub Actions로 해당 티커를 수집한 뒤 최신 260개 일봉만 남기고 분석합니다.',
+    tickerPlaceholder: 'AAPL, NVDA, MSFT, 005930',
+    tickerSubmit: '티커 분석하기',
+    tickerSourceLabel: '티커 요청',
+    processing: '분석 중...',
+    activeTicker: '티커',
+    sourceLabel: '소스',
+    asOf: '기준일',
+    window: '구간',
+    chartTitle: '일봉 캔들 + 지표 차트',
+    chartSubtitle: '최근 200개 일봉 세션에 이동평균선, 일목균형표, MACD, RSI를 함께 표시합니다.',
+    keySummaryTitle: '핵심 요약',
+    resultTitle: '분석 결과',
+    summaryTitle: '해석',
+    snapshotTitle: '최신 스냅샷',
+    trend: '현재 추세',
+    strength: '추세 강도',
+    conviction: '추세 확신도',
+    breakdownRisk: '구조 붕괴 위험',
+    transitionProbability: '10일 상태 전환 확률',
+    confidence: '신뢰도',
+    direction: '방향 점수',
+    momentum: '모멘텀 점수',
+    volatility: '변동성 환경',
+    volume: '거래량 확인도',
+    noDataTitle: '티커를 실행하면 결과가 나옵니다',
+    noDataBody: '티커를 바로 실행해서 분석을 시작하세요.',
+    demoSourceLabel: 'S&P 500 데모',
+    inputStatus: '현재 입력',
+    lastClose: '최근 종가',
+    lowLabel: '낮음',
+    midLabel: '중간',
+    highLabel: '높음',
+    bearishLabel: '하락',
+    neutralLabel: '중립',
+    bullishLabel: '상승',
+    stableLabel: '안정',
+    elevatedLabel: '주의',
+    riskHighLabel: '고위험',
+    rangeLabel: '범위',
+    zoneLabel: '현재 구간',
+    ema20Legend: 'EMA 20',
+    ema50Legend: 'EMA 50',
+    sma200Legend: 'SMA 200',
+    tenkanLegend: '전환선',
+    kijunLegend: '기준선',
+    cloudLegend: '구름대',
+    macdLegend: 'MACD',
+    signalLegend: '시그널',
+    rsiLegend: 'RSI'
+  }
+} as const;
+
+type RangeMetric = {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  lowLabel: string;
+  midLabel: string;
+  highLabel: string;
+  digits?: number;
+  signed?: boolean;
+};
+
+type NumericSeries = Array<number | null | undefined>;
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatDate(value: string | null | undefined, lang: SiteLang): string {
+  if (!value) return '-';
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return value;
+  return new Date(parsed).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US');
+}
+
+function formatNumber(value: number | null | undefined, lang: SiteLang, digits = 2): string {
+  if (!isFiniteNumber(value)) return '-';
+  return new Intl.NumberFormat(lang === 'ko' ? 'ko-KR' : 'en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits
+  }).format(value);
+}
+
+function formatMetricValue(value: number, lang: SiteLang, digits = 1, signed = false): string {
+  if (!isFiniteNumber(value)) return '-';
+  const prefix = signed && value > 0 ? '+' : '';
+  return `${prefix}${formatNumber(value, lang, digits)}`;
+}
+
+function titleCase(value: string): string {
+  return String(value || '')
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+    .join(' ');
+}
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
+
+function rangePosition(value: number, min: number, max: number): number {
+  if (!isFiniteNumber(value) || max <= min) return 0;
+  return clampPercent(((value - min) / (max - min)) * 100);
+}
+
+function buildSeriesPath(values: NumericSeries, xAt: (index: number) => number, scaleY: (value: number) => number): string {
+  let path = '';
+  let active = false;
+
+  values.forEach((value, index) => {
+    if (!isFiniteNumber(value)) {
+      active = false;
+      return;
+    }
+    const command = active ? 'L' : 'M';
+    path += `${command} ${xAt(index).toFixed(2)} ${scaleY(value).toFixed(2)} `;
+    active = true;
+  });
+
+  return path.trim();
+}
+
+function toDateString(value: string | null | undefined): string {
+  if (!value) return '';
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return String(value);
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+function computeSma(values: number[], period: number): Array<number | null> {
+  const output = Array<number | null>(values.length).fill(null);
+  let sum = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    sum += values[index];
+    if (index >= period) {
+      sum -= values[index - period];
+    }
+    if (index >= period - 1) {
+      output[index] = sum / period;
+    }
+  }
+  return output;
+}
+
+function computeEma(values: number[], period: number): Array<number | null> {
+  const output = Array<number | null>(values.length).fill(null);
+  const seed = computeSma(values, period)[period - 1];
+  if (!isFiniteNumber(seed)) return output;
+  const multiplier = 2 / (period + 1);
+  let previous = seed;
+  output[period - 1] = seed;
+  for (let index = period; index < values.length; index += 1) {
+    previous = (values[index] - previous) * multiplier + previous;
+    output[index] = previous;
+  }
+  return output;
+}
+
+function computeRollingMidpoint(highs: number[], lows: number[], period: number): Array<number | null> {
+  const output = Array<number | null>(highs.length).fill(null);
+  for (let index = period - 1; index < highs.length; index += 1) {
+    let high = Number.NEGATIVE_INFINITY;
+    let low = Number.POSITIVE_INFINITY;
+    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+      high = Math.max(high, highs[cursor]);
+      low = Math.min(low, lows[cursor]);
+    }
+    output[index] = (high + low) / 2;
+  }
+  return output;
+}
+
+function computeMacd(closes: number[]) {
+  const ema12 = computeEma(closes, 12);
+  const ema26 = computeEma(closes, 26);
+  const macdLine = closes.map((_, index) =>
+    isFiniteNumber(ema12[index]) && isFiniteNumber(ema26[index]) ? Number(ema12[index]) - Number(ema26[index]) : null
+  );
+  const seeded = macdLine.filter(isFiniteNumber);
+  const signalSeed = computeEma(seeded, 9);
+  const signal = Array<number | null>(closes.length).fill(null);
+  let seedIndex = 0;
+  macdLine.forEach((value, index) => {
+    if (!isFiniteNumber(value)) return;
+    signal[index] = signalSeed[seedIndex];
+    seedIndex += 1;
+  });
+  const hist = macdLine.map((value, index) =>
+    isFiniteNumber(value) && isFiniteNumber(signal[index]) ? Number(value) - Number(signal[index]) : null
+  );
+  return { macdLine, signal, hist };
+}
+
+function computeRsi(closes: number[], period = 14): Array<number | null> {
+  const output = Array<number | null>(closes.length).fill(null);
+  if (closes.length <= period) return output;
+  let gains = 0;
+  let losses = 0;
+  for (let index = 1; index <= period; index += 1) {
+    const change = closes[index] - closes[index - 1];
+    if (change >= 0) gains += change;
+    else losses -= change;
+  }
+  let averageGain = gains / period;
+  let averageLoss = losses / period;
+  output[period] = averageLoss === 0 ? 100 : 100 - 100 / (1 + averageGain / averageLoss);
+  for (let index = period + 1; index < closes.length; index += 1) {
+    const change = closes[index] - closes[index - 1];
+    const gain = Math.max(change, 0);
+    const loss = Math.max(-change, 0);
+    averageGain = (averageGain * (period - 1) + gain) / period;
+    averageLoss = (averageLoss * (period - 1) + loss) / period;
+    output[index] = averageLoss === 0 ? 100 : 100 - 100 / (1 + averageGain / averageLoss);
+  }
+  return output;
+}
+
+function withDerivedIndicators(sourceCandles: TrendCandle[]): TrendCandle[] {
+  if (sourceCandles.length === 0) return sourceCandles;
+  const closes = sourceCandles.map((item) => item.close);
+  const highs = sourceCandles.map((item) => item.high);
+  const lows = sourceCandles.map((item) => item.low);
+  const ema20 = computeEma(closes, 20);
+  const ema50 = computeEma(closes, 50);
+  const sma200 = computeSma(closes, 200);
+  const tenkan = computeRollingMidpoint(highs, lows, 9);
+  const kijun = computeRollingMidpoint(highs, lows, 26);
+  const cloudA = tenkan.map((value, index) =>
+    isFiniteNumber(value) && isFiniteNumber(kijun[index]) ? (Number(value) + Number(kijun[index])) / 2 : null
+  );
+  const cloudB = computeRollingMidpoint(highs, lows, 52);
+  const macd = computeMacd(closes);
+  const rsi = computeRsi(closes);
+
+  return sourceCandles.map((candle, index) => ({
+    ...candle,
+    ema20: isFiniteNumber(candle.ema20) ? candle.ema20 : ema20[index],
+    ema50: isFiniteNumber(candle.ema50) ? candle.ema50 : ema50[index],
+    sma200: isFiniteNumber(candle.sma200) ? candle.sma200 : sma200[index],
+    ichimoku_tenkan: isFiniteNumber(candle.ichimoku_tenkan) ? candle.ichimoku_tenkan : tenkan[index],
+    ichimoku_kijun: isFiniteNumber(candle.ichimoku_kijun) ? candle.ichimoku_kijun : kijun[index],
+    ichimoku_cloud_a: isFiniteNumber(candle.ichimoku_cloud_a) ? candle.ichimoku_cloud_a : cloudA[index],
+    ichimoku_cloud_b: isFiniteNumber(candle.ichimoku_cloud_b) ? candle.ichimoku_cloud_b : cloudB[index],
+    macd_line: isFiniteNumber(candle.macd_line) ? candle.macd_line : macd.macdLine[index],
+    macd_signal: isFiniteNumber(candle.macd_signal) ? candle.macd_signal : macd.signal[index],
+    macd_hist: isFiniteNumber(candle.macd_hist) ? candle.macd_hist : macd.hist[index],
+    rsi: isFiniteNumber(candle.rsi) ? candle.rsi : rsi[index],
+  }));
+}
+
+function describeRsi(value: number | null | undefined, lang: SiteLang) {
+  if (!isFiniteNumber(value)) return lang === 'ko' ? 'RSI 정보가 아직 충분하지 않습니다.' : 'RSI data is not available yet.';
+  if (value >= 70) return lang === 'ko' ? `RSI ${formatNumber(value, lang, 1)}로 과매수 구간에 가깝습니다.` : `RSI is ${formatNumber(value, lang, 1)}, which is close to overbought territory.`;
+  if (value <= 30) return lang === 'ko' ? `RSI ${formatNumber(value, lang, 1)}로 과매도 구간에 가깝습니다.` : `RSI is ${formatNumber(value, lang, 1)}, which is close to oversold territory.`;
+  return lang === 'ko' ? `RSI ${formatNumber(value, lang, 1)}로 중립 범위 안에 있습니다.` : `RSI is ${formatNumber(value, lang, 1)}, which sits in a neutral range.`;
+}
+
+function describeMacd(macdLine: number | null | undefined, signal: number | null | undefined, lang: SiteLang) {
+  if (!isFiniteNumber(macdLine) || !isFiniteNumber(signal)) return lang === 'ko' ? 'MACD 교차 정보가 충분하지 않습니다.' : 'MACD crossover data is not available.';
+  const bullish = macdLine >= signal;
+  return lang === 'ko'
+    ? `MACD ${formatNumber(macdLine, lang, 2)} / 시그널 ${formatNumber(signal, lang, 2)}로 ${bullish ? '상방 교차 쪽' : '하방 교차 쪽'}에 있습니다.`
+    : `MACD ${formatNumber(macdLine, lang, 2)} versus signal ${formatNumber(signal, lang, 2)} keeps the setup on the ${bullish ? 'bullish' : 'bearish'} side of the crossover.`;
+}
+
+function describeStructure(snapshot: Record<string, number | null> | undefined, lang: SiteLang) {
+  if (!snapshot) return lang === 'ko' ? '이동평균 구조 정보가 없습니다.' : 'Moving-average structure data is not available.';
+  const close = snapshot.close;
+  const ema20 = snapshot.ema20;
+  const ema50 = snapshot.ema50;
+  const sma200 = snapshot.sma200;
+  if (!isFiniteNumber(close) || !isFiniteNumber(ema20) || !isFiniteNumber(ema50) || !isFiniteNumber(sma200)) {
+    return lang === 'ko' ? '이동평균 구조 정보가 충분하지 않습니다.' : 'Moving-average structure data is incomplete.';
+  }
+  const relation = close > sma200 ? (lang === 'ko' ? '장기 기준 위' : 'above the long-term baseline') : (lang === 'ko' ? '장기 기준 아래' : 'below the long-term baseline');
+  const stack =
+    ema20 > ema50 && ema50 > sma200
+      ? lang === 'ko'
+        ? '단기·중기·장기선이 정배열입니다.'
+        : 'The short-, medium-, and long-term averages are stacked in bullish order.'
+      : ema20 < ema50 && ema50 < sma200
+        ? lang === 'ko'
+          ? '단기·중기·장기선이 역배열입니다.'
+          : 'The short-, medium-, and long-term averages are stacked in bearish order.'
+        : lang === 'ko'
+          ? '이동평균 배열이 혼재되어 있습니다.'
+          : 'The moving averages are still mixed rather than cleanly aligned.';
+  return lang === 'ko'
+    ? `최근 종가 ${formatNumber(close, lang, 2)}는 ${relation}에 있고, EMA20 ${formatNumber(ema20, lang, 2)}, EMA50 ${formatNumber(ema50, lang, 2)}, SMA200 ${formatNumber(sma200, lang, 2)} 기준으로 ${stack}`
+    : `The latest close at ${formatNumber(close, lang, 2)} sits ${relation}. Against EMA20 ${formatNumber(ema20, lang, 2)}, EMA50 ${formatNumber(ema50, lang, 2)}, and SMA200 ${formatNumber(sma200, lang, 2)}, ${stack}`;
+}
+
+function describeIchimoku(snapshot: Record<string, number | null> | undefined, lang: SiteLang) {
+  if (!snapshot) return lang === 'ko' ? '일목균형표 정보가 없습니다.' : 'Ichimoku data is not available.';
+  const close = snapshot.close;
+  const tenkan = snapshot.ichimoku_tenkan;
+  const kijun = snapshot.ichimoku_kijun;
+  const cloudA = snapshot.ichimoku_cloud_a;
+  const cloudB = snapshot.ichimoku_cloud_b;
+  if (![close, tenkan, kijun, cloudA, cloudB].every(isFiniteNumber)) {
+    return lang === 'ko' ? '일목균형표 정보가 충분하지 않습니다.' : 'Ichimoku data is incomplete.';
+  }
+  const upper = Math.max(Number(cloudA), Number(cloudB));
+  const lower = Math.min(Number(cloudA), Number(cloudB));
+  const cloudPosition =
+    Number(close) > upper
+      ? lang === 'ko'
+        ? '구름대 위'
+        : 'above the cloud'
+      : Number(close) < lower
+        ? lang === 'ko'
+          ? '구름대 아래'
+          : 'below the cloud'
+        : lang === 'ko'
+          ? '구름대 내부'
+          : 'inside the cloud';
+  const cross =
+    Number(tenkan) >= Number(kijun)
+      ? lang === 'ko'
+        ? '전환선이 기준선 위에 있습니다.'
+        : 'The conversion line remains above the base line.'
+      : lang === 'ko'
+        ? '전환선이 기준선 아래에 있습니다.'
+        : 'The conversion line remains below the base line.';
+  return lang === 'ko'
+    ? `일목균형표 기준으로 가격은 ${cloudPosition}에 있고, ${cross}`
+    : `On Ichimoku, price is ${cloudPosition}, and ${cross}`;
+}
+
+function buildFallbackSummaryBullets(payload: TrendPayload, lang: SiteLang): string[] {
+  const snapshot = payload.indicator_snapshot || {};
+  const state = payload.current_state;
+  const trendLabel = lang === 'ko' ? state.trend_state_label_ko : titleCase(state.trend_state_label);
+  return [
+    lang === 'ko'
+      ? `현재 기본 데모 결과는 ${trendLabel}이며 신뢰도는 ${formatNumber(state.confidence_score, lang, 1)}입니다.`
+      : `The default demo currently reads ${trendLabel} with confidence at ${formatNumber(state.confidence_score, lang, 1)}.`,
+    describeStructure(snapshot, lang),
+    describeRsi(snapshot.rsi, lang),
+    describeMacd(snapshot.macd_line, snapshot.macd_signal, lang),
+  ];
+}
+
+function buildFallbackDetailSections(payload: TrendPayload, lang: SiteLang): string[] {
+  const snapshot = payload.indicator_snapshot || {};
+  const state = payload.current_state;
+  const breakdown = Number(state.breakdown_risk_score ?? state.transition_risk_score);
+  const transition = Number(state.state_transition_probability_10d ?? state.transition_risk_score);
+  return [
+    describeStructure(snapshot, lang),
+    describeIchimoku(snapshot, lang),
+    describeRsi(snapshot.rsi, lang),
+    describeMacd(snapshot.macd_line, snapshot.macd_signal, lang),
+    lang === 'ko'
+      ? `구조 붕괴 위험은 ${formatNumber(breakdown, lang, 1)}, 10거래일 상태 전환 확률은 ${formatNumber(transition, lang, 1)}로 해석됩니다. 이 값은 추세가 유지될 가능성과 흔들릴 가능성을 함께 보는 참고 지표입니다.`
+      : `Breakdown risk is ${formatNumber(breakdown, lang, 1)} and the calibrated 10-day state-transition probability is ${formatNumber(transition, lang, 1)}. Together they provide a quick read on how stable or fragile the current regime appears.`,
+  ];
+}
+
+function normalizePayload(payload: TrendPayload): TrendPayload {
+  const candles = withDerivedIndicators(payload.chart_200d?.candles || []);
+  return {
+    ...payload,
+    meta: {
+      ...payload.meta,
+      config_source: payload.meta.config_source ? 'static-demo' : payload.meta.config_source,
+      as_of_date: toDateString(payload.meta.as_of_date),
+      window_start: toDateString(payload.meta.window_start),
+      window_end: toDateString(payload.meta.window_end),
+    },
+    current_state: {
+      ...payload.current_state,
+      breakdown_risk_score: payload.current_state.breakdown_risk_score ?? payload.current_state.transition_risk_score,
+      state_transition_probability_10d:
+        payload.current_state.state_transition_probability_10d ?? payload.current_state.transition_risk_score,
+      summary_bullets_en: payload.current_state.summary_bullets_en || buildFallbackSummaryBullets(payload, 'en'),
+      summary_bullets_ko: payload.current_state.summary_bullets_ko || buildFallbackSummaryBullets(payload, 'ko'),
+      detail_sections_en: payload.current_state.detail_sections_en || buildFallbackDetailSections(payload, 'en'),
+      detail_sections_ko: payload.current_state.detail_sections_ko || buildFallbackDetailSections(payload, 'ko'),
+    },
+    chart_200d: {
+      candles,
+    },
+  };
+}
+
+const SP500_DEMO_PAYLOAD = normalizePayload(rawSp500DemoPayload as TrendPayload);
+
+function buildAreaPath(
+  upperValues: NumericSeries,
+  lowerValues: NumericSeries,
+  xAt: (index: number) => number,
+  scaleY: (value: number) => number
+): string {
+  const upperPoints: string[] = [];
+  const lowerPoints: string[] = [];
+
+  upperValues.forEach((upperValue, index) => {
+    const lowerValue = lowerValues[index];
+    if (!isFiniteNumber(upperValue) || !isFiniteNumber(lowerValue)) return;
+    upperPoints.push(`${xAt(index).toFixed(2)} ${scaleY(upperValue).toFixed(2)}`);
+    lowerPoints.push(`${xAt(index).toFixed(2)} ${scaleY(lowerValue).toFixed(2)}`);
+  });
+
+  if (upperPoints.length < 2 || lowerPoints.length < 2) return '';
+  return `M ${upperPoints.join(' L ')} L ${lowerPoints.reverse().join(' L ')} Z`;
+}
+
+function buildChartTicks(candles: TrendCandle[]) {
+  const midpoint = Math.floor(candles.length / 2);
+  return [candles[0]?.date || '', candles[midpoint]?.date || '', candles[candles.length - 1]?.date || ''];
+}
+
+function formatWindowLabel(bars: number, lang: SiteLang): string {
+  return lang === 'ko' ? `${bars}개 세션` : `${bars} sessions`;
+}
+
+function buildRangeMeta(metric: RangeMetric, copy: (typeof TOOL_COPY)[SiteLang], lang: SiteLang): string {
+  const position = rangePosition(metric.value, metric.min, metric.max);
+  const zone = position < 33 ? metric.lowLabel : position < 66 ? metric.midLabel : metric.highLabel;
+  return `${copy.rangeLabel}: ${formatMetricValue(metric.min, lang, 0, metric.signed)} to ${formatMetricValue(
+    metric.max,
+    lang,
+    0,
+    metric.signed
+  )} | ${copy.zoneLabel}: ${zone}`;
+}
+
+function CombinedTrendChart({ candles, lang }: { candles: TrendCandle[]; lang: SiteLang }) {
+  if (candles.length === 0) return null;
+
+  const width = 1120;
+  const left = 64;
+  const right = 24;
+  const top = 24;
+  const priceHeight = 360;
+  const macdHeight = 140;
+  const rsiHeight = 118;
+  const panelGap = 18;
+  const bottom = 36;
+  const plotWidth = width - left - right;
+  const stepX = plotWidth / Math.max(candles.length, 1);
+  const priceTop = top;
+  const priceBottom = priceTop + priceHeight;
+  const macdTop = priceBottom + panelGap;
+  const macdBottom = macdTop + macdHeight;
+  const rsiTop = macdBottom + panelGap;
+  const rsiBottom = rsiTop + rsiHeight;
+  const height = rsiBottom + bottom;
+  const bodyWidth = Math.max(2, Math.min(5, stepX * 0.58));
+  const xAt = (index: number) => left + stepX * index + stepX / 2;
+  const ticks = buildChartTicks(candles);
+
+  const ema20 = candles.map((item) => item.ema20);
+  const ema50 = candles.map((item) => item.ema50);
+  const sma200 = candles.map((item) => item.sma200);
+  const tenkan = candles.map((item) => item.ichimoku_tenkan);
+  const kijun = candles.map((item) => item.ichimoku_kijun);
+  const cloudA = candles.map((item) => item.ichimoku_cloud_a);
+  const cloudB = candles.map((item) => item.ichimoku_cloud_b);
+  const macdLine = candles.map((item) => item.macd_line);
+  const macdSignal = candles.map((item) => item.macd_signal);
+  const macdHist = candles.map((item) => item.macd_hist);
+  const rsi = candles.map((item) => item.rsi);
+
+  const priceValues = candles
+    .flatMap((item) => [
+      item.high,
+      item.low,
+      item.ema20,
+      item.ema50,
+      item.sma200,
+      item.ichimoku_tenkan,
+      item.ichimoku_kijun,
+      item.ichimoku_cloud_a,
+      item.ichimoku_cloud_b
+    ])
+    .filter(isFiniteNumber);
+  const maxPrice = Math.max(...priceValues);
+  const minPrice = Math.min(...priceValues);
+  const priceSpan = Math.max(maxPrice - minPrice, 1);
+  const scalePrice = (value: number) => priceTop + ((maxPrice - value) / priceSpan) * priceHeight;
+
+  const macdValues = [...macdLine, ...macdSignal, ...macdHist, 0].filter(isFiniteNumber);
+  const maxMacd = Math.max(...macdValues);
+  const minMacd = Math.min(...macdValues);
+  const macdSpan = Math.max(maxMacd - minMacd, 1);
+  const scaleMacd = (value: number) => macdTop + ((maxMacd - value) / macdSpan) * macdHeight;
+
+  const scaleRsi = (value: number) => rsiTop + ((100 - value) / 100) * rsiHeight;
+
+  const cloudPath = buildAreaPath(cloudA, cloudB, xAt, scalePrice);
+  const ema20Path = buildSeriesPath(ema20, xAt, scalePrice);
+  const ema50Path = buildSeriesPath(ema50, xAt, scalePrice);
+  const sma200Path = buildSeriesPath(sma200, xAt, scalePrice);
+  const tenkanPath = buildSeriesPath(tenkan, xAt, scalePrice);
+  const kijunPath = buildSeriesPath(kijun, xAt, scalePrice);
+  const cloudAPath = buildSeriesPath(cloudA, xAt, scalePrice);
+  const cloudBPath = buildSeriesPath(cloudB, xAt, scalePrice);
+  const macdLinePath = buildSeriesPath(macdLine, xAt, scaleMacd);
+  const macdSignalPath = buildSeriesPath(macdSignal, xAt, scaleMacd);
+  const rsiPath = buildSeriesPath(rsi, xAt, scaleRsi);
+
+  return (
+    <div className="trend-tool-chart">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={lang === 'ko' ? '최근 200일 캔들과 MACD RSI 차트' : 'Last 200 daily candles with MACD and RSI'}
+      >
+        <rect x="0" y="0" width={width} height={height} rx="0" fill="#ffffff" />
+        <rect x={left} y={priceTop} width={plotWidth} height={priceHeight} fill="#ffffff" />
+        <rect x={left} y={macdTop} width={plotWidth} height={macdHeight} fill="#ffffff" />
+        <rect x={left} y={rsiTop} width={plotWidth} height={rsiHeight} fill="#ffffff" />
+
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const y = priceTop + priceHeight * ratio;
+          const value = maxPrice - priceSpan * ratio;
+          return (
+            <g key={`price-grid-${ratio}`}>
+              <line x1={left} y1={y} x2={width - right} y2={y} stroke="#d8d1c0" strokeDasharray="4 6" />
+              <text x={left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#5f5849">
+                {formatNumber(value, lang, 1)}
+              </text>
+            </g>
+          );
+        })}
+
+        {cloudPath ? <path d={cloudPath} fill="#d9d0a0" fillOpacity="0.28" stroke="none" /> : null}
+        {cloudAPath ? <path d={cloudAPath} fill="none" stroke="#93884f" strokeWidth="1.2" strokeDasharray="5 4" /> : null}
+        {cloudBPath ? <path d={cloudBPath} fill="none" stroke="#b0a56a" strokeWidth="1.2" strokeDasharray="5 4" /> : null}
+        {sma200Path ? <path d={sma200Path} fill="none" stroke="#111827" strokeWidth="1.6" /> : null}
+        {ema20Path ? <path d={ema20Path} fill="none" stroke="#0284c7" strokeWidth="1.8" /> : null}
+        {ema50Path ? <path d={ema50Path} fill="none" stroke="#14b8a6" strokeWidth="1.8" /> : null}
+        {tenkanPath ? <path d={tenkanPath} fill="none" stroke="#ca8a04" strokeWidth="1.5" /> : null}
+        {kijunPath ? <path d={kijunPath} fill="none" stroke="#dc2626" strokeWidth="1.5" /> : null}
+
+        {candles.map((candle, index) => {
+          const centerX = xAt(index);
+          const openY = scalePrice(candle.open);
+          const closeY = scalePrice(candle.close);
+          const highY = scalePrice(candle.high);
+          const lowY = scalePrice(candle.low);
+          const rising = candle.close >= candle.open;
+          const bodyY = Math.min(openY, closeY);
+          const bodyHeight = Math.max(Math.abs(closeY - openY), 1.5);
+          const bodyColor = rising ? '#155e52' : '#9f2f2f';
+
+          return (
+            <g key={`candle-${candle.date}`}>
+              <line x1={centerX} y1={highY} x2={centerX} y2={lowY} stroke={bodyColor} strokeWidth="1.1" />
+              <rect
+                x={centerX - bodyWidth / 2}
+                y={bodyY}
+                width={bodyWidth}
+                height={bodyHeight}
+                rx="1"
+                fill={rising ? '#d3ece2' : '#f5d8d8'}
+                stroke={bodyColor}
+                strokeWidth="1"
+              />
+            </g>
+          );
+        })}
+
+        {[minMacd, 0, maxMacd].map((value, index) => {
+          const y = scaleMacd(value);
+          return (
+            <g key={`macd-grid-${index}-${value}`}>
+              <line x1={left} y1={y} x2={width - right} y2={y} stroke="#d8d1c0" strokeDasharray={value === 0 ? undefined : '4 6'} />
+              <text x={left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#5f5849">
+                {formatNumber(value, lang, 2)}
+              </text>
+            </g>
+          );
+        })}
+
+        {candles.map((candle, index) => {
+          const value = candle.macd_hist;
+          if (!isFiniteNumber(value)) return null;
+          const x = xAt(index) - bodyWidth / 1.5;
+          const y = scaleMacd(Math.max(value, 0));
+          const zeroY = scaleMacd(0);
+          return (
+            <rect
+              key={`macd-hist-${candle.date}`}
+              x={x}
+              y={Math.min(y, zeroY)}
+              width={Math.max(2, bodyWidth * 1.15)}
+              height={Math.max(Math.abs(zeroY - y), 1)}
+              fill={value >= 0 ? '#81c784' : '#ef9a9a'}
+              opacity="0.88"
+            />
+          );
+        })}
+        {macdLinePath ? <path d={macdLinePath} fill="none" stroke="#1d4ed8" strokeWidth="1.7" /> : null}
+        {macdSignalPath ? <path d={macdSignalPath} fill="none" stroke="#f97316" strokeWidth="1.7" /> : null}
+
+        {[30, 50, 70].map((value) => {
+          const y = scaleRsi(value);
+          return (
+            <g key={`rsi-grid-${value}`}>
+              <line x1={left} y1={y} x2={width - right} y2={y} stroke="#d8d1c0" strokeDasharray="4 6" />
+              <text x={left - 10} y={y + 4} textAnchor="end" fontSize="11" fill="#5f5849">
+                {value}
+              </text>
+            </g>
+          );
+        })}
+        {rsiPath ? <path d={rsiPath} fill="none" stroke="#7c3aed" strokeWidth="1.8" /> : null}
+
+        {ticks.map((tick, index) => (
+          <text
+            key={`date-tick-${tick}-${index}`}
+            x={index === 0 ? xAt(0) : index === 1 ? width / 2 : xAt(Math.max(candles.length - 1, 0))}
+            y={height - 10}
+            textAnchor={index === 0 ? 'start' : index === 1 ? 'middle' : 'end'}
+            fontSize="11"
+            fill="#5f5849"
+          >
+            {formatDate(tick, lang)}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+export function TrendAnalyzerToolContent({ lang, embedded = false }: { lang: SiteLang; embedded?: boolean }) {
+  const copy = TOOL_COPY[lang];
+  const [tickerInput, setTickerInput] = useState('');
+  const [payload, setPayload] = useState<TrendPayload | null>(SP500_DEMO_PAYLOAD);
+  const [payloadSource, setPayloadSource] = useState<'demo' | 'ticker'>('demo');
+  const [error, setError] = useState('');
+  const [busyMode, setBusyMode] = useState<'ticker' | null>(null);
+
+  const candles = payload?.chart_200d?.candles || [];
+  const indicatorSnapshot = payload?.indicator_snapshot || {};
+  const activeTicker = payload?.meta?.ticker || '-';
+  const localizedTrendLabel = payload
+    ? lang === 'ko'
+      ? payload.current_state.trend_state_label_ko
+      : titleCase(payload.current_state.trend_state_label)
+    : '-';
+  const summaryBullets =
+    payload && (lang === 'ko' ? payload.current_state.summary_bullets_ko : payload.current_state.summary_bullets_en)
+      ? (lang === 'ko' ? payload.current_state.summary_bullets_ko : payload.current_state.summary_bullets_en) || []
+      : [];
+  const detailSections =
+    payload && (lang === 'ko' ? payload.current_state.detail_sections_ko : payload.current_state.detail_sections_en)
+      ? (lang === 'ko' ? payload.current_state.detail_sections_ko : payload.current_state.detail_sections_en) || []
+      : [];
+  const sourceLabel = payloadSource === 'demo' ? copy.demoSourceLabel : copy.tickerSourceLabel;
+  const inputLabel = payloadSource === 'demo' ? copy.demoSourceLabel : tickerInput.trim() || activeTicker;
+
+  const rangeMetrics: RangeMetric[] = payload
+    ? [
+        {
+          label: copy.strength,
+          value: payload.current_state.trend_strength_score,
+          min: 0,
+          max: 100,
+          lowLabel: copy.lowLabel,
+          midLabel: copy.midLabel,
+          highLabel: copy.highLabel
+        },
+        {
+          label: copy.conviction,
+          value: payload.current_state.trend_conviction_score,
+          min: 0,
+          max: 100,
+          lowLabel: copy.lowLabel,
+          midLabel: copy.midLabel,
+          highLabel: copy.highLabel
+        },
+        {
+          label: copy.breakdownRisk,
+          value: payload.current_state.breakdown_risk_score ?? payload.current_state.transition_risk_score,
+          min: 0,
+          max: 100,
+          lowLabel: copy.stableLabel,
+          midLabel: copy.elevatedLabel,
+          highLabel: copy.riskHighLabel
+        },
+        {
+          label: copy.transitionProbability,
+          value: Number(
+            payload.current_state.state_transition_probability_10d ?? payload.current_state.transition_risk_score
+          ),
+          min: 0,
+          max: 100,
+          lowLabel: copy.stableLabel,
+          midLabel: copy.elevatedLabel,
+          highLabel: copy.riskHighLabel
+        },
+        {
+          label: copy.confidence,
+          value: payload.current_state.confidence_score,
+          min: 0,
+          max: 100,
+          lowLabel: copy.lowLabel,
+          midLabel: copy.midLabel,
+          highLabel: copy.highLabel
+        },
+        {
+          label: copy.direction,
+          value: Number(payload.current_state.direction_score),
+          min: -100,
+          max: 100,
+          lowLabel: copy.bearishLabel,
+          midLabel: copy.neutralLabel,
+          highLabel: copy.bullishLabel,
+          signed: true
+        },
+        {
+          label: copy.momentum,
+          value: Number(payload.current_state.momentum_score),
+          min: -100,
+          max: 100,
+          lowLabel: copy.bearishLabel,
+          midLabel: copy.neutralLabel,
+          highLabel: copy.bullishLabel,
+          signed: true
+        },
+        {
+          label: copy.volatility,
+          value: Number(payload.current_state.volatility_regime_score),
+          min: 0,
+          max: 100,
+          lowLabel: copy.lowLabel,
+          midLabel: copy.midLabel,
+          highLabel: copy.highLabel
+        },
+        {
+          label: copy.volume,
+          value: Number(payload.current_state.volume_confirmation_score),
+          min: -100,
+          max: 100,
+          lowLabel: copy.bearishLabel,
+          midLabel: copy.neutralLabel,
+          highLabel: copy.bullishLabel,
+          signed: true
+        }
+      ].filter((item) => isFiniteNumber(item.value))
+    : [];
+
+  const snapshotItems = [
+    { label: copy.lastClose, value: indicatorSnapshot.close },
+    { label: copy.ema20Legend, value: indicatorSnapshot.ema20 },
+    { label: copy.ema50Legend, value: indicatorSnapshot.ema50 },
+    { label: copy.sma200Legend, value: indicatorSnapshot.sma200 },
+    { label: copy.tenkanLegend, value: indicatorSnapshot.ichimoku_tenkan },
+    { label: copy.kijunLegend, value: indicatorSnapshot.ichimoku_kijun },
+    { label: `${copy.cloudLegend} A`, value: indicatorSnapshot.ichimoku_cloud_a },
+    { label: `${copy.cloudLegend} B`, value: indicatorSnapshot.ichimoku_cloud_b },
+    { label: copy.rsiLegend, value: indicatorSnapshot.rsi },
+    { label: copy.macdLegend, value: indicatorSnapshot.macd_line },
+    { label: copy.signalLegend, value: indicatorSnapshot.macd_signal },
+    { label: 'MACD Hist', value: indicatorSnapshot.macd_hist }
+  ].filter((item) => isFiniteNumber(item.value));
+
+  const handleTickerSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const value = tickerInput.trim();
+    if (!value) {
+      setError(lang === 'ko' ? '먼저 티커를 입력하세요.' : 'Enter a ticker first.');
+      return;
+    }
+
+    setBusyMode('ticker');
+    setError('');
+
+    try {
+      const response = await analyzeTrendTicker(value);
+      setPayload(normalizePayload(response.payload));
+      setPayloadSource('ticker');
+      setTickerInput(value.toUpperCase());
+    } catch (analysisError) {
+      setError(analysisError instanceof Error ? analysisError.message : lang === 'ko' ? '분석에 실패했습니다.' : 'Analysis failed.');
+    } finally {
+      setBusyMode(null);
+    }
+  };
+
+  return (
+    <div className={`trend-tool-shell${embedded ? ' trend-tool-shell--embedded' : ''}`}>
+      {!embedded ? (
+        <header className="trend-tool-head">
+          <p className="trend-tool-head__eyebrow">{copy.eyebrow}</p>
+          <h1>{copy.title}</h1>
+          <p>{copy.description}</p>
+        </header>
+      ) : null}
+
+      {!embedded ? (
+        <>
+          <div className="trend-tool-intro-grid">
+            <section className="trend-tool-panel trend-tool-panel--intro">
+              <div className="trend-tool-panel__head">
+                <div>
+                  <h2>{copy.introTitle}</h2>
+                  <p>{copy.title}</p>
+                </div>
+              </div>
+              <p className="trend-tool-summary">{copy.introBody}</p>
+            </section>
+
+            <section className="trend-tool-panel trend-tool-panel--intro">
+              <div className="trend-tool-panel__head">
+                <div>
+                  <h2>{copy.usageTitle}</h2>
+                  <p>{copy.title}</p>
+                </div>
+              </div>
+              <ol className="trend-tool-step-list">
+                {copy.usageSteps.map((item, index) => (
+                  <li key={`usage-step-${index}`}>{item}</li>
+                ))}
+              </ol>
+            </section>
+          </div>
+
+          <section className="trend-tool-panel trend-tool-panel--demo">
+            <div className="trend-tool-panel__head">
+              <div>
+                <h2>{copy.demoTitle}</h2>
+                <p>{copy.demoBody}</p>
+              </div>
+              {payloadSource !== 'demo' ? (
+                <button type="button" className="trend-tool-secondary-button" onClick={() => {
+                  setPayload(SP500_DEMO_PAYLOAD);
+                  setPayloadSource('demo');
+                  setTickerInput('');
+                  setError('');
+                }}>
+                  {copy.demoReset}
+                </button>
+              ) : null}
+            </div>
+            <p className="trend-tool-summary">{copy.demoNote}</p>
+          </section>
+        </>
+      ) : null}
+
+      <div className="trend-tool-status">
+        <span>
+          {copy.sourceLabel}: <strong>{sourceLabel}</strong>
+        </span>
+        <span>
+          {copy.activeTicker}: <strong>{activeTicker}</strong>
+        </span>
+        <span>
+          {copy.inputStatus}: <strong>{inputLabel}</strong>
+        </span>
+        {payload ? (
+          <>
+            <span>
+              {copy.asOf}: <strong>{formatDate(payload.meta.as_of_date, lang)}</strong>
+            </span>
+            <span>
+              {copy.window}: <strong>{formatWindowLabel(payload.meta.window_bars, lang)}</strong>
+            </span>
+            <span>
+              {copy.trend}: <strong>{localizedTrendLabel}</strong>
+            </span>
+          </>
+        ) : null}
+      </div>
+
+      {payload ? (
+        <>
+          <section className="trend-tool-panel trend-tool-panel--summary">
+            <div className="trend-tool-panel__head">
+              <div>
+                <h2>{copy.keySummaryTitle}</h2>
+                <p>{localizedTrendLabel}</p>
+              </div>
+            </div>
+            <ul className="trend-tool-bullet-list">
+              {summaryBullets.map((item, index) => (
+                <li key={`summary-bullet-${index}`}>{item}</li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="trend-tool-panel">
+            <div className="trend-tool-panel__head">
+              <div>
+                <h2>{copy.chartTitle}</h2>
+                <p>{copy.chartSubtitle}</p>
+              </div>
+              <div className="trend-tool-legend">
+                <span className="trend-tool-legend__item trend-tool-legend__item--sky">{copy.ema20Legend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--teal">{copy.ema50Legend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--ink">{copy.sma200Legend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--gold">{copy.tenkanLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--red">{copy.kijunLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--sand">{copy.cloudLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--blue">{copy.macdLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--orange">{copy.signalLegend}</span>
+                <span className="trend-tool-legend__item trend-tool-legend__item--violet">{copy.rsiLegend}</span>
+              </div>
+            </div>
+            <CombinedTrendChart candles={candles} lang={lang} />
+          </section>
+
+          <section className="trend-tool-result">
+            <div className="trend-tool-result__head">
+              <h2>{copy.resultTitle}</h2>
+            </div>
+
+            <div className="trend-tool-range-grid">
+              {rangeMetrics.map((metric) => {
+                const position = rangePosition(metric.value, metric.min, metric.max);
+                return (
+                  <article key={`metric-${metric.label}`} className="trend-tool-range-card">
+                    <div className="trend-tool-range-card__head">
+                      <span>{metric.label}</span>
+                      <strong>{formatMetricValue(metric.value, lang, metric.digits ?? 1, Boolean(metric.signed))}</strong>
+                    </div>
+                    <div className="trend-tool-range-track">
+                      <div className="trend-tool-range-fill" style={{ width: `${position}%` }} />
+                      <span className="trend-tool-range-marker" style={{ left: `${position}%` }} />
+                    </div>
+                    <div className="trend-tool-range-scale">
+                      <span>{metric.lowLabel}</span>
+                      <span>{metric.midLabel}</span>
+                      <span>{metric.highLabel}</span>
+                    </div>
+                    <p className="trend-tool-range-meta">{buildRangeMeta(metric, copy, lang)}</p>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="trend-tool-analysis-grid">
+              <article className="trend-tool-panel">
+                <div className="trend-tool-panel__head">
+                  <div>
+                    <h2>{copy.summaryTitle}</h2>
+                    <p>{localizedTrendLabel}</p>
+                  </div>
+                </div>
+                <div className="trend-tool-detail-stack">
+                  {detailSections.map((item, index) => (
+                    <p key={`detail-section-${index}`} className="trend-tool-summary">
+                      {item}
+                    </p>
+                  ))}
+                </div>
+              </article>
+
+              <article className="trend-tool-panel">
+                <div className="trend-tool-panel__head">
+                  <div>
+                    <h2>{copy.snapshotTitle}</h2>
+                    <p>{payload.meta.ticker}</p>
+                  </div>
+                </div>
+                <dl className="trend-tool-metric-list">
+                  {snapshotItems.map((item) => (
+                    <div key={`snapshot-${item.label}`}>
+                      <dt>{item.label}</dt>
+                      <dd>{formatNumber(Number(item.value), lang, 2)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </article>
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="trend-tool-panel trend-tool-panel--empty">
+          <h2>{copy.noDataTitle}</h2>
+          <p>{copy.noDataBody}</p>
+        </section>
+      )}
+
+      <form className="trend-tool-form" onSubmit={handleTickerSubmit}>
+        <div className="trend-tool-panel__head">
+          <div>
+            <h2>{copy.analyzeTickerTitle}</h2>
+            <p>{copy.tickerHint}</p>
+          </div>
+        </div>
+        <label className="trend-tool-form__field">
+          <span>{copy.tickerLabel}</span>
+          <div className="trend-tool-form__controls">
+            <div className="tool-corner-input">
+              <input
+                type="text"
+                value={tickerInput}
+                onChange={(event) => {
+                  setTickerInput(event.target.value.toUpperCase());
+                  setError('');
+                }}
+                placeholder={copy.tickerPlaceholder}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <button type="submit" disabled={busyMode !== null}>
+              {busyMode === 'ticker' ? copy.processing : copy.tickerSubmit}
+            </button>
+          </div>
+          <p className="trend-tool-form__hint">{copy.tickerHint}</p>
+        </label>
+
+        {error ? <p className="trend-tool-form__error">{error}</p> : null}
+      </form>
+    </div>
+  );
+}
+
+export function TrendAnalyzerToolScreen({ lang }: { lang: SiteLang }) {
+  return (
+    <section className="page-section trend-tool-page">
+      <div className="container">
+        <TrendAnalyzerToolContent lang={lang} />
+      </div>
+    </section>
+  );
+}

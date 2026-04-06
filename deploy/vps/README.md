@@ -86,6 +86,12 @@ ADMIN_LOGIN_USER=your-admin-id
 ADMIN_LOGIN_PASSWORD=strong-password
 ```
 
+If the ticker-based analysis tools should read market data from PostgreSQL, keep
+`DATABASE_URL` pointed at the database that also contains `us_equity_daily` and
+`kr_equity_daily`, or set `MARKET_DATA_DATABASE_URL` when those tables live in a
+different PostgreSQL database. The daily GitHub Actions sync is documented in
+`docs/market-data-pipeline.md`.
+
 6. Run preflight:
 
 ```bash
@@ -96,6 +102,12 @@ sh /opt/utility-box/app/deploy/vps/scripts/preflight-utility-box.sh /opt/utility
 
 ```bash
 sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box
+```
+
+If you want production to follow the branch you are actively working on, pass that branch name as the second argument:
+
+```bash
+sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box codex/v2.0
 ```
 
 8. If you need to bootstrap from an existing public API, import published content:

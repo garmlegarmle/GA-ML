@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "tsBuildInfoFile": ".cache/tsconfig.app.tsbuildinfo",
     "target": "ES2022",
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -15,7 +16,10 @@
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "holdem/*": ["apps/games/holdem-tournament/src/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "apps/games/holdem-tournament/src"]
 }
