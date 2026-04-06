@@ -115,11 +115,11 @@ class ChartInterpretationRenderer:
             ax_macd = None
             ax_volume = figure.add_subplot(grid[1, 0], sharex=ax_price)
 
-        figure.patch.set_facecolor("#f7f4ed")
-        ax_price.set_facecolor("#fbfaf7")
+        figure.patch.set_facecolor("#ffffff")
+        ax_price.set_facecolor("#ffffff")
         if ax_macd is not None:
-            ax_macd.set_facecolor("#fbfaf7")
-        ax_volume.set_facecolor("#fbfaf7")
+            ax_macd.set_facecolor("#ffffff")
+        ax_volume.set_facecolor("#ffffff")
 
         self._draw_candles(ax_price, price_frame)
         if self.config.render.show_ema:

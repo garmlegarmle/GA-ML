@@ -1,8 +1,5 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react';
-import {
-  analyzeChartInterpretationCsv,
-  analyzeChartInterpretationTicker
-} from '../lib/api';
+import { useState, type FormEvent } from 'react';
+import { analyzeChartInterpretationTicker } from '../lib/api';
 import type {
   ChartInterpretationAnalysisResponse,
   ChartInterpretationLocalizedPayload,
@@ -16,11 +13,6 @@ import demoChartUrl from '../assets/chart-interpretation-demo/bundle_demo_chart.
 
 export const CHART_INTERPRETATION_TOOL_SLUG = 'chart-interpretation';
 
-const TREND_FETCHER_REPO_URL = 'https://github.com/garmlegarmle/ga-ml-trend-fetcher';
-const TREND_FETCHER_MAC_URL = `${TREND_FETCHER_REPO_URL}/releases/latest/download/GA-ML-TrendFetcher-macos.zip`;
-const TREND_FETCHER_WINDOWS_URL = `${TREND_FETCHER_REPO_URL}/releases/latest/download/GA-ML-TrendFetcher-windows.zip`;
-const CHART_INTERPRETATION_REPO_URL = 'https://github.com/garmlegarmle/ga-ml-chart-interpretation-web';
-
 const DEMO_ANALYSIS = demoAnalysisRaw as ChartInterpretationPayload;
 
 const TOOL_COPY = {
@@ -28,26 +20,25 @@ const TOOL_COPY = {
     eyebrow: 'Tool / Chart Report',
     title: 'Chart Interpretation',
     description:
-      'Read one ticker or OHLCV CSV like a discretionary technical report with structure, scenario paths, invalidation, target zones, and an exported chart image.',
+      'Read one ticker like a discretionary technical report with structure, scenario paths, invalidation, target zones, and an exported chart image.',
     introTitle: 'What This Tool Does',
     introBody:
       'The engine interprets daily price structure first, then layers trend state, market structure, location, confirmation, scenarios, and risk notes into one chart-report style output.',
     usageTitle: 'How To Use It',
     usageSteps: [
       'Start with the built-in demo to see the default report format.',
-      'Run a ticker directly, or upload a downloader-generated OHLCV CSV.',
+      'Run a ticker directly from the market-data pipeline.',
       'Review the chart image, primary scenario, alternative path, and target zones.',
       'Open the full HTML report or JSON export when you want the raw artifact files.'
     ],
     demoTitle: 'Bundle demo snapshot',
     demoBody: 'The page opens with a fixed demo generated from the bundled chart interpretation workspace.',
-    demoNote: 'Use the ticker or CSV inputs below when you want a fresh analysis.',
+    demoNote: 'Use the ticker input below when you want a fresh analysis.',
     demoReset: 'Show bundle demo again',
     sourceLabel: 'Source',
     activeLabel: 'Current run',
     demoSourceLabel: 'Bundle demo',
     tickerSourceLabel: 'Ticker request',
-    csvSourceLabel: 'CSV upload',
     statusTitle: 'Current read',
     trend: 'Trend',
     structure: 'Structure',
@@ -77,41 +68,11 @@ const TOOL_COPY = {
     tickerFormBody: 'The server reads recent daily OHLCV for one ticker from the GA-ML market database and generates the chart report on demand.',
     tickerPlaceholder: 'AAPL, NVDA, BTC-USD',
     tickerSubmit: 'Analyze ticker',
-    csvFormTitle: 'Upload your own CSV',
-    csvFormBody: 'Upload the OHLCV CSV from the downloader when you want a local-first file workflow.',
-    csvRowsNote: 'Use a daily OHLCV CSV with roughly 260 or more valid rows so the engine has enough history to interpret structure.',
-    csvTitleLabel: 'CSV title',
-    csvTitlePlaceholder: 'Example: NVDA daily',
-    fileButton: 'Choose CSV',
-    fileEmpty: 'No file selected',
-    csvSubmit: 'Analyze CSV',
     processing: 'Analyzing...',
-    rawUploadNotice: 'Uploaded CSV files are processed to generate the report, and the raw upload is not retained afterward.',
     artifactJson: 'JSON',
     artifactChart: 'PNG chart',
     artifactReport: 'HTML report',
-    downloadTitle: 'CSV Downloader',
-    downloadBody: 'The same GA-ML downloader used by Trend Analyzer also works here when you want to prepare OHLCV CSV files locally before uploading them.',
-    downloadReason:
-      'This keeps raw market-data collection on the user device first, while the web page focuses on interpretation, scenario rendering, and artifact export.',
-    downloadNote:
-      'macOS may block the first launch because the current app build is unsigned. Use Control-click > Open, or allow it once from Privacy & Security.',
-    pythonGuide: 'Python setup guide',
-    pythonIntro: 'If the unsigned app is blocked, you can run the downloader directly with Python:',
-    pythonCommands: [
-      'git clone https://github.com/garmlegarmle/ga-ml-trend-fetcher.git',
-      'cd ga-ml-trend-fetcher',
-      'python3 -m venv .venv',
-      'source .venv/bin/activate',
-      'pip install -r requirements.txt',
-      'python main.py'
-    ],
-    macDownload: 'macOS app',
-    windowsDownload: 'Windows app',
-    downloaderRepo: 'Downloader repo',
-    toolRepo: 'Chart tool repo',
     errorTicker: 'Enter a ticker first.',
-    errorCsv: 'Choose a CSV file first.',
     errorGeneric: 'Analysis failed.',
     direction: 'Direction'
   },
@@ -119,26 +80,25 @@ const TOOL_COPY = {
     eyebrow: '도구 / 차트 리포트',
     title: '차트 해석기',
     description:
-      '티커 하나 또는 OHLCV CSV 하나를 넣으면 구조, 시나리오 경로, 무효화 기준, 목표 구간, 차트 이미지까지 포함한 재량형 기술적 리포트로 읽을 수 있습니다.',
+      '티커 하나를 넣으면 구조, 시나리오 경로, 무효화 기준, 목표 구간, 차트 이미지까지 포함한 재량형 기술적 리포트로 읽을 수 있습니다.',
     introTitle: '이 도구는 무엇을 하나요',
     introBody:
       '이 엔진은 일봉 구조를 먼저 해석하고, 그 위에 추세 상태, 시장 구조, 현재 위치, 확인 조건, 시나리오, 리스크 메모를 얹어 차트 리포트 형태로 정리합니다.',
     usageTitle: '이용 방법',
     usageSteps: [
       '먼저 번들 데모를 보고 기본 리포트 형식을 확인합니다.',
-      '티커를 바로 실행하거나, 다운로더가 만든 OHLCV CSV를 업로드합니다.',
+      '티커를 바로 실행해 DB 기반 데이터를 불러옵니다.',
       '차트 이미지, 주 시나리오, 대안 경로, 목표 구간을 순서대로 확인합니다.',
       '원본 산출물이 필요하면 HTML 리포트나 JSON 파일을 열어봅니다.'
     ],
     demoTitle: '번들 데모 스냅샷',
     demoBody: '페이지는 chart interpretation 번들에 포함된 고정 데모 결과로 먼저 열립니다.',
-    demoNote: '새 분석이 필요하면 아래 티커 실행 또는 CSV 업로드를 사용하세요.',
+    demoNote: '새 분석이 필요하면 아래 티커 실행을 사용하세요.',
     demoReset: '번들 데모 다시 보기',
     sourceLabel: '소스',
     activeLabel: '현재 실행',
     demoSourceLabel: '번들 데모',
     tickerSourceLabel: '티커 요청',
-    csvSourceLabel: 'CSV 업로드',
     statusTitle: '현재 해석',
     trend: '추세',
     structure: '구조',
@@ -168,47 +128,17 @@ const TOOL_COPY = {
     tickerFormBody: '서버가 GA-ML 시세 DB에서 티커 하나의 최근 일봉 OHLCV를 읽어 차트 리포트를 바로 생성합니다.',
     tickerPlaceholder: 'AAPL, NVDA, BTC-USD',
     tickerSubmit: '티커 분석',
-    csvFormTitle: '내 CSV 업로드',
-    csvFormBody: '로컬 중심 흐름을 원하면 다운로더가 만든 OHLCV CSV를 업로드해 사용하세요.',
-    csvRowsNote: '구조 해석이 가능하도록 일봉 기준 유효 행이 대략 260개 이상 있는 CSV를 사용하는 편이 좋습니다.',
-    csvTitleLabel: 'CSV 제목',
-    csvTitlePlaceholder: '예: NVDA daily',
-    fileButton: 'CSV 선택',
-    fileEmpty: '선택한 파일 없음',
-    csvSubmit: 'CSV 분석',
     processing: '분석 중...',
-    rawUploadNotice: '업로드한 CSV는 리포트 생성에만 사용하며, 원본 업로드 파일은 계속 보관하지 않습니다.',
     artifactJson: 'JSON',
     artifactChart: 'PNG 차트',
     artifactReport: 'HTML 리포트',
-    downloadTitle: 'CSV 다운로더',
-    downloadBody: '추세 분석기에 넣어둔 GA-ML 다운로더를 여기에서도 그대로 사용할 수 있습니다. 로컬에서 OHLCV CSV를 만든 뒤 업로드하세요.',
-    downloadReason:
-      '이 방식은 원시 시세 수집을 먼저 사용자 기기에서 처리하고, 웹 페이지는 해석과 시나리오 정리, 산출물 생성에 집중하게 해줍니다.',
-    downloadNote:
-      '현재 macOS 빌드는 서명되지 않아 첫 실행 시 차단될 수 있습니다. Control-클릭 후 열기 또는 개인 정보 보호 및 보안에서 한 번 허용해 주세요.',
-    pythonGuide: 'Python 실행 안내',
-    pythonIntro: 'unsigned 앱이 막히면 아래처럼 Python으로 직접 실행할 수 있습니다:',
-    pythonCommands: [
-      'git clone https://github.com/garmlegarmle/ga-ml-trend-fetcher.git',
-      'cd ga-ml-trend-fetcher',
-      'python3 -m venv .venv',
-      'source .venv/bin/activate',
-      'pip install -r requirements.txt',
-      'python main.py'
-    ],
-    macDownload: 'macOS 앱',
-    windowsDownload: 'Windows 앱',
-    downloaderRepo: '다운로더 레포',
-    toolRepo: '차트 툴 레포',
     errorTicker: '먼저 티커를 입력하세요.',
-    errorCsv: '먼저 CSV 파일을 선택하세요.',
     errorGeneric: '분석에 실패했습니다.',
     direction: '방향'
   }
 } as const;
 
-type ResultMode = 'demo' | 'ticker' | 'csv';
+type ResultMode = 'demo' | 'ticker';
 
 type ToolResult = {
   label: string;
@@ -244,16 +174,6 @@ function formatDate(value: string | null | undefined, lang: SiteLang): string {
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) return value;
   return new Date(parsed).toLocaleDateString(lang === 'ko' ? 'ko-KR' : 'en-US');
-}
-
-function fileNameOrFallback(file: File | null, fallback: string): string {
-  if (!file) return fallback;
-  return file.name || fallback;
-}
-
-function deriveCsvTitle(file: File | null): string {
-  const name = String(file?.name || '').trim();
-  return name.replace(/\.csv$/i, '').trim();
 }
 
 function localizedPayload(analysis: ChartInterpretationPayload, lang: SiteLang): ChartInterpretationLocalizedPayload {
@@ -310,10 +230,8 @@ function buildDemoResult(): ToolResult {
 export function ChartInterpretationToolContent({ lang, embedded = false }: { lang: SiteLang; embedded?: boolean }) {
   const copy = copyFor(lang);
   const [ticker, setTicker] = useState('');
-  const [csvTitle, setCsvTitle] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [result, setResult] = useState<ToolResult>(buildDemoResult);
-  const [busyMode, setBusyMode] = useState<'ticker' | 'csv' | null>(null);
+  const [busyMode, setBusyMode] = useState<'ticker' | null>(null);
   const [error, setError] = useState('');
 
   const localized = localizedPayload(result.analysis, lang);
@@ -325,23 +243,11 @@ export function ChartInterpretationToolContent({ lang, embedded = false }: { lan
   const riskItems = localized.risk_notes || primaryScenario?.risk_flags || [];
   const patterns = localized.active_patterns || [];
   const events = localized.recent_events || [];
-  const sourceLabel =
-    result.mode === 'demo' ? copy.demoSourceLabel : result.mode === 'ticker' ? copy.tickerSourceLabel : copy.csvSourceLabel;
-
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextFile = event.target.files?.[0] || null;
-    setSelectedFile(nextFile);
-    if (nextFile && !csvTitle.trim()) {
-      setCsvTitle(deriveCsvTitle(nextFile));
-    }
-    setError('');
-  };
+  const sourceLabel = result.mode === 'demo' ? copy.demoSourceLabel : copy.tickerSourceLabel;
 
   const resetDemo = () => {
     setResult(buildDemoResult());
     setTicker('');
-    setSelectedFile(null);
-    setCsvTitle('');
     setError('');
     setBusyMode(null);
   };
@@ -373,32 +279,6 @@ export function ChartInterpretationToolContent({ lang, embedded = false }: { lan
     }
   };
 
-  const handleCsvSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!selectedFile) {
-      setError(copy.errorCsv);
-      return;
-    }
-
-    setBusyMode('csv');
-    setError('');
-
-    try {
-      const response = await analyzeChartInterpretationCsv(selectedFile, csvTitle.trim() || deriveCsvTitle(selectedFile));
-      setResult({
-        label: response.label,
-        mode: 'csv',
-        artifacts: response.artifacts,
-        analysis: response.analysis,
-        chartUrl: response.artifacts.chart_png
-      });
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : copy.errorGeneric);
-    } finally {
-      setBusyMode(null);
-    }
-  };
-
   return (
     <div className={`chart-report-tool${embedded ? ' chart-report-tool--embedded' : ''}`}>
       {!embedded ? (
@@ -409,46 +289,50 @@ export function ChartInterpretationToolContent({ lang, embedded = false }: { lan
         </header>
       ) : null}
 
-      <div className="chart-report-tool__intro-grid">
-        <section className="chart-report-tool__panel">
-          <div className="chart-report-tool__panel-head">
-            <div>
-              <h2>{copy.introTitle}</h2>
-              <p>{copy.title}</p>
-            </div>
-          </div>
-          <p className="chart-report-tool__body-copy">{copy.introBody}</p>
-        </section>
+      {!embedded ? (
+        <>
+          <div className="chart-report-tool__intro-grid">
+            <section className="chart-report-tool__panel">
+              <div className="chart-report-tool__panel-head">
+                <div>
+                  <h2>{copy.introTitle}</h2>
+                  <p>{copy.title}</p>
+                </div>
+              </div>
+              <p className="chart-report-tool__body-copy">{copy.introBody}</p>
+            </section>
 
-        <section className="chart-report-tool__panel">
-          <div className="chart-report-tool__panel-head">
-            <div>
-              <h2>{copy.usageTitle}</h2>
-              <p>{copy.title}</p>
-            </div>
+            <section className="chart-report-tool__panel">
+              <div className="chart-report-tool__panel-head">
+                <div>
+                  <h2>{copy.usageTitle}</h2>
+                  <p>{copy.title}</p>
+                </div>
+              </div>
+              <ol className="chart-report-tool__steps">
+                {copy.usageSteps.map((item, index) => (
+                  <li key={`chart-report-usage-${index}`}>{item}</li>
+                ))}
+              </ol>
+            </section>
           </div>
-          <ol className="chart-report-tool__steps">
-            {copy.usageSteps.map((item, index) => (
-              <li key={`chart-report-usage-${index}`}>{item}</li>
-            ))}
-          </ol>
-        </section>
-      </div>
 
-      <section className="chart-report-tool__panel chart-report-tool__panel--demo">
-        <div className="chart-report-tool__panel-head">
-          <div>
-            <h2>{copy.demoTitle}</h2>
-            <p>{copy.demoBody}</p>
-          </div>
-          {result.mode !== 'demo' ? (
-            <button type="button" className="chart-report-tool__ghost-button" onClick={resetDemo}>
-              {copy.demoReset}
-            </button>
-          ) : null}
-        </div>
-        <p className="chart-report-tool__body-copy">{copy.demoNote}</p>
-      </section>
+          <section className="chart-report-tool__panel chart-report-tool__panel--demo">
+            <div className="chart-report-tool__panel-head">
+              <div>
+                <h2>{copy.demoTitle}</h2>
+                <p>{copy.demoBody}</p>
+              </div>
+              {result.mode !== 'demo' ? (
+                <button type="button" className="chart-report-tool__ghost-button" onClick={resetDemo}>
+                  {copy.demoReset}
+                </button>
+              ) : null}
+            </div>
+            <p className="chart-report-tool__body-copy">{copy.demoNote}</p>
+          </section>
+        </>
+      ) : null}
 
       <div className="chart-report-tool__status">
         <span>
@@ -496,13 +380,7 @@ export function ChartInterpretationToolContent({ lang, embedded = false }: { lan
                 {copy.artifactJson}
               </a>
             </div>
-          ) : (
-            <div className="chart-report-tool__links">
-              <a href={CHART_INTERPRETATION_REPO_URL} target="_blank" rel="noreferrer">
-                {copy.toolRepo}
-              </a>
-            </div>
-          )}
+          ) : null}
         </div>
         <div className="chart-report-tool__chart-stage">
           <img src={result.chartUrl} alt={`${result.label} chart interpretation`} loading="lazy" decoding="async" />
@@ -726,12 +604,14 @@ export function ChartInterpretationToolContent({ lang, embedded = false }: { lan
           </div>
           <label className="chart-report-tool__field">
             <span>Ticker</span>
-            <input
-              type="text"
-              value={ticker}
-              placeholder={copy.tickerPlaceholder}
-              onChange={(event) => setTicker(event.target.value)}
-            />
+            <div className="tool-corner-input">
+              <input
+                type="text"
+                value={ticker}
+                placeholder={copy.tickerPlaceholder}
+                onChange={(event) => setTicker(event.target.value)}
+              />
+            </div>
           </label>
           <div className="chart-report-tool__form-footer">
             <button type="submit" disabled={busyMode !== null}>
@@ -739,78 +619,9 @@ export function ChartInterpretationToolContent({ lang, embedded = false }: { lan
             </button>
           </div>
         </form>
-
-        <form className="chart-report-tool__panel chart-report-tool__form" onSubmit={handleCsvSubmit}>
-          <div className="chart-report-tool__panel-head">
-            <div>
-              <h2>{copy.csvFormTitle}</h2>
-              <p>{copy.csvFormBody}</p>
-            </div>
-          </div>
-          <label className="chart-report-tool__field">
-            <span>{copy.csvTitleLabel}</span>
-            <input
-              type="text"
-              value={csvTitle}
-              placeholder={copy.csvTitlePlaceholder}
-              onChange={(event) => setCsvTitle(event.target.value)}
-            />
-          </label>
-          <label className="chart-report-tool__field">
-            <span>CSV</span>
-            <div className="chart-report-tool__upload-row">
-              <label className="chart-report-tool__file-button">
-                <input type="file" accept=".csv,text/csv" onChange={handleFileChange} />
-                <span>{copy.fileButton}</span>
-              </label>
-              <span className="chart-report-tool__file-name">{fileNameOrFallback(selectedFile, copy.fileEmpty)}</span>
-            </div>
-          </label>
-          <p className="chart-report-tool__notice">{copy.csvRowsNote}</p>
-          <div className="chart-report-tool__form-footer">
-            <button type="submit" disabled={busyMode !== null}>
-              {busyMode === 'csv' ? copy.processing : copy.csvSubmit}
-            </button>
-            <p className="chart-report-tool__notice">{copy.rawUploadNotice}</p>
-          </div>
-        </form>
       </div>
 
       {error ? <p className="chart-report-tool__error">{error}</p> : null}
-
-      <section className="chart-report-tool__panel">
-        <div className="chart-report-tool__panel-head">
-          <div>
-            <h2>{copy.downloadTitle}</h2>
-            <p>{copy.downloadBody}</p>
-          </div>
-        </div>
-        <div className="chart-report-tool__links chart-report-tool__links--downloads">
-          <a href={TREND_FETCHER_MAC_URL} target="_blank" rel="noreferrer">
-            {copy.macDownload}
-          </a>
-          <a href={TREND_FETCHER_WINDOWS_URL} target="_blank" rel="noreferrer">
-            {copy.windowsDownload}
-          </a>
-          <a href={TREND_FETCHER_REPO_URL} target="_blank" rel="noreferrer">
-            {copy.downloaderRepo}
-          </a>
-          <a href={CHART_INTERPRETATION_REPO_URL} target="_blank" rel="noreferrer">
-            {copy.toolRepo}
-          </a>
-        </div>
-        <p className="chart-report-tool__body-copy">{copy.downloadReason}</p>
-        <p className="chart-report-tool__notice">{copy.downloadNote}</p>
-        <details className="chart-report-tool__disclosure">
-          <summary>{copy.pythonGuide}</summary>
-          <div className="chart-report-tool__python">
-            <p>{copy.pythonIntro}</p>
-            <pre>
-              <code>{copy.pythonCommands.join('\n')}</code>
-            </pre>
-          </div>
-        </details>
-      </section>
     </div>
   );
 }

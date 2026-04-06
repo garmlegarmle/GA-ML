@@ -15,7 +15,6 @@ import type {
 } from '../types';
 
 function buildApiUrl(path: string): string {
-  // Keep API calls same-origin to avoid host/CORS mismatch.
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return normalizedPath;
 }
