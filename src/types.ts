@@ -1,6 +1,19 @@
 export type SiteLang = 'en' | 'ko';
 export type SiteSection = 'blog' | 'tools' | 'games' | 'pages';
 export type CardTitleSize = 'auto' | 'default' | 'compact' | 'tight' | 'ultra-tight';
+export type PostLayoutBlockType = 'text' | 'tool';
+export type PostLayoutColumn = 'left' | 'right';
+
+export interface PostLayoutBlock {
+  id: string;
+  type: PostLayoutBlockType;
+  column: PostLayoutColumn;
+  order: number;
+  visible: boolean;
+  title: string | null;
+  html: string | null;
+  toolKey: string | null;
+}
 
 export interface CardData {
   title: string;
@@ -21,6 +34,7 @@ export interface PostItem {
   content_md: string;
   content_before_md: string | null;
   content_after_md: string | null;
+  layout_blocks: PostLayoutBlock[] | null;
   status: 'draft' | 'published';
   published_at: string | null;
   created_at: string;
@@ -431,6 +445,7 @@ export interface PostSaveSnapshot {
   content_md: string;
   content_before_md: string | null;
   content_after_md: string | null;
+  layout_blocks: PostLayoutBlock[] | null;
   status: 'draft' | 'published';
   lang: SiteLang;
   section: SiteSection;

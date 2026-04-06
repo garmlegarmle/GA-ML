@@ -643,6 +643,16 @@ function requestOrigin(request, publicOrigin = '') {
   return { origin: `${protocol}://${host}` };
 }
 
+function parseLayoutBlocksJson(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function mapPostRow(row, tags, request, publicOrigin = '') {
   const { origin } = requestOrigin(request, publicOrigin);
   const coverUrl = row.cover_image_id ? `${origin}/api/media/${row.cover_image_id}/file` : null;
@@ -659,6 +669,7 @@ export function mapPostRow(row, tags, request, publicOrigin = '') {
     content_md: row.content_md,
     content_before_md: row.content_before_md || null,
     content_after_md: row.content_after_md || null,
+    layout_blocks: parseLayoutBlocksJson(row.layout_blocks_json),
     status: row.status,
     published_at: row.published_at ? new Date(row.published_at).toISOString() : null,
     created_at: new Date(row.created_at).toISOString(),

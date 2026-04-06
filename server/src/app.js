@@ -92,6 +92,9 @@ const HOLDEM_HANDS_PER_LEVEL = 8;
 const HOLDEM_RUN_TOKEN_TTL_SECONDS = 4 * 60 * 60;
 const rateLimitStore = new Map();
 const CARD_TITLE_SIZE_VALUES = new Set(['auto', 'default', 'compact', 'tight', 'ultra-tight']);
+const LAYOUT_BLOCK_TYPES = new Set(['text', 'tool']);
+const LAYOUT_BLOCK_COLUMNS = new Set(['left', 'right']);
+const LAYOUT_TOOL_KEYS = new Set(['trend-analyzer', CHART_INTERPRETATION_TOOL_SLUG]);
 const holdemOnlineManager = createHoldemOnlineManager();
 const mineCartDuelOnlineManager = createMineCartDuelOnlineManager();
 
@@ -150,6 +153,63 @@ function hasEmbeddedProgram(section, slug) {
     (section === 'tools' && (slug === 'trend-analyzer' || slug === CHART_INTERPRETATION_TOOL_SLUG)) ||
     (section === 'games' && (slug === 'texas-holdem-tournament' || slug === 'mine-cart-duel'))
   );
+}
+
+function normalizeLayoutBlocks(value) {
+  if (!Array.isArray(value)) return null;
+
+  const blocks = value
+    .slice(0, 48)
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null;
+      const type = String(item.type || '').trim().toLowerCase();
+      const column = String(item.column || '').trim().toLowerCase();
+      const toolKey = String(item.toolKey || '').trim();
+      if (!LAYOUT_BLOCK_TYPES.has(type) || !LAYOUT_BLOCK_COLUMNS.has(column)) return null;
+      if (type === 'tool' && !LAYOUT_TOOL_KEYS.has(toolKey)) return null;
+
+      const html = type === 'text' ? String(item.html || '').trim() : null;
+      const title = String(item.title || '').trim() || null;
+      const visible = item.visible !== false;
+      const order = Number.isFinite(Number(item.order)) ? Number(item.order) : index;
+      const id = String(item.id || `${type}-${column}-${index + 1}`)
+        .trim()
+        .replace(/[^a-z0-9_-]/gi, '')
+        .slice(0, 80);
+
+      return {
+        id: id || `${type}-${column}-${index + 1}`,
+        type,
+        column,
+        order,
+        visible,
+        title,
+        html,
+        toolKey: type === 'tool' ? toolKey : null
+      };
+    })
+    .filter(Boolean);
+
+  if (!blocks.length) return null;
+
+  const nextByColumn = new Map([
+    ['left', 0],
+    ['right', 0]
+  ]);
+
+  return blocks
+    .sort((left, right) => {
+      if (left.column !== right.column) return left.column.localeCompare(right.column);
+      return left.order - right.order;
+    })
+    .map((block) => {
+      const nextOrder = nextByColumn.get(block.column) || 0;
+      nextByColumn.set(block.column, nextOrder + 1);
+      return {
+        ...block,
+        order: nextOrder
+      };
+    });
 }
 
 function renderSitemapXml(entries) {
@@ -781,16 +841,17 @@ app.post('/api/posts', async (req, res, next) => {
     const content = String(payload.content_md || '').trim();
     const contentBefore = String(payload.content_before_md || '').trim();
     const contentAfter = String(payload.content_after_md || '').trim();
+    const layoutBlocks = normalizeLayoutBlocks(payload.layout_blocks);
     if (!title) return jsonError(res, 400, 'title is required');
     const lang = normalizeLang(payload.lang || 'en');
     const section = normalizeSection(payload.section || 'blog');
     const slug = slugify(String(payload.slug || title));
     if (!slug) return jsonError(res, 400, 'slug is invalid');
-    const embeddedProgram = hasEmbeddedProgram(section, slug);
-    if (!embeddedProgram && !content) return jsonError(res, 400, 'content_md is required');
+    const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
+    if (!normalizedCombinedContent) return jsonError(res, 400, 'content is required');
     const status = normalizeStatus(payload.status || 'draft');
     const tags = dedupeTags(payload.tags || []);
-    const excerpt = String(payload.excerpt || '').trim() || (content ? toExcerpt(content) : '');
+    const excerpt = String(payload.excerpt || '').trim() || (normalizedCombinedContent ? toExcerpt(normalizedCombinedContent) : '');
     const publishedAt = status === 'published' ? parseDateOrNull(payload.published_at) || nowIso() : null;
     const pairSlug = payload.pair_slug ? slugify(String(payload.pair_slug)) : null;
     const cardCategory = String(payload.card?.category || section).trim() || section;
@@ -814,15 +875,15 @@ app.post('/api/posts', async (req, res, next) => {
 
     const insert = await pool.query(
       `INSERT INTO posts (
-        slug, title, excerpt, content_md, content_before_md, content_after_md, status, cover_image_id, published_at,
+        slug, title, excerpt, content_md, content_before_md, content_after_md, layout_blocks_json, status, cover_image_id, published_at,
         lang, section, pair_slug, created_at, updated_at,
         card_title, card_category, card_tag, card_rank, card_image_id, card_title_size,
         meta_title, meta_description, og_title, og_description, og_image_url, schema_type
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
       ) RETURNING id`,
       [
-        slug, title, excerpt, content, embeddedProgram ? contentBefore || null : null, embeddedProgram ? contentAfter || null : null,
+        slug, title, excerpt, content || normalizedCombinedContent, contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
         status, null, publishedAt, lang, section, pairSlug, nowIso(), nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize, metaTitle, metaDescription,
         ogTitle, ogDescription, null, schemaType
@@ -848,23 +909,20 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const payload = req.body || {};
     const title = payload.title !== undefined ? String(payload.title || '').trim() : current.title;
     const content = payload.content_md !== undefined ? String(payload.content_md || '').trim() : current.content_md;
+    const layoutBlocks = payload.layout_blocks !== undefined ? normalizeLayoutBlocks(payload.layout_blocks) : normalizeLayoutBlocks(current.layout_blocks_json ? JSON.parse(current.layout_blocks_json) : null);
     if (!title) return jsonError(res, 400, 'title is required');
     const lang = payload.lang !== undefined ? normalizeLang(payload.lang) : current.lang;
     const section = payload.section !== undefined ? normalizeSection(payload.section) : current.section;
     const slug = payload.slug !== undefined ? slugify(String(payload.slug || title)) : current.slug;
     if (!slug) return jsonError(res, 400, 'slug is invalid');
-    const embeddedProgram = hasEmbeddedProgram(section, slug);
-    if (!embeddedProgram && !content) return jsonError(res, 400, 'content_md is required');
-    const contentBefore = embeddedProgram
-      ? (payload.content_before_md !== undefined ? String(payload.content_before_md || '').trim() : current.content_before_md || '')
-      : '';
-    const contentAfter = embeddedProgram
-      ? (payload.content_after_md !== undefined ? String(payload.content_after_md || '').trim() : current.content_after_md || '')
-      : '';
+    const contentBefore = payload.content_before_md !== undefined ? String(payload.content_before_md || '').trim() : current.content_before_md || '';
+    const contentAfter = payload.content_after_md !== undefined ? String(payload.content_after_md || '').trim() : current.content_after_md || '';
+    const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
+    if (!normalizedCombinedContent) return jsonError(res, 400, 'content is required');
     const status = payload.status !== undefined ? normalizeStatus(payload.status) : current.status;
     const tags = payload.tags !== undefined ? dedupeTags(payload.tags || []) : await getPostTags(pool, postId);
     const excerpt = payload.excerpt !== undefined
-      ? String(payload.excerpt || '').trim() || (content ? toExcerpt(content) : '')
+      ? String(payload.excerpt || '').trim() || (normalizedCombinedContent ? toExcerpt(normalizedCombinedContent) : '')
       : current.excerpt;
     const publishedAt = payload.published_at !== undefined
       ? parseDateOrNull(payload.published_at)
@@ -896,13 +954,13 @@ app.put('/api/posts/:id', async (req, res, next) => {
 
     await pool.query(
       `UPDATE posts SET
-         slug=$1, title=$2, excerpt=$3, content_md=$4, content_before_md=$5, content_after_md=$6, status=$7, cover_image_id=$8,
-         published_at=$9, lang=$10, section=$11, pair_slug=$12, updated_at=$13,
-         card_title=$14, card_category=$15, card_tag=$16, card_rank=$17, card_image_id=$18, card_title_size=$19,
-         meta_title=$20, meta_description=$21, og_title=$22, og_description=$23, og_image_url=$24, schema_type=$25
-       WHERE id = $26`,
+         slug=$1, title=$2, excerpt=$3, content_md=$4, content_before_md=$5, content_after_md=$6, layout_blocks_json=$7, status=$8, cover_image_id=$9,
+         published_at=$10, lang=$11, section=$12, pair_slug=$13, updated_at=$14,
+         card_title=$15, card_category=$16, card_tag=$17, card_rank=$18, card_image_id=$19, card_title_size=$20,
+         meta_title=$21, meta_description=$22, og_title=$23, og_description=$24, og_image_url=$25, schema_type=$26
+       WHERE id = $27`,
       [
-        slug, title, excerpt, content, embeddedProgram ? contentBefore || null : null, embeddedProgram ? contentAfter || null : null,
+        slug, title, excerpt, content || normalizedCombinedContent, contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
         status, current.cover_image_id, publishedAt, lang, section, pairSlug, nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize,
         metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, postId

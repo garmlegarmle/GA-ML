@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPost, deletePost, deleteTag, listPosts, listTags, updatePost, uploadMedia } from '../lib/api';
-import type { CardTitleSize, PostItem, PostSaveSnapshot, SiteLang, SiteSection } from '../types';
+import type { CardTitleSize, PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from '../types';
 
 interface PostEditorModalProps {
   open: boolean;
@@ -15,6 +15,7 @@ interface PostEditorModalProps {
 
 const RESIZE_EDGE_THRESHOLD = 14;
 type EditorPaneKey = 'body' | 'before' | 'after';
+type LayoutColumn = 'left' | 'right';
 
 const FONT_SIZE_OPTIONS = [
   { label: '12px', value: '1' },
@@ -262,6 +263,91 @@ function clearEdgeHoverStyles(editor: HTMLDivElement | null) {
     .forEach((node) => node.classList.remove('is-edge-hover'));
 }
 
+function makeLayoutBlockId(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+}
+
+function createTextLayoutBlock(column: LayoutColumn, order: number, html = '', title = ''): PostLayoutBlock {
+  return {
+    id: makeLayoutBlockId('text'),
+    type: 'text',
+    column,
+    order,
+    visible: true,
+    title: title || null,
+    html: html || '',
+    toolKey: null
+  };
+}
+
+function createToolLayoutBlock(column: LayoutColumn, order: number, toolKey: string): PostLayoutBlock {
+  return {
+    id: makeLayoutBlockId('tool'),
+    type: 'tool',
+    column,
+    order,
+    visible: true,
+    title: null,
+    html: null,
+    toolKey
+  };
+}
+
+function sortLayoutBlocksForColumn(blocks: PostLayoutBlock[], column: LayoutColumn): PostLayoutBlock[] {
+  return [...blocks]
+    .filter((block) => block.column === column)
+    .sort((left, right) => left.order - right.order);
+}
+
+function normalizeLayoutBlockOrders(blocks: PostLayoutBlock[]): PostLayoutBlock[] {
+  return (['left', 'right'] as const).flatMap((column) =>
+    sortLayoutBlocksForColumn(blocks, column).map((block, index) => ({
+      ...block,
+      order: index
+    }))
+  );
+}
+
+function deriveToolBlockKey(section: SiteSection, slug: string): string | null {
+  if (section !== 'tools') return null;
+  if (slug === 'trend-analyzer' || slug === 'chart-interpretation') return slug;
+  return null;
+}
+
+function buildInitialLayoutBlocks(
+  post: PostItem | null | undefined,
+  section: SiteSection,
+  normalizedSlug: string
+): PostLayoutBlock[] {
+  if (Array.isArray(post?.layout_blocks) && post.layout_blocks.length > 0) {
+    return normalizeLayoutBlockOrders(post.layout_blocks);
+  }
+
+  const blocks: PostLayoutBlock[] = [];
+  const leftSource =
+    post?.content_before_md || (!post?.content_before_md && !post?.content_after_md ? post?.content_md || '' : '');
+  const rightSource = post?.content_after_md || '';
+
+  if (String(leftSource || '').trim()) {
+    blocks.push(createTextLayoutBlock('left', blocks.filter((block) => block.column === 'left').length, leftSource, 'Left text'));
+  }
+
+  const toolKey = deriveToolBlockKey(section, normalizedSlug || post?.slug || '');
+  if (toolKey) {
+    blocks.push(createToolLayoutBlock('right', blocks.filter((block) => block.column === 'right').length, toolKey));
+  }
+
+  if (String(rightSource || '').trim()) {
+    blocks.push(createTextLayoutBlock('right', blocks.filter((block) => block.column === 'right').length, rightSource, 'Right text'));
+  }
+
+  if (!blocks.length && String(post?.content_md || '').trim()) {
+    blocks.push(createTextLayoutBlock('left', 0, post?.content_md || '', 'Main text'));
+  }
+
+  return normalizeLayoutBlockOrders(blocks);
+}
+
 function isLockedBuiltinProgramPost(post: PostItem | null | undefined): boolean {
   return Boolean(
     post &&
@@ -321,6 +407,8 @@ export function PostEditorModal({
   const [linkComposerOpen, setLinkComposerOpen] = useState(false);
   const [tableColumnWidth, setTableColumnWidth] = useState('auto');
   const [activeEditor, setActiveEditor] = useState<EditorPaneKey>('body');
+  const [layoutBlocks, setLayoutBlocks] = useState<PostLayoutBlock[]>([]);
+  const [selectedLayoutBlockId, setSelectedLayoutBlockId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -330,6 +418,7 @@ export function PostEditorModal({
   const afterEditorRef = useRef<HTMLDivElement | null>(null);
   const selectedImageRef = useRef<HTMLImageElement | null>(null);
   const savedSelectionRef = useRef<{ key: EditorPaneKey; range: Range } | null>(null);
+  const draggingLayoutBlockIdRef = useRef<string | null>(null);
   const resizeStateRef = useRef<{
     image: HTMLImageElement;
     startX: number;
@@ -345,6 +434,10 @@ export function PostEditorModal({
     () => hasEmbeddedProgram(section, normalizedEditorSlug),
     [normalizedEditorSlug, section]
   );
+  const usesLayoutBlocksEditor = section !== 'games';
+  const usesLegacySplitEditor = section === 'games' && hasEmbeddedProgramPost;
+  const usesColumnEditor = section !== 'games';
+  const usesSplitEditor = usesColumnEditor || (section === 'games' && hasEmbeddedProgramPost);
 
   function getEditorRef(key: EditorPaneKey) {
     if (key === 'before') return beforeEditorRef;
@@ -357,8 +450,10 @@ export function PostEditorModal({
   }
 
   function preferredEditorKey(): EditorPaneKey {
-    if (!hasEmbeddedProgramPost) return 'body';
-    return activeEditor === 'before' || activeEditor === 'after' ? activeEditor : 'after';
+    if (usesColumnEditor || usesLegacySplitEditor) {
+      return activeEditor === 'before' || activeEditor === 'after' ? activeEditor : 'before';
+    }
+    return 'body';
   }
 
   function hydrateEditor(ref: { current: HTMLDivElement | null }, html: string) {
@@ -373,12 +468,18 @@ export function PostEditorModal({
 
   useEffect(() => {
     const nextBodyHtml = toInitialEditorHtml(initialPost?.content_md || '');
-    const nextBeforeSource = initialPost?.content_before_md || '';
-    const nextAfterSource =
-      initialPost?.content_after_md || (!initialPost?.content_before_md && !initialPost?.content_after_md ? initialPost?.content_md || '' : '');
+    const initialSection = initialPost?.section || defaultSection;
+    const columnInitial = initialSection !== 'games';
+    const splitInitial = initialSection === 'games' && hasEmbeddedProgram(initialSection, initialPost?.slug || '');
+    const hasAnyBeforeAfter = columnInitial || splitInitial;
+    const nextBeforeSource = hasAnyBeforeAfter
+      ? initialPost?.content_before_md || (!initialPost?.content_before_md && !initialPost?.content_after_md ? initialPost?.content_md || '' : '')
+      : '';
+    const nextAfterSource = hasAnyBeforeAfter ? initialPost?.content_after_md || '' : '';
     const nextBeforeHtml = toInitialEditorHtml(nextBeforeSource);
     const nextAfterHtml = toInitialEditorHtml(nextAfterSource);
-    const embeddedInitial = hasEmbeddedProgram(initialPost?.section || defaultSection, initialPost?.slug || '');
+    const nextLayoutBlocks: PostLayoutBlock[] = [];
+    const nextSelectedLayoutBlockId = null;
 
     setTitle(initialPost?.title || '');
     setSlug(initialPost?.slug || '');
@@ -411,7 +512,9 @@ export function PostEditorModal({
       Boolean(initialPost?.card.category && initialPost.card.category !== (initialPost.section || defaultSection))
     );
     setCardRankTouched(Boolean(stripRank(initialPost?.card.rank)));
-    setActiveEditor(embeddedInitial ? (nextBeforeSource.trim() ? 'before' : 'after') : 'body');
+    setLayoutBlocks(nextLayoutBlocks);
+    setSelectedLayoutBlockId(nextSelectedLayoutBlockId);
+    setActiveEditor(hasAnyBeforeAfter ? (nextAfterSource.trim() && !nextBeforeSource.trim() ? 'after' : 'before') : 'body');
 
     selectedImageRef.current = null;
     savedSelectionRef.current = null;
@@ -420,7 +523,9 @@ export function PostEditorModal({
     setLoading(false);
 
     requestAnimationFrame(() => {
-      hydrateEditor(bodyEditorRef, nextBodyHtml);
+      if (!columnInitial) {
+        hydrateEditor(bodyEditorRef, nextBodyHtml);
+      }
       hydrateEditor(beforeEditorRef, nextBeforeHtml);
       hydrateEditor(afterEditorRef, nextAfterHtml);
     });
@@ -1105,24 +1210,24 @@ export function PostEditorModal({
     const normalizedSlug = slugify(slug || normalizedTitle);
     const rawHtml = syncEditorHtml('body').trim();
     const html = normalizeBodyHtml(rawHtml).trim();
-    const rawBeforeHtml = hasEmbeddedProgramPost ? syncEditorHtml('before').trim() : '';
-    const rawAfterHtml = hasEmbeddedProgramPost ? syncEditorHtml('after').trim() : '';
+    const rawBeforeHtml = usesSplitEditor ? syncEditorHtml('before').trim() : '';
+    const rawAfterHtml = usesSplitEditor ? syncEditorHtml('after').trim() : '';
     const normalizedBeforeHtml = rawBeforeHtml ? normalizeBodyHtml(rawBeforeHtml).trim() : '';
     const normalizedAfterHtml = rawAfterHtml ? normalizeBodyHtml(rawAfterHtml).trim() : '';
-    const beforeHtml = hasEmbeddedProgramPost ? normalizedBeforeHtml : '';
-    const afterHtml = hasEmbeddedProgramPost ? normalizedAfterHtml : '';
-    const combinedHtml = hasEmbeddedProgramPost ? [beforeHtml, afterHtml].filter(Boolean).join('\n') : html;
+    const beforeHtml = usesSplitEditor ? normalizedBeforeHtml : '';
+    const afterHtml = usesSplitEditor ? normalizedAfterHtml : '';
+    const combinedHtml = usesSplitEditor ? [beforeHtml, afterHtml].filter(Boolean).join('\n') : html;
 
     if (!normalizedTitle || !normalizedSlug) {
       setError('title and slug are required.');
       return;
     }
-    if (!hasEmbeddedProgramPost && isEditorHtmlEmpty(html)) {
+    if (!usesSplitEditor && isEditorHtmlEmpty(html)) {
       setError('content is required.');
       return;
     }
     if (
-      hasEmbeddedProgramPost &&
+      usesSplitEditor &&
       isEditorHtmlEmpty(beforeHtml) &&
       isEditorHtmlEmpty(afterHtml)
     ) {
@@ -1146,8 +1251,8 @@ export function PostEditorModal({
       title: normalizedTitle,
       excerpt: normalizedExcerpt,
       content_md: combinedHtml,
-      content_before_md: hasEmbeddedProgramPost ? beforeHtml || null : null,
-      content_after_md: hasEmbeddedProgramPost ? afterHtml || null : null,
+      content_before_md: usesSplitEditor ? beforeHtml || null : null,
+      content_after_md: usesSplitEditor ? afterHtml || null : null,
       status,
       lang,
       section,
@@ -1180,8 +1285,8 @@ export function PostEditorModal({
       title: normalizedTitle,
       excerpt: normalizedExcerpt || '',
       content_md: combinedHtml,
-      content_before_md: hasEmbeddedProgramPost ? beforeHtml : '',
-      content_after_md: hasEmbeddedProgramPost ? afterHtml : '',
+      content_before_md: usesSplitEditor ? beforeHtml : '',
+      content_after_md: usesSplitEditor ? afterHtml : '',
       status,
       lang,
       section,
@@ -1515,13 +1620,17 @@ export function PostEditorModal({
             <div className="admin-card-settings">
               <h3>Body</h3>
               <p className="list-tags">H1 is generated automatically from the post title. Use H2/H3 in body.</p>
-              {hasEmbeddedProgramPost ? (
+              {usesSplitEditor ? (
                 <p className="list-tags">
-                  Built-in programs always keep two editable text areas. Content above is rendered before the program and content below is rendered after it. Formatting tools apply to the currently focused area.
+                  {section === 'games' && hasEmbeddedProgramPost
+                    ? 'Built-in programs always keep two editable text areas. Content above is rendered before the program and content below is rendered after it. Formatting tools apply to the currently focused area.'
+                    : hasEmbeddedProgramPost
+                      ? 'Non-game pages keep separate left and right columns. Built-in tools are inserted at the top of the right column, and formatting tools apply to the currently focused column.'
+                      : 'Non-game pages keep separate left and right columns. Formatting tools apply to the currently focused column.'}
                 </p>
               ) : null}
 
-              <div className="admin-editor-workbench">
+              <div className={`admin-editor-workbench${usesColumnEditor ? ' admin-editor-workbench--split' : ''}`}>
                 <div className="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
                   <label className="editor-toolbar__label">
                     Style
@@ -1766,7 +1875,18 @@ export function PostEditorModal({
                   </div>
                 ) : null}
 
-                {hasEmbeddedProgramPost ? (
+                {usesColumnEditor ? (
+                  <div className="admin-editor-stack admin-editor-stack--split">
+                    {renderEditorSurface('before', 'Left column', 'Rendered in the left column.')}
+                    {renderEditorSurface(
+                      'after',
+                      'Right column',
+                      hasEmbeddedProgramPost
+                        ? 'Rendered in the right column after the built-in tool area.'
+                        : 'Rendered in the right column.'
+                    )}
+                  </div>
+                ) : hasEmbeddedProgramPost ? (
                   <div className="admin-editor-stack">
                     {renderEditorSurface(
                       'before',

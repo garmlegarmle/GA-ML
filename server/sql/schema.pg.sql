@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS posts (
   content_md TEXT NOT NULL,
   content_before_md TEXT,
   content_after_md TEXT,
+  layout_blocks_json TEXT,
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
   cover_image_id BIGINT REFERENCES media(id) ON DELETE SET NULL,
   published_at TIMESTAMPTZ,
@@ -138,6 +139,9 @@ ALTER TABLE posts
 
 ALTER TABLE posts
   ADD COLUMN IF NOT EXISTS content_after_md TEXT;
+
+ALTER TABLE posts
+  ADD COLUMN IF NOT EXISTS layout_blocks_json TEXT;
 
 ALTER TABLE posts
   ADD COLUMN IF NOT EXISTS card_title_size TEXT;

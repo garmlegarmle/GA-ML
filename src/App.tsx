@@ -17,7 +17,7 @@ import { TREND_ANALYZER_TOOL_SLUG, TrendAnalyzerToolContent } from './components
 import { trackPageView } from './lib/analytics';
 import { changeAdminPassword, getPostBySlug, getSession, listPosts, login, logout } from './lib/api';
 import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
-import type { PostItem, PostSaveSnapshot, SiteLang, SiteSection } from './types';
+import type { PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from './types';
 
 interface AdminState {
   loading: boolean;
@@ -49,6 +49,7 @@ function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
     content_md: (snapshot.content_md ?? existing?.content_md) || '',
     content_before_md: snapshot.content_before_md ?? existing?.content_before_md ?? null,
     content_after_md: snapshot.content_after_md ?? existing?.content_after_md ?? null,
+    layout_blocks: snapshot.layout_blocks ?? existing?.layout_blocks ?? null,
     status: snapshot.status,
     published_at: snapshot.status === 'published' ? existing?.published_at || snapshot.updated_at : null,
     created_at: existing?.created_at || snapshot.updated_at,
@@ -76,6 +77,26 @@ function renderRichContent(raw: string | null | undefined): string {
 
   const parsed = marked.parse(value, { async: false }) as string;
   return DOMPurify.sanitize(parsed);
+}
+
+function resolveColumnSources(post: Pick<PostItem, 'content_md' | 'content_before_md' | 'content_after_md'> | null | undefined) {
+  const leftSource = String(post?.content_before_md || '').trim();
+  const rightSource = String(post?.content_after_md || '').trim();
+
+  if (leftSource || rightSource) {
+    return { leftSource, rightSource };
+  }
+
+  return {
+    leftSource: String(post?.content_md || '').trim(),
+    rightSource: ''
+  };
+}
+
+function sortLayoutBlocks(blocks: PostLayoutBlock[] | null | undefined, column: 'left' | 'right') {
+  return (Array.isArray(blocks) ? blocks : [])
+    .filter((block) => block.visible !== false && block.column === column)
+    .sort((left, right) => Number(left.order || 0) - Number(right.order || 0));
 }
 
 function upsertPost(list: PostItem[], snapshot: PostSaveSnapshot, maxItems?: number): PostItem[] {
@@ -1007,21 +1028,14 @@ function DetailPage({
   const isTrendAnalyzerTool = section === 'tools' && slug === TREND_ANALYZER_TOOL_SLUG;
   const isHoldemTournamentGame = section === 'games' && slug === TEXAS_HOLDEM_TOURNAMENT_SLUG;
   const isMineCartDuelGame = section === 'games' && slug === MINE_CART_DUEL_SLUG;
+  const usesSplitLayout = section !== 'games';
   const isEmbeddedProgramPost = isChartInterpretationTool || isTrendAnalyzerTool || isHoldemTournamentGame || isMineCartDuelGame;
-  const programTopHtml = useMemo(
-    () => (isEmbeddedProgramPost ? renderRichContent(post?.content_before_md) : ''),
-    [isEmbeddedProgramPost, post?.content_before_md]
-  );
-  const programBottomSource = useMemo(() => {
-    if (!isEmbeddedProgramPost) return '';
-    if (post?.content_after_md) return post.content_after_md;
-    if (!post?.content_before_md) return post?.content_md || '';
-    return '';
-  }, [isEmbeddedProgramPost, post?.content_after_md, post?.content_before_md, post?.content_md]);
-  const programBottomHtml = useMemo(
-    () => (isEmbeddedProgramPost ? renderRichContent(programBottomSource) : ''),
-    [isEmbeddedProgramPost, programBottomSource]
-  );
+  const hasBlockLayout = usesSplitLayout && Array.isArray(post?.layout_blocks) && post.layout_blocks.length > 0;
+  const columnSources = useMemo(() => resolveColumnSources(post), [post?.content_after_md, post?.content_before_md, post?.content_md]);
+  const leftColumnHtml = useMemo(() => renderRichContent(columnSources.leftSource), [columnSources.leftSource]);
+  const rightColumnHtml = useMemo(() => renderRichContent(columnSources.rightSource), [columnSources.rightSource]);
+  const leftLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'left'), [post?.layout_blocks]);
+  const rightLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'right'), [post?.layout_blocks]);
   const schemaJson = useMemo(() => {
     if (!post?.schemaType) return '';
 
@@ -1048,6 +1062,30 @@ function DetailPage({
     });
   }, [post]);
 
+  function renderDetailLayoutBlock(block: PostLayoutBlock) {
+    if (block.type === 'tool') {
+      if (block.toolKey === CHART_INTERPRETATION_TOOL_SLUG) {
+        return (
+          <section key={block.id} className="detail-program detail-program--tool" aria-label="Tool area">
+            <ChartInterpretationToolContent lang={lang} embedded />
+          </section>
+        );
+      }
+      if (block.toolKey === TREND_ANALYZER_TOOL_SLUG) {
+        return (
+          <section key={block.id} className="detail-program detail-program--tool" aria-label="Tool area">
+            <TrendAnalyzerToolContent lang={lang} embedded />
+          </section>
+        );
+      }
+      return null;
+    }
+
+    const blockHtml = renderRichContent(block.html);
+    if (!blockHtml) return null;
+    return <section key={block.id} className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: blockHtml }} />;
+  }
+
   if (!isValidSection || !section) return <Navigate to={`/${lang}/`} replace />;
 
   return (
@@ -1059,7 +1097,7 @@ function DetailPage({
     >
       <article className="page-section">
         <div
-          className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}${isHoldemTournamentGame || isMineCartDuelGame ? ' detail-layout--game' : ''}`}
+          className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}${isHoldemTournamentGame || isMineCartDuelGame ? ' detail-layout--game' : ''}${usesSplitLayout ? ' detail-layout--split' : ''}`}
         >
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
@@ -1117,44 +1155,90 @@ function DetailPage({
                 </div>
               </header>
 
-              {isEmbeddedProgramPost && programTopHtml ? (
-                <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: programTopHtml }} />
-              ) : null}
+              {usesSplitLayout ? (
+                <div className="detail-layout__columns">
+                  <div className="detail-layout__column detail-layout__column--left">
+                    {hasBlockLayout
+                      ? leftLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
+                      : leftColumnHtml
+                        ? <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
+                        : null}
+                  </div>
 
-              {isChartInterpretationTool ? (
-                <section className="detail-program detail-program--tool" aria-label="Tool area">
-                  <ChartInterpretationToolContent lang={lang} embedded />
-                </section>
-              ) : isTrendAnalyzerTool ? (
-                <section className="detail-program detail-program--tool" aria-label="Tool area">
-                  <TrendAnalyzerToolContent lang={lang} embedded />
-                </section>
-              ) : isHoldemTournamentGame ? (
-                <section className="detail-program detail-program--game" aria-label="Game area">
-                  <HoldemTournamentGameContent lang={lang} embedded />
-                </section>
-              ) : isMineCartDuelGame ? (
-                <section className="detail-program detail-program--game" aria-label="Game area">
-                  <HandShooterGameContent lang={lang} embedded />
-                </section>
-              ) : (section === 'tools' || section === 'games') && (
-                <section className="detail-program" aria-label="Program area">
-                  {post.cover?.url ? (
-                    <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
-                  ) : (
-                    <div className="detail-program__placeholder">
-                      {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
-                    </div>
-                  )}
-                </section>
-              )}
+                  <div className="detail-layout__column detail-layout__column--right">
+                    {hasBlockLayout ? (
+                      rightLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
+                    ) : (
+                      <>
+                        {isChartInterpretationTool ? (
+                          <section className="detail-program detail-program--tool" aria-label="Tool area">
+                            <ChartInterpretationToolContent lang={lang} embedded />
+                          </section>
+                        ) : isTrendAnalyzerTool ? (
+                          <section className="detail-program detail-program--tool" aria-label="Tool area">
+                            <TrendAnalyzerToolContent lang={lang} embedded />
+                          </section>
+                        ) : section === 'tools' ? (
+                          <section className="detail-program" aria-label="Program area">
+                            {post.cover?.url ? (
+                              <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                            ) : (
+                              <div className="detail-program__placeholder">
+                                {lang === 'ko' ? '도구 영역' : 'Tool Area'}
+                              </div>
+                            )}
+                          </section>
+                        ) : null}
 
-              {isEmbeddedProgramPost ? (
-                programBottomHtml ? (
-                  <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: programBottomHtml }} />
-                ) : null
+                        {rightColumnHtml ? (
+                          <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </div>
               ) : (
-                <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: html }} />
+                <>
+                  {isEmbeddedProgramPost && leftColumnHtml ? (
+                    <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
+                  ) : null}
+
+                  {isChartInterpretationTool ? (
+                    <section className="detail-program detail-program--tool" aria-label="Tool area">
+                      <ChartInterpretationToolContent lang={lang} embedded />
+                    </section>
+                  ) : isTrendAnalyzerTool ? (
+                    <section className="detail-program detail-program--tool" aria-label="Tool area">
+                      <TrendAnalyzerToolContent lang={lang} embedded />
+                    </section>
+                  ) : isHoldemTournamentGame ? (
+                    <section className="detail-program detail-program--game" aria-label="Game area">
+                      <HoldemTournamentGameContent lang={lang} embedded />
+                    </section>
+                  ) : isMineCartDuelGame ? (
+                    <section className="detail-program detail-program--game" aria-label="Game area">
+                      <HandShooterGameContent lang={lang} embedded />
+                    </section>
+                  ) : section === 'games' && (
+                    <section className="detail-program" aria-label="Program area">
+                      {post.cover?.url ? (
+                        <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                      ) : (
+                        <div className="detail-program__placeholder">
+                          {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {isEmbeddedProgramPost ? (
+                    rightColumnHtml ? (
+                      <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
+                    ) : null
+                  ) : (
+                    <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: html }} />
+                  )}
+                </>
               )}
               {!isStandalonePage && relatedPosts.length > 0 ? (
                 <section className="detail-related" aria-label={t(lang, 'detail.related')}>
