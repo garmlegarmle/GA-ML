@@ -1,9 +1,16 @@
 import type {
+  ChartInterpretationAnalysisResponse,
+  HoldemCompleteResponse,
+  HoldemOnlineSessionResponse,
+  HoldemOnlineTablesResponse,
+  HoldemPlayResponse,
+  HoldemStatsResponse,
   PostDetailResponse,
   PostListResponse,
   SessionResponse,
   TagCountResponse,
   TagListResponse,
+  TrendAnalysisResponse,
   UploadResponse
 } from '../types';
 
@@ -232,6 +239,120 @@ export async function uploadMedia(file: File, alt?: string): Promise<UploadRespo
   return apiFetch<UploadResponse>('/api/upload', {
     method: 'POST',
     body: form
+  });
+}
+
+export async function analyzeTrendCsv(file: File): Promise<TrendAnalysisResponse> {
+  const form = new FormData();
+  form.append('file', file);
+
+  return apiFetch<TrendAnalysisResponse>('/api/tools/trend-analyzer/analyze', {
+    method: 'POST',
+    body: form
+  });
+}
+
+export async function analyzeTrendTicker(ticker: string): Promise<TrendAnalysisResponse> {
+  return apiFetch<TrendAnalysisResponse>('/api/tools/trend-analyzer/analyze-ticker', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ ticker })
+  });
+}
+
+export async function analyzeChartInterpretationTicker(ticker: string): Promise<ChartInterpretationAnalysisResponse> {
+  return apiFetch<ChartInterpretationAnalysisResponse>('/api/tools/chart-interpretation/analyze-ticker', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ ticker })
+  });
+}
+
+export async function analyzeChartInterpretationCsv(
+  file: File,
+  title?: string
+): Promise<ChartInterpretationAnalysisResponse> {
+  const form = new FormData();
+  form.append('file', file);
+  if (title) {
+    form.append('title', title);
+  }
+
+  return apiFetch<ChartInterpretationAnalysisResponse>('/api/tools/chart-interpretation/analyze-csv', {
+    method: 'POST',
+    body: form
+  });
+}
+
+export async function getHoldemStats(playerName?: string): Promise<HoldemStatsResponse> {
+  const query = new URLSearchParams();
+  if (playerName) {
+    query.set('playerName', playerName);
+  }
+
+  return apiFetch<HoldemStatsResponse>(
+    `/api/games/texas-holdem-tournament/stats${query.toString() ? `?${query.toString()}` : ''}`,
+    {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache'
+      }
+    }
+  );
+}
+
+export async function recordHoldemPlayStart(playerName: string): Promise<HoldemPlayResponse> {
+  return apiFetch<HoldemPlayResponse>('/api/games/texas-holdem-tournament/play', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify({ playerName })
+  });
+}
+
+export async function recordHoldemCompletion(body: {
+  playerName: string;
+  runToken: string;
+  finalPlace: number;
+  levelReached: number;
+  handNumber: number;
+  playerWon: boolean;
+}): Promise<HoldemCompleteResponse> {
+  return apiFetch<HoldemCompleteResponse>('/api/games/texas-holdem-tournament/complete', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+export async function createHoldemOnlineSession(body: {
+  displayName: string;
+  sessionToken?: string;
+}): Promise<HoldemOnlineSessionResponse> {
+  return apiFetch<HoldemOnlineSessionResponse>('/api/holdem-online/session', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getHoldemOnlineTables(): Promise<HoldemOnlineTablesResponse> {
+  return apiFetch<HoldemOnlineTablesResponse>('/api/holdem-online/tables', {
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
   });
 }
 

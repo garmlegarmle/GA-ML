@@ -2,6 +2,7 @@
 node_modules
 server/node_modules
 .astro
+.cache
 dist
 *.tsbuildinfo
 vite.config.js
@@ -23,3 +24,14 @@ CLAUDE_LOCAL_NOTES.md
 # Common private key files
 *.pem
 *.key
+
+# Python cache / generated bundle outputs
+__pycache__/
+*.pyc
+web_backend_bundle/out/
+.matplotlib-cache/
+.venv-trend-check/
+
+# Local nested repos / desktop app workspaces
+external-repos/
+chart_interpretation_web_bundle/
