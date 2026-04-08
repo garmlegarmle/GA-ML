@@ -212,6 +212,16 @@ function normalizeLayoutBlocks(value) {
     });
 }
 
+function parseStoredLayoutBlocks(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function renderSitemapXml(entries) {
   const body = entries
     .map((entry) => {
@@ -842,13 +852,14 @@ app.post('/api/posts', async (req, res, next) => {
     const contentBefore = String(payload.content_before_md || '').trim();
     const contentAfter = String(payload.content_after_md || '').trim();
     const layoutBlocks = normalizeLayoutBlocks(payload.layout_blocks);
+    const hasLayoutBlocks = Array.isArray(layoutBlocks) && layoutBlocks.length > 0;
     if (!title) return jsonError(res, 400, 'title is required');
     const lang = normalizeLang(payload.lang || 'en');
     const section = normalizeSection(payload.section || 'blog');
     const slug = slugify(String(payload.slug || title));
     if (!slug) return jsonError(res, 400, 'slug is invalid');
     const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
-    if (!normalizedCombinedContent) return jsonError(res, 400, 'content is required');
+    if (!normalizedCombinedContent && !hasLayoutBlocks) return jsonError(res, 400, 'content is required');
     const status = normalizeStatus(payload.status || 'draft');
     const tags = dedupeTags(payload.tags || []);
     const excerpt = String(payload.excerpt || '').trim() || (normalizedCombinedContent ? toExcerpt(normalizedCombinedContent) : '');
@@ -909,7 +920,11 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const payload = req.body || {};
     const title = payload.title !== undefined ? String(payload.title || '').trim() : current.title;
     const content = payload.content_md !== undefined ? String(payload.content_md || '').trim() : current.content_md;
-    const layoutBlocks = payload.layout_blocks !== undefined ? normalizeLayoutBlocks(payload.layout_blocks) : normalizeLayoutBlocks(current.layout_blocks_json ? JSON.parse(current.layout_blocks_json) : null);
+    const layoutBlocks =
+      payload.layout_blocks !== undefined
+        ? normalizeLayoutBlocks(payload.layout_blocks)
+        : normalizeLayoutBlocks(parseStoredLayoutBlocks(current.layout_blocks_json));
+    const hasLayoutBlocks = Array.isArray(layoutBlocks) && layoutBlocks.length > 0;
     if (!title) return jsonError(res, 400, 'title is required');
     const lang = payload.lang !== undefined ? normalizeLang(payload.lang) : current.lang;
     const section = payload.section !== undefined ? normalizeSection(payload.section) : current.section;
@@ -918,7 +933,7 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const contentBefore = payload.content_before_md !== undefined ? String(payload.content_before_md || '').trim() : current.content_before_md || '';
     const contentAfter = payload.content_after_md !== undefined ? String(payload.content_after_md || '').trim() : current.content_after_md || '';
     const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
-    if (!normalizedCombinedContent) return jsonError(res, 400, 'content is required');
+    if (!normalizedCombinedContent && !hasLayoutBlocks) return jsonError(res, 400, 'content is required');
     const status = payload.status !== undefined ? normalizeStatus(payload.status) : current.status;
     const tags = payload.tags !== undefined ? dedupeTags(payload.tags || []) : await getPostTags(pool, postId);
     const excerpt = payload.excerpt !== undefined

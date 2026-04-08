@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPost, deletePost, deleteTag, listPosts, listTags, updatePost, uploadMedia } from '../lib/api';
 import type { CardTitleSize, PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from '../types';
 
@@ -16,6 +16,11 @@ interface PostEditorModalProps {
 const RESIZE_EDGE_THRESHOLD = 14;
 type EditorPaneKey = 'body' | 'before' | 'after';
 type LayoutColumn = 'left' | 'right';
+const LAYOUT_COLUMNS: LayoutColumn[] = ['left', 'right'];
+const TOOL_BLOCK_LABELS: Record<string, string> = {
+  'trend-analyzer': 'Trend Analyzer',
+  'chart-interpretation': 'Chart Interpretation'
+};
 
 const FONT_SIZE_OPTIONS = [
   { label: '12px', value: '1' },
@@ -165,6 +170,11 @@ function normalizeBodyHtml(rawHtml: string): string {
   return doc.body.innerHTML;
 }
 
+function normalizeStoredEditorHtml(rawHtml: string): string {
+  const normalized = normalizeBodyHtml(rawHtml).trim();
+  return isEditorHtmlEmpty(normalized) ? '' : normalized;
+}
+
 function toPlainText(rawHtml: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(String(rawHtml || ''), 'text/html');
@@ -300,7 +310,7 @@ function sortLayoutBlocksForColumn(blocks: PostLayoutBlock[], column: LayoutColu
 }
 
 function normalizeLayoutBlockOrders(blocks: PostLayoutBlock[]): PostLayoutBlock[] {
-  return (['left', 'right'] as const).flatMap((column) =>
+  return LAYOUT_COLUMNS.flatMap((column) =>
     sortLayoutBlocksForColumn(blocks, column).map((block, index) => ({
       ...block,
       order: index
@@ -346,6 +356,55 @@ function buildInitialLayoutBlocks(
   }
 
   return normalizeLayoutBlockOrders(blocks);
+}
+
+function reorderLayoutBlocks(
+  blocks: PostLayoutBlock[],
+  blockId: string,
+  targetColumn: LayoutColumn,
+  targetIndex: number
+): PostLayoutBlock[] {
+  const moving = blocks.find((block) => block.id === blockId);
+  if (!moving) return blocks;
+
+  let adjustedTargetIndex = targetIndex;
+  if (moving.column === targetColumn) {
+    const currentColumnBlocks = sortLayoutBlocksForColumn(blocks, targetColumn);
+    const movingIndex = currentColumnBlocks.findIndex((block) => block.id === blockId);
+    if (movingIndex >= 0 && movingIndex < targetIndex) {
+      adjustedTargetIndex -= 1;
+    }
+  }
+
+  const withoutMoving = blocks.filter((block) => block.id !== blockId);
+  const nextTargetBlocks = sortLayoutBlocksForColumn(withoutMoving, targetColumn);
+  const insertIndex = Math.max(0, Math.min(adjustedTargetIndex, nextTargetBlocks.length));
+  const otherColumn: LayoutColumn = targetColumn === 'left' ? 'right' : 'left';
+  const otherBlocks = sortLayoutBlocksForColumn(withoutMoving, otherColumn);
+  const updatedMoving = { ...moving, column: targetColumn };
+  const mergedTargetBlocks = [
+    ...nextTargetBlocks.slice(0, insertIndex),
+    updatedMoving,
+    ...nextTargetBlocks.slice(insertIndex)
+  ];
+
+  return normalizeLayoutBlockOrders(
+    targetColumn === 'left' ? [...mergedTargetBlocks, ...otherBlocks] : [...otherBlocks, ...mergedTargetBlocks]
+  );
+}
+
+function nextSelectableLayoutBlockId(blocks: PostLayoutBlock[]): string | null {
+  return blocks.find((block) => block.type === 'text')?.id || blocks[0]?.id || null;
+}
+
+function blockPreviewText(block: PostLayoutBlock): string {
+  if (block.type === 'tool') {
+    return `${TOOL_BLOCK_LABELS[block.toolKey || ''] || 'Built-in tool'} block`;
+  }
+
+  const preview = toPlainText(block.html || '');
+  if (!preview) return 'Empty text block';
+  return preview.length > 96 ? `${preview.slice(0, 93)}...` : preview;
 }
 
 function isLockedBuiltinProgramPost(post: PostItem | null | undefined): boolean {
@@ -436,8 +495,20 @@ export function PostEditorModal({
   );
   const usesLayoutBlocksEditor = section !== 'games';
   const usesLegacySplitEditor = section === 'games' && hasEmbeddedProgramPost;
-  const usesColumnEditor = section !== 'games';
-  const usesSplitEditor = usesColumnEditor || (section === 'games' && hasEmbeddedProgramPost);
+  const usesSplitEditor = usesLegacySplitEditor;
+  const builtinToolBlockKey = useMemo(() => deriveToolBlockKey(section, normalizedEditorSlug), [normalizedEditorSlug, section]);
+  const selectedLayoutBlock = useMemo(
+    () => layoutBlocks.find((block) => block.id === selectedLayoutBlockId) || null,
+    [layoutBlocks, selectedLayoutBlockId]
+  );
+  const isSelectedTextLayoutBlock = selectedLayoutBlock?.type === 'text';
+  const leftColumnLayoutBlocks = useMemo(() => sortLayoutBlocksForColumn(layoutBlocks, 'left'), [layoutBlocks]);
+  const rightColumnLayoutBlocks = useMemo(() => sortLayoutBlocksForColumn(layoutBlocks, 'right'), [layoutBlocks]);
+  const hasBuiltinToolBlock = useMemo(
+    () => Boolean(builtinToolBlockKey && layoutBlocks.some((block) => block.type === 'tool' && block.toolKey === builtinToolBlockKey)),
+    [builtinToolBlockKey, layoutBlocks]
+  );
+  const canAddBuiltinToolBlock = Boolean(builtinToolBlockKey) && !hasBuiltinToolBlock;
 
   function getEditorRef(key: EditorPaneKey) {
     if (key === 'before') return beforeEditorRef;
@@ -450,7 +521,10 @@ export function PostEditorModal({
   }
 
   function preferredEditorKey(): EditorPaneKey {
-    if (usesColumnEditor || usesLegacySplitEditor) {
+    if (usesLayoutBlocksEditor) {
+      return 'body';
+    }
+    if (usesLegacySplitEditor) {
       return activeEditor === 'before' || activeEditor === 'after' ? activeEditor : 'before';
     }
     return 'body';
@@ -469,17 +543,20 @@ export function PostEditorModal({
   useEffect(() => {
     const nextBodyHtml = toInitialEditorHtml(initialPost?.content_md || '');
     const initialSection = initialPost?.section || defaultSection;
-    const columnInitial = initialSection !== 'games';
     const splitInitial = initialSection === 'games' && hasEmbeddedProgram(initialSection, initialPost?.slug || '');
-    const hasAnyBeforeAfter = columnInitial || splitInitial;
+    const layoutInitial = initialSection !== 'games';
+    const hasAnyBeforeAfter = splitInitial;
     const nextBeforeSource = hasAnyBeforeAfter
       ? initialPost?.content_before_md || (!initialPost?.content_before_md && !initialPost?.content_after_md ? initialPost?.content_md || '' : '')
       : '';
     const nextAfterSource = hasAnyBeforeAfter ? initialPost?.content_after_md || '' : '';
     const nextBeforeHtml = toInitialEditorHtml(nextBeforeSource);
     const nextAfterHtml = toInitialEditorHtml(nextAfterSource);
-    const nextLayoutBlocks: PostLayoutBlock[] = [];
-    const nextSelectedLayoutBlockId = null;
+    const nextLayoutBlocks: PostLayoutBlock[] = layoutInitial
+      ? buildInitialLayoutBlocks(initialPost, initialSection, slugify(initialPost?.slug || initialPost?.title || ''))
+      : [];
+    const nextSelectedLayoutBlockId = layoutInitial ? nextSelectableLayoutBlockId(nextLayoutBlocks) : null;
+    const nextSelectedLayoutBlock = nextLayoutBlocks.find((block) => block.id === nextSelectedLayoutBlockId) || null;
 
     setTitle(initialPost?.title || '');
     setSlug(initialPost?.slug || '');
@@ -514,7 +591,7 @@ export function PostEditorModal({
     setCardRankTouched(Boolean(stripRank(initialPost?.card.rank)));
     setLayoutBlocks(nextLayoutBlocks);
     setSelectedLayoutBlockId(nextSelectedLayoutBlockId);
-    setActiveEditor(hasAnyBeforeAfter ? (nextAfterSource.trim() && !nextBeforeSource.trim() ? 'after' : 'before') : 'body');
+    setActiveEditor(layoutInitial ? 'body' : hasAnyBeforeAfter ? (nextAfterSource.trim() && !nextBeforeSource.trim() ? 'after' : 'before') : 'body');
 
     selectedImageRef.current = null;
     savedSelectionRef.current = null;
@@ -523,13 +600,26 @@ export function PostEditorModal({
     setLoading(false);
 
     requestAnimationFrame(() => {
-      if (!columnInitial) {
+      if (layoutInitial) {
+        hydrateEditor(
+          bodyEditorRef,
+          toInitialEditorHtml(nextSelectedLayoutBlock?.type === 'text' ? nextSelectedLayoutBlock.html || '' : '')
+        );
+      } else {
         hydrateEditor(bodyEditorRef, nextBodyHtml);
       }
       hydrateEditor(beforeEditorRef, nextBeforeHtml);
       hydrateEditor(afterEditorRef, nextAfterHtml);
     });
   }, [defaultLang, defaultSection, initialPost, open]);
+
+  useEffect(() => {
+    if (!open || !usesLayoutBlocksEditor) return;
+    hydrateEditor(
+      bodyEditorRef,
+      toInitialEditorHtml(isSelectedTextLayoutBlock ? selectedLayoutBlock?.html || '' : '')
+    );
+  }, [isSelectedTextLayoutBlock, open, selectedLayoutBlock?.html, selectedLayoutBlockId, usesLayoutBlocksEditor]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -659,6 +749,94 @@ export function PostEditorModal({
 
   function syncEditorHtml(key: EditorPaneKey = preferredEditorKey()): string {
     return getEditorElement(key)?.innerHTML || '';
+  }
+
+  function buildCommittedLayoutBlocks(sourceBlocks: PostLayoutBlock[]): PostLayoutBlock[] {
+    if (!usesLayoutBlocksEditor || !selectedLayoutBlockId) return sourceBlocks;
+    const selectedBlock = sourceBlocks.find((block) => block.id === selectedLayoutBlockId);
+    if (!selectedBlock || selectedBlock.type !== 'text') return sourceBlocks;
+
+    const nextHtml = normalizeStoredEditorHtml(syncEditorHtml('body'));
+    if ((selectedBlock.html || '') === nextHtml) return sourceBlocks;
+
+    return sourceBlocks.map((block) => (block.id === selectedLayoutBlockId ? { ...block, html: nextHtml } : block));
+  }
+
+  function commitLayoutBlocksToState(): PostLayoutBlock[] {
+    const nextBlocks = buildCommittedLayoutBlocks(layoutBlocks);
+    if (nextBlocks !== layoutBlocks) {
+      setLayoutBlocks(nextBlocks);
+    }
+    return nextBlocks;
+  }
+
+  function selectLayoutBlock(blockId: string) {
+    if (!usesLayoutBlocksEditor) return;
+    if (selectedLayoutBlockId === blockId) return;
+    const nextBlocks = buildCommittedLayoutBlocks(layoutBlocks);
+    if (nextBlocks !== layoutBlocks) {
+      setLayoutBlocks(nextBlocks);
+    }
+    setSelectedLayoutBlockId(blockId);
+    setActiveEditor('body');
+  }
+
+  function updateLayoutBlocks(mutator: (blocks: PostLayoutBlock[]) => PostLayoutBlock[], nextSelectedId?: string | null) {
+    const committedBlocks = buildCommittedLayoutBlocks(layoutBlocks);
+    const nextBlocks = normalizeLayoutBlockOrders(mutator(committedBlocks));
+    setLayoutBlocks(nextBlocks);
+    if (nextSelectedId !== undefined) {
+      setSelectedLayoutBlockId(nextSelectedId);
+    }
+    return nextBlocks;
+  }
+
+  function addTextLayoutBlock(column: LayoutColumn) {
+    const nextBlock = createTextLayoutBlock(column, sortLayoutBlocksForColumn(layoutBlocks, column).length, '', '');
+    updateLayoutBlocks((blocks) => [...blocks, nextBlock], nextBlock.id);
+  }
+
+  function addBuiltinToolLayoutBlock(column: LayoutColumn) {
+    if (!builtinToolBlockKey || hasBuiltinToolBlock) return;
+    const nextBlock = createToolLayoutBlock(column, sortLayoutBlocksForColumn(layoutBlocks, column).length, builtinToolBlockKey);
+    updateLayoutBlocks((blocks) => [...blocks, nextBlock], nextBlock.id);
+  }
+
+  function handleLayoutBlockVisibilityToggle(blockId: string) {
+    updateLayoutBlocks((blocks) =>
+      blocks.map((block) => (block.id === blockId ? { ...block, visible: block.visible === false } : block))
+    );
+  }
+
+  function handleLayoutBlockMove(blockId: string, column: LayoutColumn) {
+    updateLayoutBlocks((blocks) => reorderLayoutBlocks(blocks, blockId, column, sortLayoutBlocksForColumn(blocks, column).length));
+  }
+
+  function handleLayoutBlockDelete(blockId: string) {
+    const nextBlocks = updateLayoutBlocks(
+      (blocks) => blocks.filter((block) => block.id !== blockId),
+      selectedLayoutBlockId === blockId ? null : undefined
+    );
+    if (selectedLayoutBlockId === blockId) {
+      setSelectedLayoutBlockId(nextSelectableLayoutBlockId(nextBlocks));
+    }
+  }
+
+  function handleLayoutBlockDragStart(blockId: string) {
+    draggingLayoutBlockIdRef.current = blockId;
+  }
+
+  function handleLayoutBlockDragEnd() {
+    draggingLayoutBlockIdRef.current = null;
+  }
+
+  function handleLayoutBlockDrop(event: ReactDragEvent<HTMLElement>, column: LayoutColumn, index: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    const draggingBlockId = draggingLayoutBlockIdRef.current;
+    if (!draggingBlockId) return;
+    updateLayoutBlocks((blocks) => reorderLayoutBlocks(blocks, draggingBlockId, column, index), draggingBlockId);
+    draggingLayoutBlockIdRef.current = null;
   }
 
   function focusEditor(key: EditorPaneKey = preferredEditorKey()) {
@@ -1208,35 +1386,50 @@ export function PostEditorModal({
 
     const normalizedTitle = title.trim();
     const normalizedSlug = slugify(slug || normalizedTitle);
-    const rawHtml = syncEditorHtml('body').trim();
-    const html = normalizeBodyHtml(rawHtml).trim();
+    const committedLayoutBlocks = usesLayoutBlocksEditor ? commitLayoutBlocksToState() : null;
+    const html = normalizeStoredEditorHtml(syncEditorHtml('body'));
     const rawBeforeHtml = usesSplitEditor ? syncEditorHtml('before').trim() : '';
     const rawAfterHtml = usesSplitEditor ? syncEditorHtml('after').trim() : '';
-    const normalizedBeforeHtml = rawBeforeHtml ? normalizeBodyHtml(rawBeforeHtml).trim() : '';
-    const normalizedAfterHtml = rawAfterHtml ? normalizeBodyHtml(rawAfterHtml).trim() : '';
+    const normalizedBeforeHtml = rawBeforeHtml ? normalizeStoredEditorHtml(rawBeforeHtml) : '';
+    const normalizedAfterHtml = rawAfterHtml ? normalizeStoredEditorHtml(rawAfterHtml) : '';
     const beforeHtml = usesSplitEditor ? normalizedBeforeHtml : '';
     const afterHtml = usesSplitEditor ? normalizedAfterHtml : '';
-    const combinedHtml = usesSplitEditor ? [beforeHtml, afterHtml].filter(Boolean).join('\n') : html;
+    const leftColumnHtml = usesLayoutBlocksEditor
+      ? committedLayoutBlocks
+          ?.filter((block) => block.type === 'text' && block.column === 'left' && block.visible !== false)
+          .map((block) => String(block.html || '').trim())
+          .filter(Boolean)
+          .join('\n') || ''
+      : beforeHtml;
+    const rightColumnHtml = usesLayoutBlocksEditor
+      ? committedLayoutBlocks
+          ?.filter((block) => block.type === 'text' && block.column === 'right' && block.visible !== false)
+          .map((block) => String(block.html || '').trim())
+          .filter(Boolean)
+          .join('\n') || ''
+      : afterHtml;
+    const combinedHtml = usesLayoutBlocksEditor ? [leftColumnHtml, rightColumnHtml].filter(Boolean).join('\n') : usesSplitEditor ? [beforeHtml, afterHtml].filter(Boolean).join('\n') : html;
+    const hasAnyLayoutBlocks = Boolean(committedLayoutBlocks && committedLayoutBlocks.length > 0);
 
     if (!normalizedTitle || !normalizedSlug) {
       setError('title and slug are required.');
       return;
     }
-    if (!usesSplitEditor && isEditorHtmlEmpty(html)) {
+    if (usesLayoutBlocksEditor && !hasAnyLayoutBlocks) {
+      setError('Add at least one layout block.');
+      return;
+    }
+    if (!usesLayoutBlocksEditor && !usesSplitEditor && isEditorHtmlEmpty(html)) {
       setError('content is required.');
       return;
     }
-    if (
-      usesSplitEditor &&
-      isEditorHtmlEmpty(beforeHtml) &&
-      isEditorHtmlEmpty(afterHtml)
-    ) {
+    if (usesSplitEditor && isEditorHtmlEmpty(beforeHtml) && isEditorHtmlEmpty(afterHtml)) {
       setError('content is required.');
       return;
     }
 
     const parsedTags = dedupeTagList(selectedTags);
-    const normalizedExcerpt = excerpt.trim() || toExcerptText(combinedHtml || html) || null;
+    const normalizedExcerpt = excerpt.trim() || toExcerptText(usesLayoutBlocksEditor ? combinedHtml : combinedHtml || html) || null;
     const rankNumber = parseRankNumber(cardRank.trim());
     const normalizedMetaTitle = metaTitle.trim() || null;
     const normalizedMetaDescription = metaDescription.trim() || normalizedExcerpt;
@@ -1251,8 +1444,9 @@ export function PostEditorModal({
       title: normalizedTitle,
       excerpt: normalizedExcerpt,
       content_md: combinedHtml,
-      content_before_md: usesSplitEditor ? beforeHtml || null : null,
-      content_after_md: usesSplitEditor ? afterHtml || null : null,
+      content_before_md: (usesLayoutBlocksEditor ? leftColumnHtml : beforeHtml) || null,
+      content_after_md: (usesLayoutBlocksEditor ? rightColumnHtml : afterHtml) || null,
+      layout_blocks: committedLayoutBlocks,
       status,
       lang,
       section,
@@ -1285,8 +1479,9 @@ export function PostEditorModal({
       title: normalizedTitle,
       excerpt: normalizedExcerpt || '',
       content_md: combinedHtml,
-      content_before_md: usesSplitEditor ? beforeHtml : '',
-      content_after_md: usesSplitEditor ? afterHtml : '',
+      content_before_md: usesLayoutBlocksEditor ? leftColumnHtml : usesSplitEditor ? beforeHtml : '',
+      content_after_md: usesLayoutBlocksEditor ? rightColumnHtml : usesSplitEditor ? afterHtml : '',
+      layout_blocks: committedLayoutBlocks,
       status,
       lang,
       section,
@@ -1344,6 +1539,87 @@ export function PostEditorModal({
     } finally {
       setLoading(false);
     }
+  }
+
+  function renderLayoutBlockCard(block: PostLayoutBlock, index: number) {
+    const isSelected = block.id === selectedLayoutBlockId;
+    const targetColumn: LayoutColumn = block.column === 'left' ? 'right' : 'left';
+
+    return (
+      <article
+        key={block.id}
+        className={`admin-layout-block-card${isSelected ? ' admin-layout-block-card--selected' : ''}${block.visible === false ? ' admin-layout-block-card--hidden' : ''}`}
+        draggable
+        onDragStart={() => handleLayoutBlockDragStart(block.id)}
+        onDragEnd={handleLayoutBlockDragEnd}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => handleLayoutBlockDrop(event, block.column, index)}
+      >
+        <div className="admin-layout-block-card__row">
+          <button type="button" className="admin-layout-block-card__drag" aria-label="Drag block">
+            Drag
+          </button>
+          <button type="button" className="admin-layout-block-card__body" onClick={() => selectLayoutBlock(block.id)}>
+            <strong>
+              {block.type === 'tool' ? TOOL_BLOCK_LABELS[block.toolKey || ''] || 'Built-in tool' : block.title || 'Text block'}
+            </strong>
+            <span>{blockPreviewText(block)}</span>
+          </button>
+        </div>
+
+        <div className="admin-layout-block-card__actions">
+          <button type="button" onClick={() => handleLayoutBlockVisibilityToggle(block.id)}>
+            {block.visible === false ? 'Show' : 'Hide'}
+          </button>
+          <button type="button" onClick={() => handleLayoutBlockMove(block.id, targetColumn)}>
+            Move {targetColumn}
+          </button>
+          <button type="button" onClick={() => handleLayoutBlockDelete(block.id)}>
+            Delete
+          </button>
+        </div>
+      </article>
+    );
+  }
+
+  function renderLayoutColumnManager(column: LayoutColumn, heading: string, blocks: PostLayoutBlock[]) {
+    return (
+      <section
+        className="admin-layout-column"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => handleLayoutBlockDrop(event, column, blocks.length)}
+      >
+        <div className="admin-layout-column__head">
+          <div>
+            <strong>{heading}</strong>
+            <p className="list-tags">Drag blocks to reorder. Text and tool blocks can be mixed in this column.</p>
+          </div>
+          <div className="admin-layout-column__actions">
+            <button type="button" className="admin-btn admin-btn--secondary" onClick={() => addTextLayoutBlock(column)}>
+              + Text
+            </button>
+            {canAddBuiltinToolBlock ? (
+              <button type="button" className="admin-btn admin-btn--secondary" onClick={() => addBuiltinToolLayoutBlock(column)}>
+                + Tool
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="admin-layout-column__stack">
+          {blocks.length ? blocks.map((block, index) => renderLayoutBlockCard(block, index)) : null}
+          <button
+            type="button"
+            className="admin-layout-column__dropzone"
+            onClick={() => addTextLayoutBlock(column)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => handleLayoutBlockDrop(event, column, blocks.length)}
+          >
+            {blocks.length ? 'Drop here to append' : 'Add first block'}
+          </button>
+        </div>
+      </section>
+    );
   }
 
   function renderEditorSurface(key: EditorPaneKey, heading: string, hint: string) {
@@ -1620,305 +1896,385 @@ export function PostEditorModal({
             <div className="admin-card-settings">
               <h3>Body</h3>
               <p className="list-tags">H1 is generated automatically from the post title. Use H2/H3 in body.</p>
-              {usesSplitEditor ? (
+              {usesLayoutBlocksEditor ? (
                 <p className="list-tags">
-                  {section === 'games' && hasEmbeddedProgramPost
-                    ? 'Built-in programs always keep two editable text areas. Content above is rendered before the program and content below is rendered after it. Formatting tools apply to the currently focused area.'
-                    : hasEmbeddedProgramPost
-                      ? 'Non-game pages keep separate left and right columns. Built-in tools are inserted at the top of the right column, and formatting tools apply to the currently focused column.'
-                      : 'Non-game pages keep separate left and right columns. Formatting tools apply to the currently focused column.'}
+                  Non-game pages use draggable layout blocks. Mix text and tool blocks across left and right columns, hide blocks without deleting
+                  them, and edit fixed copy by selecting a text block below.
+                </p>
+              ) : usesSplitEditor ? (
+                <p className="list-tags">
+                  Built-in programs always keep two editable text areas. Content above is rendered before the program and content below is rendered
+                  after it. Formatting tools apply to the currently focused area.
                 </p>
               ) : null}
 
-              <div className={`admin-editor-workbench${usesColumnEditor ? ' admin-editor-workbench--split' : ''}`}>
-                <div className="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
-                  <label className="editor-toolbar__label">
-                    Style
-                    <select
-                      className="editor-toolbar__select"
-                      defaultValue="p"
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        if (value === 'h2') exec('formatBlock', 'H2');
-                        else if (value === 'h3') exec('formatBlock', 'H3');
-                        else exec('formatBlock', 'P');
-                        event.currentTarget.value = 'p';
-                      }}
-                    >
-                      <option value="p">Normal</option>
-                      <option value="h2">H2</option>
-                      <option value="h3">H3</option>
-                    </select>
-                  </label>
-                  <label className="editor-toolbar__label">
-                    Size
-                    <select
-                      className="editor-toolbar__select"
-                      defaultValue="3"
-                      onChange={(event) => {
-                        execWithCss('fontSize', event.target.value);
-                      }}
-                    >
-                      {FONT_SIZE_OPTIONS.map((option) => (
-                        <option key={`font-size-${option.value}`} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="editor-toolbar__label">
-                    Font
-                    <select
-                      className="editor-toolbar__select editor-toolbar__select--font"
-                      defaultValue={FONT_FAMILY_OPTIONS[0].value}
-                      onChange={(event) => {
-                        execWithCss('fontName', event.target.value);
-                      }}
-                    >
-                      {FONT_FAMILY_OPTIONS.map((option) => (
-                        <option key={`font-family-${option.label}`} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button type="button" onClick={() => exec('bold')} aria-label="Bold">
-                    <strong>B</strong>
-                  </button>
-                  <button type="button" onClick={() => exec('italic')} aria-label="Italic">
-                    <em>I</em>
-                  </button>
-                  <button type="button" onClick={() => exec('underline')} aria-label="Underline">
-                    <u>U</u>
-                  </button>
-                  <button type="button" onClick={() => exec('strikeThrough')} aria-label="Strike">
-                    <s>S</s>
-                  </button>
-                  <button type="button" onClick={() => exec('insertUnorderedList')} aria-label="Bullet list">
-                    • List
-                  </button>
-                  <button type="button" onClick={() => exec('insertOrderedList')} aria-label="Numbered list">
-                    1. List
-                  </button>
-                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={insertTable} aria-label="Insert table">
-                    Table
-                  </button>
-                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={addTableRow} aria-label="Add table row">
-                    +Row
-                  </button>
-                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={addTableColumn} aria-label="Add table column">
-                    +Col
-                  </button>
-                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={removeTableRow} aria-label="Remove table row">
-                    -Row
-                  </button>
-                  <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={removeTableColumn} aria-label="Remove table column">
-                    -Col
-                  </button>
-                  <label className="editor-toolbar__label">
-                    Column
-                    <select
-                      className="editor-toolbar__select"
-                      value={tableColumnWidth}
-                      onChange={(event) => applyCurrentTableColumnWidth(event.target.value)}
-                    >
-                      {TABLE_COLUMN_WIDTH_OPTIONS.map((option) => (
-                        <option key={`table-width-${option.value}`} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    onMouseDown={() => rememberSelection(preferredEditorKey())}
-                    onClick={() => {
-                      setLinkComposerOpen((prev) => !prev);
-                      setLinkDraft('');
-                      setLinkResults([]);
-                    }}
-                    aria-label="Insert link"
-                  >
-                    Link
-                  </button>
-                  <label className="editor-toolbar__color">
-                    Text
-                    <input
-                      type="color"
-                      defaultValue="#111417"
-                      onChange={(event) => {
-                        execWithCss('foreColor', event.target.value);
-                      }}
-                    />
-                  </label>
-                  <label className="editor-toolbar__color">
-                    Highlight
-                    <input
-                      type="color"
-                      defaultValue="#fff4a3"
-                      onChange={(event) => {
-                        applyBackgroundColor(event.target.value);
-                      }}
-                    />
-                  </label>
-                  <button type="button" onClick={() => exec('removeFormat')} aria-label="Clear format">
-                    Tx
-                  </button>
-                  <button type="button" onClick={() => exec('justifyLeft')} aria-label="Align left">
-                    Left
-                  </button>
-                  <button type="button" onClick={() => exec('justifyCenter')} aria-label="Align center">
-                    Center
-                  </button>
-                  <button type="button" onClick={() => exec('justifyRight')} aria-label="Align right">
-                    Right
-                  </button>
-                  <label className="editor-toolbar__label">
-                    Image Alt Prefix
-                    <input
-                      className="editor-toolbar__alt"
-                      value={bodyImageAlt}
-                      onChange={(event) => setBodyImageAlt(event.target.value)}
-                      placeholder="Used for uploads, numbered for multi-image rows"
-                    />
-                  </label>
-                  <label className="editor-toolbar__upload" onMouseDown={() => rememberSelection(preferredEditorKey())}>
-                    Image
-                    <input
-                      key={`body-image-input-${bodyImageInputVersion}`}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      hidden
-                      onClick={(event) => {
-                        event.currentTarget.value = '';
-                      }}
-                      onChange={async (event) => {
-                        const files = Array.from(event.currentTarget.files || []);
-                        setBodyImageInputVersion((version) => version + 1);
-                        if (files.length) await uploadAndInsertBodyImages(files);
-                      }}
-                    />
-                  </label>
+              {usesLayoutBlocksEditor ? (
+                <div className="admin-layout-builder">
+                  {renderLayoutColumnManager('left', 'Left column', leftColumnLayoutBlocks)}
+                  {renderLayoutColumnManager('right', 'Right column', rightColumnLayoutBlocks)}
                 </div>
+              ) : null}
 
-                {linkComposerOpen ? (
-                  <div className="editor-link-composer">
-                    <div className="editor-link-composer__row">
-                      <input
-                        className="editor-link-composer__input"
-                        value={linkDraft}
-                        onChange={(event) => setLinkDraft(event.target.value)}
-                        placeholder="Paste a URL or type / to search internal posts"
-                        onKeyDown={(event) => {
-                          if (event.key === 'Escape') {
-                            event.preventDefault();
-                            closeLinkComposer();
-                            return;
-                          }
-
-                          if (event.key !== 'Enter') return;
-                          event.preventDefault();
-
-                          const trimmed = linkDraft.trim();
-                          if (!trimmed) return;
-
-                          if (trimmed.startsWith('/')) {
-                            if (linkResults.length > 0) {
-                              insertInternalLink(linkResults[0]);
-                            }
-                            return;
-                          }
-
-                          insertLinkHref(trimmed);
-                          closeLinkComposer();
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const trimmed = linkDraft.trim();
-                          if (!trimmed) return;
-                          if (trimmed.startsWith('/')) {
-                            if (linkResults.length > 0) {
-                              insertInternalLink(linkResults[0]);
-                            }
-                            return;
-                          }
-                          insertLinkHref(trimmed);
-                          closeLinkComposer();
-                        }}
-                      >
-                        Apply
-                      </button>
-                      <button type="button" onClick={closeLinkComposer}>
-                        Close
-                      </button>
+              <div className={`admin-editor-workbench${usesLegacySplitEditor ? ' admin-editor-workbench--split' : ''}`}>
+                {usesLayoutBlocksEditor ? (
+                  <div className="admin-layout-editor__head">
+                    <div>
+                      <strong>{selectedLayoutBlock ? 'Selected block' : 'Layout editor'}</strong>
+                      <p className="list-tags">
+                        {isSelectedTextLayoutBlock
+                          ? 'Edit the selected text block here. The label is editor-only and does not render on the page.'
+                          : selectedLayoutBlock
+                            ? 'Tool blocks keep the live calculator and result UI. Add text blocks around them for fixed copy.'
+                            : 'Select a block to edit it, or add a new block to either column.'}
+                      </p>
                     </div>
-                    {linkDraft.trim().startsWith('/') ? (
-                      <div className="internal-link-list">
-                        {linkResults.map((item) => (
-                          <button
-                            key={`internal-link-${item.id}`}
-                            type="button"
-                            className="internal-link-item"
-                            onClick={() => insertInternalLink(item)}
-                          >
-                            {item.title} ({item.lang}/{item.section})
-                          </button>
-                        ))}
-                        {linkDraft.trim().slice(1).trim() && linkResults.length === 0 ? (
-                          <p className="list-tags">No results.</p>
-                        ) : null}
-                      </div>
+                    {isSelectedTextLayoutBlock ? (
+                      <label className="admin-layout-editor__label">
+                        Block label
+                        <input
+                          value={selectedLayoutBlock?.title || ''}
+                          onChange={(event) =>
+                            setLayoutBlocks((prev) =>
+                              prev.map((block) =>
+                                block.id === selectedLayoutBlock?.id ? { ...block, title: event.target.value || null } : block
+                              )
+                            )
+                          }
+                          placeholder="Section intro"
+                        />
+                      </label>
                     ) : null}
                   </div>
                 ) : null}
 
-                {usesColumnEditor ? (
-                  <div className="admin-editor-stack admin-editor-stack--split">
-                    {renderEditorSurface('before', 'Left column', 'Rendered in the left column.')}
-                    {renderEditorSurface(
-                      'after',
-                      'Right column',
-                      hasEmbeddedProgramPost
-                        ? 'Rendered in the right column after the built-in tool area.'
-                        : 'Rendered in the right column.'
-                    )}
+                {!usesLayoutBlocksEditor || isSelectedTextLayoutBlock ? (
+                  <fieldset className="admin-editor-fieldset">
+                    <div className="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
+                    <label className="editor-toolbar__label">
+                      Style
+                      <select
+                        className="editor-toolbar__select"
+                        defaultValue="p"
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (value === 'h2') exec('formatBlock', 'H2');
+                          else if (value === 'h3') exec('formatBlock', 'H3');
+                          else exec('formatBlock', 'P');
+                          event.currentTarget.value = 'p';
+                        }}
+                      >
+                        <option value="p">Normal</option>
+                        <option value="h2">H2</option>
+                        <option value="h3">H3</option>
+                      </select>
+                    </label>
+                    <label className="editor-toolbar__label">
+                      Size
+                      <select
+                        className="editor-toolbar__select"
+                        defaultValue="3"
+                        onChange={(event) => {
+                          execWithCss('fontSize', event.target.value);
+                        }}
+                      >
+                        {FONT_SIZE_OPTIONS.map((option) => (
+                          <option key={`font-size-${option.value}`} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="editor-toolbar__label">
+                      Font
+                      <select
+                        className="editor-toolbar__select editor-toolbar__select--font"
+                        defaultValue={FONT_FAMILY_OPTIONS[0].value}
+                        onChange={(event) => {
+                          execWithCss('fontName', event.target.value);
+                        }}
+                      >
+                        {FONT_FAMILY_OPTIONS.map((option) => (
+                          <option key={`font-family-${option.label}`} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="button" onClick={() => exec('bold')} aria-label="Bold">
+                      <strong>B</strong>
+                    </button>
+                    <button type="button" onClick={() => exec('italic')} aria-label="Italic">
+                      <em>I</em>
+                    </button>
+                    <button type="button" onClick={() => exec('underline')} aria-label="Underline">
+                      <u>U</u>
+                    </button>
+                    <button type="button" onClick={() => exec('strikeThrough')} aria-label="Strike">
+                      <s>S</s>
+                    </button>
+                    <button type="button" onClick={() => exec('insertUnorderedList')} aria-label="Bullet list">
+                      • List
+                    </button>
+                    <button type="button" onClick={() => exec('insertOrderedList')} aria-label="Numbered list">
+                      1. List
+                    </button>
+                    <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={insertTable} aria-label="Insert table">
+                      Table
+                    </button>
+                    <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={addTableRow} aria-label="Add table row">
+                      +Row
+                    </button>
+                    <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={addTableColumn} aria-label="Add table column">
+                      +Col
+                    </button>
+                    <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={removeTableRow} aria-label="Remove table row">
+                      -Row
+                    </button>
+                    <button type="button" onMouseDown={() => rememberSelection(preferredEditorKey())} onClick={removeTableColumn} aria-label="Remove table column">
+                      -Col
+                    </button>
+                    <label className="editor-toolbar__label">
+                      Column
+                      <select
+                        className="editor-toolbar__select"
+                        value={tableColumnWidth}
+                        onChange={(event) => applyCurrentTableColumnWidth(event.target.value)}
+                      >
+                        {TABLE_COLUMN_WIDTH_OPTIONS.map((option) => (
+                          <option key={`table-width-${option.value}`} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      onMouseDown={() => rememberSelection(preferredEditorKey())}
+                      onClick={() => {
+                        setLinkComposerOpen((prev) => !prev);
+                        setLinkDraft('');
+                        setLinkResults([]);
+                      }}
+                      aria-label="Insert link"
+                    >
+                      Link
+                    </button>
+                    <label className="editor-toolbar__color">
+                      Text
+                      <input
+                        type="color"
+                        defaultValue="#111417"
+                        onChange={(event) => {
+                          execWithCss('foreColor', event.target.value);
+                        }}
+                      />
+                    </label>
+                    <label className="editor-toolbar__color">
+                      Highlight
+                      <input
+                        type="color"
+                        defaultValue="#fff4a3"
+                        onChange={(event) => {
+                          applyBackgroundColor(event.target.value);
+                        }}
+                      />
+                    </label>
+                    <button type="button" onClick={() => exec('removeFormat')} aria-label="Clear format">
+                      Tx
+                    </button>
+                    <button type="button" onClick={() => exec('justifyLeft')} aria-label="Align left">
+                      Left
+                    </button>
+                    <button type="button" onClick={() => exec('justifyCenter')} aria-label="Align center">
+                      Center
+                    </button>
+                    <button type="button" onClick={() => exec('justifyRight')} aria-label="Align right">
+                      Right
+                    </button>
+                    <label className="editor-toolbar__label">
+                      Image Alt Prefix
+                      <input
+                        className="editor-toolbar__alt"
+                        value={bodyImageAlt}
+                        onChange={(event) => setBodyImageAlt(event.target.value)}
+                        placeholder="Used for uploads, numbered for multi-image rows"
+                      />
+                    </label>
+                    <label className="editor-toolbar__upload" onMouseDown={() => rememberSelection(preferredEditorKey())}>
+                      Image
+                      <input
+                        key={`body-image-input-${bodyImageInputVersion}`}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        hidden
+                        onClick={(event) => {
+                          event.currentTarget.value = '';
+                        }}
+                        onChange={async (event) => {
+                          const files = Array.from(event.currentTarget.files || []);
+                          setBodyImageInputVersion((version) => version + 1);
+                          if (files.length) await uploadAndInsertBodyImages(files);
+                        }}
+                      />
+                    </label>
                   </div>
-                ) : hasEmbeddedProgramPost ? (
-                  <div className="admin-editor-stack">
-                    {renderEditorSurface(
-                      'before',
-                      'Content above the program',
-                      'Rendered before the embedded tool/game when this area has content.'
-                    )}
-                    {renderEditorSurface(
-                      'after',
-                      'Content below the program',
-                      'Rendered after the embedded tool/game when this area has content.'
-                    )}
-                  </div>
-                ) : (
-                  renderEditorSurface('body', 'Body content', 'Rendered as the main post body.')
-                )}
 
-                <div className="editor-image-tools">
-                  <span>Image</span>
-                  <button type="button" onClick={() => setSelectedImageAlign('left')}>
-                    Left
-                  </button>
-                  <button type="button" onClick={() => setSelectedImageAlign('center')}>
-                    Center
-                  </button>
-                  <button type="button" onClick={() => setSelectedImageAlign('right')}>
-                    Right
-                  </button>
-                  <button type="button" onClick={deleteSelectedImage}>
-                    Delete image
-                  </button>
-                  <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
-                </div>
+                    {linkComposerOpen ? (
+                      <div className="editor-link-composer">
+                      <div className="editor-link-composer__row">
+                        <input
+                          className="editor-link-composer__input"
+                          value={linkDraft}
+                          onChange={(event) => setLinkDraft(event.target.value)}
+                          placeholder="Paste a URL or type / to search internal posts"
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              closeLinkComposer();
+                              return;
+                            }
+
+                            if (event.key !== 'Enter') return;
+                            event.preventDefault();
+
+                            const trimmed = linkDraft.trim();
+                            if (!trimmed) return;
+
+                            if (trimmed.startsWith('/')) {
+                              if (linkResults.length > 0) {
+                                insertInternalLink(linkResults[0]);
+                              }
+                              return;
+                            }
+
+                            insertLinkHref(trimmed);
+                            closeLinkComposer();
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const trimmed = linkDraft.trim();
+                            if (!trimmed) return;
+                            if (trimmed.startsWith('/')) {
+                              if (linkResults.length > 0) {
+                                insertInternalLink(linkResults[0]);
+                              }
+                              return;
+                            }
+                            insertLinkHref(trimmed);
+                            closeLinkComposer();
+                          }}
+                        >
+                          Apply
+                        </button>
+                        <button type="button" onClick={closeLinkComposer}>
+                          Close
+                        </button>
+                      </div>
+                      {linkDraft.trim().startsWith('/') ? (
+                        <div className="internal-link-list">
+                          {linkResults.map((item) => (
+                            <button
+                              key={`internal-link-${item.id}`}
+                              type="button"
+                              className="internal-link-item"
+                              onClick={() => insertInternalLink(item)}
+                            >
+                              {item.title} ({item.lang}/{item.section})
+                            </button>
+                          ))}
+                          {linkDraft.trim().slice(1).trim() && linkResults.length === 0 ? (
+                            <p className="list-tags">No results.</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      </div>
+                    ) : null}
+                  </fieldset>
+                ) : null}
+
+                {usesLayoutBlocksEditor ? (
+                  isSelectedTextLayoutBlock ? (
+                    <>
+                      {renderEditorSurface('body', 'Selected text block', 'Only this fixed-copy block is editable here.')}
+                      <div className="editor-image-tools">
+                        <span>Image</span>
+                        <button type="button" onClick={() => setSelectedImageAlign('left')}>
+                          Left
+                        </button>
+                        <button type="button" onClick={() => setSelectedImageAlign('center')}>
+                          Center
+                        </button>
+                        <button type="button" onClick={() => setSelectedImageAlign('right')}>
+                          Right
+                        </button>
+                        <button type="button" onClick={deleteSelectedImage}>
+                          Delete image
+                        </button>
+                        <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="admin-layout-editor__empty">
+                      {selectedLayoutBlock
+                        ? 'This block is a built-in tool. Move it between columns, hide it, or place text blocks before and after it.'
+                        : 'Add a block to the left or right column, then select it to edit.'}
+                    </div>
+                  )
+                ) : usesLegacySplitEditor ? (
+                  <>
+                    <div className="admin-editor-stack">
+                      {renderEditorSurface(
+                        'before',
+                        'Content above the program',
+                        'Rendered before the embedded tool/game when this area has content.'
+                      )}
+                      {renderEditorSurface(
+                        'after',
+                        'Content below the program',
+                        'Rendered after the embedded tool/game when this area has content.'
+                      )}
+                    </div>
+                    <div className="editor-image-tools">
+                      <span>Image</span>
+                      <button type="button" onClick={() => setSelectedImageAlign('left')}>
+                        Left
+                      </button>
+                      <button type="button" onClick={() => setSelectedImageAlign('center')}>
+                        Center
+                      </button>
+                      <button type="button" onClick={() => setSelectedImageAlign('right')}>
+                        Right
+                      </button>
+                      <button type="button" onClick={deleteSelectedImage}>
+                        Delete image
+                      </button>
+                      <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {renderEditorSurface('body', 'Body content', 'Rendered as the main post body.')}
+                    <div className="editor-image-tools">
+                      <span>Image</span>
+                      <button type="button" onClick={() => setSelectedImageAlign('left')}>
+                        Left
+                      </button>
+                      <button type="button" onClick={() => setSelectedImageAlign('center')}>
+                        Center
+                      </button>
+                      <button type="button" onClick={() => setSelectedImageAlign('right')}>
+                        Right
+                      </button>
+                      <button type="button" onClick={deleteSelectedImage}>
+                        Delete image
+                      </button>
+                      <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
