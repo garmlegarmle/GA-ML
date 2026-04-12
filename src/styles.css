@@ -401,6 +401,7 @@ main {
 }
 
 .detail-layout--split.container {
+  --detail-split-inline-padding: clamp(24px, 6vw, 100px);
   width: min(1680px, calc(100% - 24px));
   max-width: none;
 }
@@ -423,6 +424,11 @@ main {
 .detail-layout--split .detail-related {
   max-width: none;
   margin-inline: 0;
+}
+
+.detail-layout--split .detail-layout__head,
+.detail-layout--split .detail-related {
+  padding-inline: var(--detail-split-inline-padding);
 }
 
 .detail-layout--program .detail-layout__head,
@@ -457,7 +463,7 @@ main {
   max-height: calc(100svh - 220px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-inline: 15px;
+  padding-inline: var(--detail-split-inline-padding);
   padding-bottom: 10px;
 }
 
@@ -2332,6 +2338,11 @@ body.is-resizing-editor-image {
   .detail-layout--split .detail-layout__column {
     max-height: none;
     overflow: visible;
+    padding-inline: 0;
+  }
+
+  .detail-layout--split .detail-layout__head,
+  .detail-layout--split .detail-related {
     padding-inline: 0;
   }
 }
