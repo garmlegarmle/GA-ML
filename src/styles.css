@@ -460,19 +460,8 @@ main {
 }
 
 .detail-layout--split .detail-layout__column {
-  max-height: calc(100svh - 220px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
   padding-inline: var(--detail-split-inline-padding);
   padding-bottom: 10px;
-}
-
-.detail-layout--split .detail-layout__column::-webkit-scrollbar {
-  width: 8px;
-}
-
-.detail-layout--split .detail-layout__column::-webkit-scrollbar-thumb {
-  background: rgba(17, 20, 23, 0.18);
 }
 
 .detail-layout__pager {
@@ -2336,8 +2325,6 @@ body.is-resizing-editor-image {
   }
 
   .detail-layout--split .detail-layout__column {
-    max-height: none;
-    overflow: visible;
     padding-inline: 0;
   }
 
