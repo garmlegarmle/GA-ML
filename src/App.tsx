@@ -1209,17 +1209,78 @@ function DetailPage({
                           renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
                         ) : isTrendAnalyzerTool ? (
                           renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
-                        ) : section === 'tools' ? (
-                          <section className="detail-program" aria-label="Program area">
-                            {post.cover?.url ? (
-                              <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
-                            ) : (
-                              <div className="detail-program__placeholder">
-                                {lang === 'ko' ? '도구 영역' : 'Tool Area'}
-                              </div>
-                            )}
-                          </section>
-                        ) : null}
+                        ) : isHoldemTournamentGame ? (
+                          renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
+                        ) : isMineCartDuelGame ? (
+                          renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
+                        ) : section === 'tools' ? (() => {
+                          const tl = post.tool_layout;
+                          if (tl && tl.sections && tl.sections.length > 0) {
+                            return (
+                              <>
+                                {tl.sections.filter((s) => s.enabled).map((toolSection) => {
+                                  if (toolSection.layout === 'two-col') {
+                                    return (
+                                      <div key={toolSection.id} className="tool-section tool-section--two-col">
+                                        {toolSection.slots.map((slot, i) => (
+                                          <div key={i} className="tool-section__slot">
+                                            {slot.type === 'program' ? (
+                                              post.cover?.url ? (
+                                                <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" className="tool-section__cover" />
+                                              ) : (
+                                                <div className="detail-program__placeholder">
+                                                  {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                                                </div>
+                                              )
+                                            ) : (
+                                              <div
+                                                className="content-prose tool-section__text"
+                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
+                                              />
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+                                  const slot = toolSection.slots[0];
+                                  if (!slot) return null;
+                                  return (
+                                    <div key={toolSection.id} className="tool-section tool-section--full">
+                                      {slot.type === 'program' ? (
+                                        <section className="detail-program" aria-label="Program area">
+                                          {post.cover?.url ? (
+                                            <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                                          ) : (
+                                            <div className="detail-program__placeholder">
+                                              {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                                            </div>
+                                          )}
+                                        </section>
+                                      ) : (
+                                        <div
+                                          className="content-prose tool-section__text"
+                                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            );
+                          }
+                          return (
+                            <section className="detail-program" aria-label="Program area">
+                              {post.cover?.url ? (
+                                <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                              ) : (
+                                <div className="detail-program__placeholder">
+                                  {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                                </div>
+                              )}
+                            </section>
+                          );
+                        })() : null}
 
                         {rightColumnHtml ? (
                           <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS posts (
   og_description TEXT,
   og_image_url TEXT,
   schema_type TEXT CHECK (schema_type IN ('BlogPosting', 'Service')),
+  tool_layout TEXT,
   FOREIGN KEY (cover_image_id) REFERENCES media(id) ON DELETE SET NULL,
   FOREIGN KEY (card_image_id) REFERENCES media(id) ON DELETE SET NULL
 );

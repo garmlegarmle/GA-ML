@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS posts (
   og_title TEXT,
   og_description TEXT,
   og_image_url TEXT,
-  schema_type TEXT CHECK (schema_type IN ('BlogPosting', 'Service'))
+  schema_type TEXT CHECK (schema_type IN ('BlogPosting', 'Service')),
+  tool_layout TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tags (

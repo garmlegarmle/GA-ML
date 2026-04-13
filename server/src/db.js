@@ -653,6 +653,15 @@ function parseLayoutBlocksJson(value) {
   }
 }
 
+function parseToolLayout(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export function mapPostRow(row, tags, request, publicOrigin = '') {
   const { origin } = requestOrigin(request, publicOrigin);
   const coverUrl = row.cover_image_id ? `${origin}/api/media/${row.cover_image_id}/file` : null;
@@ -699,7 +708,8 @@ export function mapPostRow(row, tags, request, publicOrigin = '') {
       imageId: row.card_image_id ? Number(row.card_image_id) : null,
       imageUrl: cardImageUrl,
       titleSize: row.card_title_size || 'auto'
-    }
+    },
+    tool_layout: parseToolLayout(row.tool_layout)
   };
 }
 

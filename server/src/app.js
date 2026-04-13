@@ -877,6 +877,10 @@ app.post('/api/posts', async (req, res, next) => {
     const ogDescription = metaDescription || excerpt || null;
     const schemaTypeRaw = String(payload.schema_type || '').trim();
     const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
+    const toolLayoutRaw = payload.tool_layout;
+    const toolLayout = toolLayoutRaw && typeof toolLayoutRaw === 'object'
+      ? JSON.stringify(toolLayoutRaw)
+      : (typeof toolLayoutRaw === 'string' && toolLayoutRaw.trim() ? toolLayoutRaw.trim() : null);
 
     const existing = await pool.query(
       'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE LIMIT 1',
@@ -889,7 +893,8 @@ app.post('/api/posts', async (req, res, next) => {
         slug, title, excerpt, content_md, content_before_md, content_after_md, layout_blocks_json, status, cover_image_id, published_at,
         lang, section, pair_slug, created_at, updated_at,
         card_title, card_category, card_tag, card_rank, card_image_id, card_title_size,
-        meta_title, meta_description, og_title, og_description, og_image_url, schema_type
+        meta_title, meta_description, og_title, og_description, og_image_url, schema_type,
+        tool_layout
       ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
       ) RETURNING id`,
@@ -897,7 +902,7 @@ app.post('/api/posts', async (req, res, next) => {
         slug, title, excerpt, content || normalizedCombinedContent, contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
         status, null, publishedAt, lang, section, pairSlug, nowIso(), nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize, metaTitle, metaDescription,
-        ogTitle, ogDescription, null, schemaType
+        ogTitle, ogDescription, null, schemaType, toolLayout
       ]
     );
     const postId = Number(insert.rows[0].id);
@@ -960,6 +965,12 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const ogDescription = metaDescription || excerpt || null;
     const schemaTypeRaw = payload.schema_type !== undefined ? String(payload.schema_type || '').trim() : current.schema_type || '';
     const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
+    const toolLayoutRaw = payload.tool_layout;
+    const toolLayout = payload.tool_layout !== undefined
+      ? (toolLayoutRaw && typeof toolLayoutRaw === 'object'
+          ? JSON.stringify(toolLayoutRaw)
+          : (typeof toolLayoutRaw === 'string' && toolLayoutRaw.trim() ? toolLayoutRaw.trim() : null))
+      : current.tool_layout || null;
 
     const existing = await pool.query(
       'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE AND id != $4 LIMIT 1',
@@ -972,13 +983,14 @@ app.put('/api/posts/:id', async (req, res, next) => {
          slug=$1, title=$2, excerpt=$3, content_md=$4, content_before_md=$5, content_after_md=$6, layout_blocks_json=$7, status=$8, cover_image_id=$9,
          published_at=$10, lang=$11, section=$12, pair_slug=$13, updated_at=$14,
          card_title=$15, card_category=$16, card_tag=$17, card_rank=$18, card_image_id=$19, card_title_size=$20,
-         meta_title=$21, meta_description=$22, og_title=$23, og_description=$24, og_image_url=$25, schema_type=$26
-       WHERE id = $27`,
+         meta_title=$21, meta_description=$22, og_title=$23, og_description=$24, og_image_url=$25, schema_type=$26,
+         tool_layout=$27
+       WHERE id = $28`,
       [
         slug, title, excerpt, content || normalizedCombinedContent, contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
         status, current.cover_image_id, publishedAt, lang, section, pairSlug, nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize,
-        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, postId
+        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, toolLayout, postId
       ]
     );
     if (payload.tags !== undefined) {

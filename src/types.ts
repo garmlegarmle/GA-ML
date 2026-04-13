@@ -15,6 +15,25 @@ export interface PostLayoutBlock {
   toolKey: string | null;
 }
 
+export type ToolSlotType = 'program' | 'text';
+export type ToolSectionLayout = 'full' | 'two-col';
+
+export interface ToolSlot {
+  type: ToolSlotType;
+  content: string;
+}
+
+export interface ToolSection {
+  id: string;
+  enabled: boolean;
+  layout: ToolSectionLayout;
+  slots: ToolSlot[];
+}
+
+export interface ToolLayout {
+  sections: ToolSection[];
+}
+
 export interface CardData {
   title: string;
   category: string;
@@ -56,6 +75,7 @@ export interface PostItem {
   schemaType: 'BlogPosting' | 'Service' | null;
   cover: { id: number; url: string } | null;
   card: CardData;
+  tool_layout?: ToolLayout | null;
 }
 
 export interface PostListResponse {

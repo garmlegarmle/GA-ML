@@ -1400,6 +1400,190 @@ body.is-resizing-editor-image {
   color: var(--text);
 }
 
+/* Tool Section — detail page rendering */
+.tool-section {
+  margin-bottom: 20px;
+}
+
+.tool-section--full {
+  width: 100%;
+}
+
+.tool-section--two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.tool-section__slot {
+  min-width: 0;
+}
+
+.tool-section__cover {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--border);
+}
+
+.tool-section__text {
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* Tool Layout Editor — admin */
+.tool-layout-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.tool-layout-section-card {
+  border: 1px solid var(--border);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  cursor: default;
+}
+
+.tool-layout-section-card--disabled {
+  opacity: 0.5;
+}
+
+.tool-layout-section-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-layout-drag-handle {
+  font-size: 18px;
+  cursor: grab;
+  user-select: none;
+  line-height: 1;
+}
+
+.tool-layout-section-card__index {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 20px;
+}
+
+.tool-layout-section-card__enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tool-layout-section-card__layout-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.tool-layout-section-card__layout-label select {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  padding: 2px 4px;
+}
+
+.tool-layout-delete-btn {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.tool-layout-slots--full {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-layout-slots--two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tool-layout-slot {
+  border: 1px solid var(--border);
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  background: var(--surface);
+}
+
+.tool-layout-slot__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tool-layout-slot__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tool-layout-slot__type-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.tool-layout-slot__type-label select {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  padding: 2px 4px;
+}
+
+.tool-layout-slot__textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  padding: 6px 8px;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.tool-layout-slot__program-preview {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  padding: 12px;
+  text-align: center;
+}
+
+.tool-layout-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.tool-layout-add-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .tool-feature-card {
   margin: 26px 0 0;
   border: 1px solid var(--border);
@@ -2488,6 +2672,14 @@ body.is-resizing-editor-image {
   .detail-program__placeholder {
     min-height: 140px;
     font-size: 14px;
+  }
+
+  .tool-section--two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-layout-slots--two-col {
+    grid-template-columns: 1fr;
   }
 
   .hand-shooter-game__frame {
