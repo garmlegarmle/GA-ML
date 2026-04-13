@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { analyzeChartInterpretationTicker } from '../lib/api';
+import { CHART_INTERPRETATION_TOOL_SLUG } from '../lib/postSlugs';
 import type {
   ChartInterpretationAnalysisResponse,
   ChartInterpretationLocalizedPayload,
@@ -11,7 +12,7 @@ import type {
 import demoAnalysisRaw from '../assets/chart-interpretation-demo/bundle_demo_analysis.json';
 import demoChartUrl from '../assets/chart-interpretation-demo/bundle_demo_chart.png';
 
-export const CHART_INTERPRETATION_TOOL_SLUG = 'chart-interpretation';
+export { CHART_INTERPRETATION_TOOL_SLUG };
 
 const DEMO_ANALYSIS = demoAnalysisRaw as ChartInterpretationPayload;
 

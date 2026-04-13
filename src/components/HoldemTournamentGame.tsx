@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { HoldemTournamentEmbed } from 'holdem/embed';
 import { useHoldemAiSoundEffects, useHoldemSoundActivation } from 'holdem/app/soundEffects';
 import { getHoldemStats, recordHoldemCompletion, recordHoldemPlayStart } from '../lib/api';
+import { TEXAS_HOLDEM_TOURNAMENT_SLUG } from '../lib/postSlugs';
 import { HoldemTournamentOnline } from './HoldemTournamentOnline';
 import { useHoldemBackgroundMusic } from './useHoldemBackgroundMusic';
 import type {
@@ -11,7 +12,7 @@ import type {
   SiteLang,
 } from '../types';
 
-export const TEXAS_HOLDEM_TOURNAMENT_SLUG = 'texas-holdem-tournament';
+export { TEXAS_HOLDEM_TOURNAMENT_SLUG };
 const PLAYER_NAME_STORAGE_KEY = 'ga_ml_holdem_player_name';
 
 const COPY = {
