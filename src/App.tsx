@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Navigate, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
@@ -106,6 +106,54 @@ function resolveColumnSources(post: Pick<PostItem, 'content_md' | 'content_befor
     leftSource: String(post?.content_md || '').trim(),
     rightSource: ''
   };
+}
+
+// A4 portrait dimensions at 96dpi
+const A4_PAGE_HEIGHT_PX = (297 / 25.4) * 96; // ~1122.5px
+const A4_PAGE_PADDING_V_PX = (18 / 25.4) * 96; // ~68px
+const A4_CONTENT_HEIGHT_PX = A4_PAGE_HEIGHT_PX - 2 * A4_PAGE_PADDING_V_PX;
+
+function A4PagedContent({ html }: { html: string }) {
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [pageCount, setPageCount] = useState(1);
+
+  useLayoutEffect(() => {
+    if (!measureRef.current) return;
+    const h = measureRef.current.scrollHeight;
+    setPageCount(Math.max(1, Math.ceil(h / A4_CONTENT_HEIGHT_PX)));
+  }, [html]);
+
+  useEffect(() => {
+    const el = measureRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (!measureRef.current) return;
+      const h = measureRef.current.scrollHeight;
+      setPageCount(Math.max(1, Math.ceil(h / A4_CONTENT_HEIGHT_PX)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div className="a4-pages">
+      <div
+        ref={measureRef}
+        className="a4-measure content-prose"
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {Array.from({ length: pageCount }, (_, i) => (
+        <div key={i} className="a4-page">
+          <div
+            className="a4-page__content content-prose"
+            style={{ transform: `translateY(${-(i * A4_CONTENT_HEIGHT_PX)}px)` }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function sortLayoutBlocks(blocks: PostLayoutBlock[] | null | undefined, column: 'left' | 'right') {
@@ -1196,7 +1244,7 @@ function DetailPage({
                     {hasBlockLayout
                       ? leftLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
                       : leftColumnHtml
-                        ? <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
+                        ? <A4PagedContent html={leftColumnHtml} />
                         : null}
                   </div>
 
@@ -1283,7 +1331,7 @@ function DetailPage({
                         })() : null}
 
                         {rightColumnHtml ? (
-                          <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
+                          <A4PagedContent html={rightColumnHtml} />
                         ) : null}
                       </>
                     )}
