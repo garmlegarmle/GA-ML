@@ -1,21 +1,23 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Navigate, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { AdminDock } from './components/AdminDock';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminPasswordModal } from './components/AdminPasswordModal';
-import { CHART_INTERPRETATION_TOOL_SLUG, ChartInterpretationToolContent } from './components/ChartInterpretationTool';
 import { EntryCard } from './components/EntryCard';
-import { HoldemTournamentGameContent, TEXAS_HOLDEM_TOURNAMENT_SLUG } from './components/HoldemTournamentGame';
-import { HandShooterGameContent, MINE_CART_DUEL_SLUG } from './components/HandShooterGame';
 import { PageManagerModal } from './components/PageManagerModal';
 import { PostEditorModal } from './components/PostEditorModal';
 import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
-import { TREND_ANALYZER_TOOL_SLUG, TrendAnalyzerToolContent } from './components/TrendAnalyzerTool';
 import { trackPageView } from './lib/analytics';
 import { changeAdminPassword, getPostBySlug, getSession, listPosts, login, logout } from './lib/api';
+import {
+  CHART_INTERPRETATION_TOOL_SLUG,
+  MINE_CART_DUEL_SLUG,
+  TEXAS_HOLDEM_TOURNAMENT_SLUG,
+  TREND_ANALYZER_TOOL_SLUG
+} from './lib/postSlugs';
 import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
 import type { PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from './types';
 
@@ -39,6 +41,19 @@ interface LanguageToggleState {
 }
 
 type PostSortOrder = 'desc' | 'asc';
+
+const LazyChartInterpretationToolContent = lazy(() =>
+  import('./components/ChartInterpretationTool').then((module) => ({ default: module.ChartInterpretationToolContent }))
+);
+const LazyTrendAnalyzerToolContent = lazy(() =>
+  import('./components/TrendAnalyzerTool').then((module) => ({ default: module.TrendAnalyzerToolContent }))
+);
+const LazyHoldemTournamentGameContent = lazy(() =>
+  import('./components/HoldemTournamentGame').then((module) => ({ default: module.HoldemTournamentGameContent }))
+);
+const LazyHandShooterGameContent = lazy(() =>
+  import('./components/HandShooterGame').then((module) => ({ default: module.HandShooterGameContent }))
+);
 
 function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
   return {
@@ -1084,6 +1099,7 @@ function DetailPage({
   const rightColumnHtml = useMemo(() => renderRichContent(columnSources.rightSource), [columnSources.rightSource]);
   const leftLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'left'), [post?.layout_blocks]);
   const rightLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'right'), [post?.layout_blocks]);
+  const loadingCopy = t(lang, 'common.loading');
   const schemaJson = useMemo(() => {
     if (!post?.schemaType) return '';
 
@@ -1110,20 +1126,39 @@ function DetailPage({
     });
   }, [post]);
 
+  function renderProgramLoadingFallback() {
+    return <div className="detail-program__placeholder">{loadingCopy}</div>;
+  }
+
+  function renderEmbeddedProgramSection(
+    content: ReactElement,
+    variant: 'tool' | 'game',
+    label: string,
+    key?: string
+  ) {
+    return (
+      <section key={key} className={`detail-program detail-program--${variant}`} aria-label={label}>
+        <Suspense fallback={renderProgramLoadingFallback()}>{content}</Suspense>
+      </section>
+    );
+  }
+
   function renderDetailLayoutBlock(block: PostLayoutBlock) {
     if (block.type === 'tool') {
       if (block.toolKey === CHART_INTERPRETATION_TOOL_SLUG) {
-        return (
-          <section key={block.id} className="detail-program detail-program--tool" aria-label="Tool area">
-            <ChartInterpretationToolContent lang={lang} embedded />
-          </section>
+        return renderEmbeddedProgramSection(
+          <LazyChartInterpretationToolContent lang={lang} embedded />,
+          'tool',
+          'Tool area',
+          block.id
         );
       }
       if (block.toolKey === TREND_ANALYZER_TOOL_SLUG) {
-        return (
-          <section key={block.id} className="detail-program detail-program--tool" aria-label="Tool area">
-            <TrendAnalyzerToolContent lang={lang} embedded />
-          </section>
+        return renderEmbeddedProgramSection(
+          <LazyTrendAnalyzerToolContent lang={lang} embedded />,
+          'tool',
+          'Tool area',
+          block.id
         );
       }
       return null;
@@ -1219,22 +1254,14 @@ function DetailPage({
                     ) : (
                       <>
                         {isChartInterpretationTool ? (
-                          <section className="detail-program detail-program--tool" aria-label="Tool area">
-                            <ChartInterpretationToolContent lang={lang} embedded />
-                          </section>
+                          renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
                         ) : isTrendAnalyzerTool ? (
-                          <section className="detail-program detail-program--tool" aria-label="Tool area">
-                            <TrendAnalyzerToolContent lang={lang} embedded />
-                          </section>
+                          renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
                         ) : isHoldemTournamentGame ? (
-                          <section className="detail-program detail-program--game" aria-label="Game area">
-                            <HoldemTournamentGameContent lang={lang} embedded />
-                          </section>
+                          renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
                         ) : isMineCartDuelGame ? (
-                          <section className="detail-program detail-program--game" aria-label="Game area">
-                            <HandShooterGameContent lang={lang} embedded />
-                          </section>
-                        ) : (section === 'tools' || section === 'games') ? (() => {
+                          renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
+                        ) : section === 'tools' ? (() => {
                           const tl = post.tool_layout;
                           if (tl && tl.sections && tl.sections.length > 0) {
                             return (
@@ -1317,21 +1344,13 @@ function DetailPage({
                   ) : null}
 
                   {isChartInterpretationTool ? (
-                    <section className="detail-program detail-program--tool" aria-label="Tool area">
-                      <ChartInterpretationToolContent lang={lang} embedded />
-                    </section>
+                    renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
                   ) : isTrendAnalyzerTool ? (
-                    <section className="detail-program detail-program--tool" aria-label="Tool area">
-                      <TrendAnalyzerToolContent lang={lang} embedded />
-                    </section>
+                    renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
                   ) : isHoldemTournamentGame ? (
-                    <section className="detail-program detail-program--game" aria-label="Game area">
-                      <HoldemTournamentGameContent lang={lang} embedded />
-                    </section>
+                    renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
                   ) : isMineCartDuelGame ? (
-                    <section className="detail-program detail-program--game" aria-label="Game area">
-                      <HandShooterGameContent lang={lang} embedded />
-                    </section>
+                    renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
                   ) : section === 'games' && (
                     <section className="detail-program" aria-label="Program area">
                       {post.cover?.url ? (

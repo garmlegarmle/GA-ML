@@ -401,6 +401,7 @@ main {
 }
 
 .detail-layout--split.container {
+  --detail-split-inline-padding: clamp(24px, 6vw, 100px);
   width: min(1680px, calc(100% - 24px));
   max-width: none;
 }
@@ -423,6 +424,11 @@ main {
 .detail-layout--split .detail-related {
   max-width: none;
   margin-inline: 0;
+}
+
+.detail-layout--split .detail-layout__head,
+.detail-layout--split .detail-related {
+  padding-inline: var(--detail-split-inline-padding);
 }
 
 .detail-layout--program .detail-layout__head,
@@ -496,6 +502,7 @@ main {
   right: 0;
   padding: 18mm 16mm;
 }
+
 
 .detail-layout__pager {
   display: flex;
@@ -2542,6 +2549,11 @@ body.is-resizing-editor-image {
   }
 
   .detail-layout--split .detail-layout__column {
+    padding-inline: 0;
+  }
+
+  .detail-layout--split .detail-layout__head,
+  .detail-layout--split .detail-related {
     padding-inline: 0;
   }
 

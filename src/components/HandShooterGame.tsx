@@ -1,6 +1,7 @@
 import type { SiteLang } from '../types';
+import { MINE_CART_DUEL_SLUG } from '../lib/postSlugs';
 
-export const MINE_CART_DUEL_SLUG = 'mine-cart-duel';
+export { MINE_CART_DUEL_SLUG };
 
 const COPY = {
   en: {

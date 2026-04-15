@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { analyzeTrendTicker } from '../lib/api';
+import { TREND_ANALYZER_TOOL_SLUG } from '../lib/postSlugs';
 import type { SiteLang, TrendCandle, TrendPayload } from '../types';
-import rawSp500DemoPayload from '../../web_backend_bundle/samples/SPY_web_payload.json';
+import rawSp500DemoPayload from '../assets/trend-analyzer-demo/SPY_web_payload.json';
 
-export const TREND_ANALYZER_TOOL_SLUG = 'trend-analyzer';
+export { TREND_ANALYZER_TOOL_SLUG };
 
 const TOOL_COPY = {
   en: {
