@@ -478,7 +478,29 @@ main {
 .detail-layout__column-divider {
   position: absolute;
   inset-inline: 0;
-  border-top: 1px solid var(--border);
+  height: 80px;
+  transform: translateY(-40px);
+  display: flex;
+  align-items: center;
+}
+
+.detail-layout__column-divider::before {
+  content: '';
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.14) 10%,
+    rgba(0, 0, 0, 0.34) 26%,
+    rgba(0, 0, 0, 0.52) 50%,
+    rgba(0, 0, 0, 0.34) 74%,
+    rgba(0, 0, 0, 0.14) 90%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 10px rgba(0, 0, 0, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 .detail-layout--split .detail-layout__column {
