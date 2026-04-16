@@ -459,6 +459,28 @@ main {
   align-content: start;
 }
 
+.detail-layout__column--segmented {
+  position: relative;
+}
+
+.detail-layout__column--segmented > :not(.detail-layout__column-dividers) {
+  position: relative;
+  z-index: 1;
+}
+
+.detail-layout__column-dividers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.detail-layout__column-divider {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px solid var(--border);
+}
+
 .detail-layout--split .detail-layout__column {
   padding-inline: var(--detail-split-inline-padding);
   padding-bottom: 10px;

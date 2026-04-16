@@ -41,6 +41,8 @@ interface LanguageToggleState {
 }
 
 type PostSortOrder = 'desc' | 'asc';
+const BLOG_COLUMN_DIVIDER_RATIO = 29.7 / 21;
+const COLUMN_DIVIDER_EPSILON = 1;
 
 const LazyChartInterpretationToolContent = lazy(() =>
   import('./components/ChartInterpretationTool').then((module) => ({ default: module.ChartInterpretationToolContent }))
@@ -106,6 +108,32 @@ function resolveColumnSources(post: Pick<PostItem, 'content_md' | 'content_befor
     leftSource: String(post?.content_md || '').trim(),
     rightSource: ''
   };
+}
+
+function calculateColumnDividerOffsets(node: HTMLDivElement | null): number[] {
+  if (!node) return [];
+
+  const rect = node.getBoundingClientRect();
+  const width = rect.width;
+  const height = rect.height;
+  if (!width || !height) return [];
+
+  const segmentHeight = width * BLOG_COLUMN_DIVIDER_RATIO;
+  if (!Number.isFinite(segmentHeight) || segmentHeight <= 0) return [];
+
+  const offsets: number[] = [];
+  for (let offset = segmentHeight; offset < height - COLUMN_DIVIDER_EPSILON; offset += segmentHeight) {
+    offsets.push(Math.round(offset * 100) / 100);
+  }
+  return offsets;
+}
+
+function equalDividerOffsets(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
 }
 
 function sortLayoutBlocks(blocks: PostLayoutBlock[] | null | undefined, column: 'left' | 'right') {
@@ -885,6 +913,10 @@ function DetailPage({
   const [previousPost, setPreviousPost] = useState<PostItem | null>(null);
   const [nextPost, setNextPost] = useState<PostItem | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<PostItem[]>([]);
+  const [leftColumnDividerOffsets, setLeftColumnDividerOffsets] = useState<number[]>([]);
+  const [rightColumnDividerOffsets, setRightColumnDividerOffsets] = useState<number[]>([]);
+  const leftColumnRef = useRef<HTMLDivElement | null>(null);
+  const rightColumnRef = useRef<HTMLDivElement | null>(null);
   const languageToggle = useMemo(
     () => buildDetailLanguageToggle(lang, section, slug, post?.pair_slug),
     [lang, post?.pair_slug, section, slug]
@@ -1044,6 +1076,7 @@ function DetailPage({
   const isHoldemTournamentGame = section === 'games' && slug === TEXAS_HOLDEM_TOURNAMENT_SLUG;
   const isMineCartDuelGame = section === 'games' && slug === MINE_CART_DUEL_SLUG;
   const usesSplitLayout = section !== 'games';
+  const usesBlogColumnDividers = section === 'blog' && usesSplitLayout;
   const isEmbeddedProgramPost = isChartInterpretationTool || isTrendAnalyzerTool || isHoldemTournamentGame || isMineCartDuelGame;
   const hasBlockLayout = usesSplitLayout && Array.isArray(post?.layout_blocks) && post.layout_blocks.length > 0;
   const columnSources = useMemo(() => resolveColumnSources(post), [post?.content_after_md, post?.content_before_md, post?.content_md]);
@@ -1077,6 +1110,45 @@ function DetailPage({
       url
     });
   }, [post]);
+
+  useEffect(() => {
+    if (!usesBlogColumnDividers) {
+      setLeftColumnDividerOffsets([]);
+      setRightColumnDividerOffsets([]);
+      return;
+    }
+
+    const entries = [
+      { node: leftColumnRef.current, setOffsets: setLeftColumnDividerOffsets },
+      { node: rightColumnRef.current, setOffsets: setRightColumnDividerOffsets }
+    ];
+
+    const observers = entries.map(({ node, setOffsets }) => {
+      if (!node) {
+        setOffsets((current) => (current.length > 0 ? [] : current));
+        return null;
+      }
+
+      const updateOffsets = () => {
+        const next = calculateColumnDividerOffsets(node);
+        setOffsets((current) => (equalDividerOffsets(current, next) ? current : next));
+      };
+
+      updateOffsets();
+
+      if (typeof ResizeObserver === 'undefined') return null;
+
+      const observer = new ResizeObserver(() => {
+        updateOffsets();
+      });
+      observer.observe(node);
+      return observer;
+    });
+
+    return () => {
+      observers.forEach((observer) => observer?.disconnect());
+    };
+  }, [usesBlogColumnDividers, hasBlockLayout, leftColumnHtml, rightColumnHtml, leftLayoutBlocks, rightLayoutBlocks, post?.id]);
 
   function renderProgramLoadingFallback() {
     return <div className="detail-program__placeholder">{loadingCopy}</div>;
@@ -1192,7 +1264,17 @@ function DetailPage({
 
               {usesSplitLayout ? (
                 <div className="detail-layout__columns">
-                  <div className="detail-layout__column detail-layout__column--left">
+                  <div
+                    ref={leftColumnRef}
+                    className={`detail-layout__column detail-layout__column--left${usesBlogColumnDividers ? ' detail-layout__column--segmented' : ''}`}
+                  >
+                    {usesBlogColumnDividers && leftColumnDividerOffsets.length > 0 ? (
+                      <div className="detail-layout__column-dividers" aria-hidden="true">
+                        {leftColumnDividerOffsets.map((offset) => (
+                          <span key={`left-divider-${offset}`} className="detail-layout__column-divider" style={{ top: `${offset}px` }} />
+                        ))}
+                      </div>
+                    ) : null}
                     {hasBlockLayout
                       ? leftLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
                       : leftColumnHtml
@@ -1200,7 +1282,17 @@ function DetailPage({
                         : null}
                   </div>
 
-                  <div className="detail-layout__column detail-layout__column--right">
+                  <div
+                    ref={rightColumnRef}
+                    className={`detail-layout__column detail-layout__column--right${usesBlogColumnDividers ? ' detail-layout__column--segmented' : ''}`}
+                  >
+                    {usesBlogColumnDividers && rightColumnDividerOffsets.length > 0 ? (
+                      <div className="detail-layout__column-dividers" aria-hidden="true">
+                        {rightColumnDividerOffsets.map((offset) => (
+                          <span key={`right-divider-${offset}`} className="detail-layout__column-divider" style={{ top: `${offset}px` }} />
+                        ))}
+                      </div>
+                    ) : null}
                     {hasBlockLayout ? (
                       rightLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
                     ) : (
