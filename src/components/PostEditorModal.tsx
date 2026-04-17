@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPost, deletePost, deleteTag, listPosts, listTags, updatePost, uploadMedia } from '../lib/api';
 import type { CardTitleSize, PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection, ToolLayout } from '../types';
+import { PagedEditorSurface, serializePagedEditorHtml } from './PagedEditorSurface';
 import { ToolLayoutEditor } from './ToolLayoutEditor';
 
 interface PostEditorModalProps {
@@ -752,7 +753,7 @@ export function PostEditorModal({
   if (!open) return null;
 
   function syncEditorHtml(key: EditorPaneKey = preferredEditorKey()): string {
-    return getEditorElement(key)?.innerHTML || '';
+    return serializePagedEditorHtml(getEditorElement(key));
   }
 
   function buildCommittedLayoutBlocks(sourceBlocks: PostLayoutBlock[]): PostLayoutBlock[] {
@@ -1637,9 +1638,9 @@ export function PostEditorModal({
           <strong>{heading}</strong>
           <span className="list-tags">{hint}</span>
         </div>
-        <div
+        <PagedEditorSurface
           ref={ref}
-          className="editor-surface content-prose"
+          className="content-prose"
           contentEditable
           suppressContentEditableWarning
           onFocus={() => {
