@@ -20,6 +20,7 @@ deploy/vps/env/*.env
 # Local AI/private operation notes (do not commit)
 CLAUDE_LOCAL_SECRETS.md
 CLAUDE_LOCAL_NOTES.md
+.claude/
 
 # Common private key files
 *.pem
@@ -31,6 +32,7 @@ __pycache__/
 web_backend_bundle/out/
 .matplotlib-cache/
 .venv-trend-check/
+HSEq1_publish_bundle/
 
 # Local nested repos / desktop app workspaces
 external-repos/

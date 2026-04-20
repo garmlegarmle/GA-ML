@@ -37,7 +37,7 @@ Server env (`deploy/vps/env/utility-box.api.env`):
 - `ADMIN_LOGIN_PASSWORD` (bootstrap value; password changes are then stored in DB)
 - optional: `ADMIN_TOKEN`, `MEDIA_PUBLIC_BASE_URL`
 
-Agent handoff/runbook: see `docs/agent/CLAUDE_CODE_GUIDE.md`.
+Agent handoff/runbook: see `CLAUDE.md`.
 
 ## Operations Checklist
 1. Deploy API + web containers on VPS.

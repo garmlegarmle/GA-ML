@@ -98,16 +98,24 @@ different PostgreSQL database. The daily GitHub Actions sync is documented in
 sh /opt/utility-box/app/deploy/vps/scripts/preflight-utility-box.sh /opt/utility-box
 ```
 
-7. Deploy:
+7. Standard production deploy:
 
 ```bash
 sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box
 ```
 
-If you want production to follow the branch you are actively working on, pass that branch name as the second argument:
+The standard production flow is:
+
+- work on a feature branch
+- open a PR
+- merge into `main`
+- deploy the server checkout on `main`
+- test directly on the live domain
+
+The deploy script can accept a branch name as the second argument, but treat that as a temporary debugging or pre-merge verification path, not the normal production process:
 
 ```bash
-sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box codex/v2.0
+sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box feature/example-branch
 ```
 
 8. If you need to bootstrap from an existing public API, import published content:
