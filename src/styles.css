@@ -397,7 +397,8 @@ main {
 }
 
 .detail-layout {
-  max-width: 740px;
+  width: min(1280px, calc(100% - 24px));
+  max-width: none;
 }
 
 .detail-layout--split.container {
@@ -417,6 +418,8 @@ main {
 
 .detail-layout__head {
   margin-bottom: 20px;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .detail-layout--split .detail-layout__head,
@@ -525,13 +528,28 @@ main {
   align-self: start;
 }
 
+.detail-layout__flow {
+  width: 100%;
+  min-width: 0;
+}
+
+.detail-layout__flow > .detail-layout__content,
+.detail-layout__flow > .detail-program,
+.detail-layout__flow > .tool-section {
+  width: 100%;
+}
+
+.detail-layout__flow.detail-layout__column--paged {
+  gap: 0;
+}
+
 .detail-layout__page {
   --detail-page-height: 0px;
   --detail-page-inline-padding: 100px;
   --detail-page-block-padding: 40px;
   min-width: 0;
   min-height: var(--detail-page-height);
-  aspect-ratio: 21 / 29.7;
+  aspect-ratio: 29.7 / 21;
   padding: var(--detail-page-block-padding) var(--detail-page-inline-padding);
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 6px;
@@ -546,6 +564,13 @@ main {
   min-height: calc(var(--detail-page-height) - (var(--detail-page-block-padding) * 2));
   display: flex;
   flex-direction: column;
+}
+
+.detail-layout--paged .detail-layout__page {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .detail-layout__page-fragment {
@@ -3283,9 +3308,9 @@ body.is-resizing-editor-image {
 }
 
 .editor-page-shell {
-  width: min(100%, 860px);
+  width: min(100%, 1280px);
   margin: 0 auto;
-  max-height: min(62vh, 760px);
+  max-height: min(72vh, 860px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -3318,7 +3343,7 @@ body.is-resizing-editor-image {
 
 .editor-page-card {
   min-height: var(--editor-page-height);
-  aspect-ratio: 21 / 29.7;
+  aspect-ratio: 29.7 / 21;
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 6px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfaf7 100%);

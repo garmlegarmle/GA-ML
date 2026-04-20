@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-const PAGE_RATIO = 29.7 / 21;
+const PAGE_RATIO = 21 / 29.7;
 const MAX_INLINE_MARGIN = 100;
 const MIN_INLINE_MARGIN = 24;
 const MIN_CONTENT_WIDTH = 260;

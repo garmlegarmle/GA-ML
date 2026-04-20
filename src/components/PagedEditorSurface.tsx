@@ -10,7 +10,7 @@ import {
   type Ref
 } from 'react';
 
-const PAGE_RATIO = 29.7 / 21;
+const PAGE_RATIO = 21 / 29.7;
 const PAGE_GAP = 28;
 const MAX_INLINE_MARGIN = 100;
 const MIN_INLINE_MARGIN = 24;

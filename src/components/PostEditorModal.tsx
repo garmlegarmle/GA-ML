@@ -360,6 +360,24 @@ function buildInitialLayoutBlocks(
   return normalizeLayoutBlockOrders(blocks);
 }
 
+function buildInitialSingleBodySource(post: PostItem | null | undefined): string {
+  const direct = String(post?.content_md || '').trim();
+  if (direct) return direct;
+
+  if (Array.isArray(post?.layout_blocks) && post.layout_blocks.length > 0) {
+    const fromBlocks = normalizeLayoutBlockOrders(post.layout_blocks)
+      .filter((block) => block.type === 'text' && block.visible !== false)
+      .map((block) => String(block.html || '').trim())
+      .filter(Boolean)
+      .join('\n');
+    if (fromBlocks) return fromBlocks;
+  }
+
+  const before = String(post?.content_before_md || '').trim();
+  const after = String(post?.content_after_md || '').trim();
+  return [before, after].filter(Boolean).join('\n');
+}
+
 function reorderLayoutBlocks(
   blocks: PostLayoutBlock[],
   blockId: string,
@@ -497,8 +515,15 @@ export function PostEditorModal({
     () => hasEmbeddedProgram(section, normalizedEditorSlug),
     [normalizedEditorSlug, section]
   );
-  const usesLayoutBlocksEditor = section !== 'games';
-  const usesLegacySplitEditor = section === 'games' && hasEmbeddedProgramPost;
+  const hasStructuredToolSections = useMemo(
+    () =>
+      section === 'tools' &&
+      (toolLayout.sections.some((toolSection) => toolSection.enabled) ||
+        Boolean(initialPost?.tool_layout?.sections?.some((toolSection) => toolSection.enabled))),
+    [initialPost?.tool_layout?.sections, section, toolLayout]
+  );
+  const usesLayoutBlocksEditor = false;
+  const usesLegacySplitEditor = hasEmbeddedProgramPost || hasStructuredToolSections;
   const usesSplitEditor = usesLegacySplitEditor;
   const builtinToolBlockKey = useMemo(() => deriveToolBlockKey(section, normalizedEditorSlug), [normalizedEditorSlug, section]);
   const selectedLayoutBlock = useMemo(
@@ -545,10 +570,12 @@ export function PostEditorModal({
   }
 
   useEffect(() => {
-    const nextBodyHtml = toInitialEditorHtml(initialPost?.content_md || '');
+    const nextBodyHtml = toInitialEditorHtml(buildInitialSingleBodySource(initialPost));
     const initialSection = initialPost?.section || defaultSection;
-    const splitInitial = initialSection === 'games' && hasEmbeddedProgram(initialSection, initialPost?.slug || '');
-    const layoutInitial = initialSection !== 'games';
+    const hasInitialStructuredToolSections =
+      initialSection === 'tools' && Boolean(initialPost?.tool_layout?.sections?.some((toolSection) => toolSection.enabled));
+    const splitInitial = hasEmbeddedProgram(initialSection, initialPost?.slug || '') || hasInitialStructuredToolSections;
+    const layoutInitial = false;
     const hasAnyBeforeAfter = splitInitial;
     const nextBeforeSource = hasAnyBeforeAfter
       ? initialPost?.content_before_md || (!initialPost?.content_before_md && !initialPost?.content_after_md ? initialPost?.content_md || '' : '')
@@ -605,12 +632,7 @@ export function PostEditorModal({
     setLoading(false);
 
     requestAnimationFrame(() => {
-      if (layoutInitial) {
-        hydrateEditor(
-          bodyEditorRef,
-          toInitialEditorHtml(nextSelectedLayoutBlock?.type === 'text' ? nextSelectedLayoutBlock.html || '' : '')
-        );
-      } else {
+      if (!splitInitial) {
         hydrateEditor(bodyEditorRef, nextBodyHtml);
       }
       hydrateEditor(beforeEditorRef, nextBeforeHtml);
@@ -1391,7 +1413,7 @@ export function PostEditorModal({
 
     const normalizedTitle = title.trim();
     const normalizedSlug = slugify(slug || normalizedTitle);
-    const committedLayoutBlocks = usesLayoutBlocksEditor ? commitLayoutBlocksToState() : null;
+    const committedLayoutBlocks = null;
     const html = normalizeStoredEditorHtml(syncEditorHtml('body'));
     const rawBeforeHtml = usesSplitEditor ? syncEditorHtml('before').trim() : '';
     const rawAfterHtml = usesSplitEditor ? syncEditorHtml('after').trim() : '';
@@ -1399,42 +1421,19 @@ export function PostEditorModal({
     const normalizedAfterHtml = rawAfterHtml ? normalizeStoredEditorHtml(rawAfterHtml) : '';
     const beforeHtml = usesSplitEditor ? normalizedBeforeHtml : '';
     const afterHtml = usesSplitEditor ? normalizedAfterHtml : '';
-    const leftColumnHtml = usesLayoutBlocksEditor
-      ? committedLayoutBlocks
-          ?.filter((block) => block.type === 'text' && block.column === 'left' && block.visible !== false)
-          .map((block) => String(block.html || '').trim())
-          .filter(Boolean)
-          .join('\n') || ''
-      : beforeHtml;
-    const rightColumnHtml = usesLayoutBlocksEditor
-      ? committedLayoutBlocks
-          ?.filter((block) => block.type === 'text' && block.column === 'right' && block.visible !== false)
-          .map((block) => String(block.html || '').trim())
-          .filter(Boolean)
-          .join('\n') || ''
-      : afterHtml;
-    const combinedHtml = usesLayoutBlocksEditor ? [leftColumnHtml, rightColumnHtml].filter(Boolean).join('\n') : usesSplitEditor ? [beforeHtml, afterHtml].filter(Boolean).join('\n') : html;
-    const hasAnyLayoutBlocks = Boolean(committedLayoutBlocks && committedLayoutBlocks.length > 0);
+    const combinedHtml = usesSplitEditor ? [beforeHtml, afterHtml].filter(Boolean).join('\n') : html;
 
     if (!normalizedTitle || !normalizedSlug) {
       setError('title and slug are required.');
       return;
     }
-    if (usesLayoutBlocksEditor && !hasAnyLayoutBlocks) {
-      setError('Add at least one layout block.');
-      return;
-    }
-    if (!usesLayoutBlocksEditor && !usesSplitEditor && isEditorHtmlEmpty(html)) {
-      setError('content is required.');
-      return;
-    }
-    if (usesSplitEditor && isEditorHtmlEmpty(beforeHtml) && isEditorHtmlEmpty(afterHtml)) {
+    if (!usesSplitEditor && isEditorHtmlEmpty(html)) {
       setError('content is required.');
       return;
     }
 
     const parsedTags = dedupeTagList(selectedTags);
-    const normalizedExcerpt = excerpt.trim() || toExcerptText(usesLayoutBlocksEditor ? combinedHtml : combinedHtml || html) || null;
+    const normalizedExcerpt = excerpt.trim() || toExcerptText(combinedHtml || html) || null;
     const rankNumber = parseRankNumber(cardRank.trim());
     const normalizedMetaTitle = metaTitle.trim() || null;
     const normalizedMetaDescription = metaDescription.trim() || normalizedExcerpt;
@@ -1449,8 +1448,8 @@ export function PostEditorModal({
       title: normalizedTitle,
       excerpt: normalizedExcerpt,
       content_md: combinedHtml,
-      content_before_md: (usesLayoutBlocksEditor ? leftColumnHtml : beforeHtml) || null,
-      content_after_md: (usesLayoutBlocksEditor ? rightColumnHtml : afterHtml) || null,
+      content_before_md: usesSplitEditor ? beforeHtml || null : null,
+      content_after_md: usesSplitEditor ? afterHtml || null : null,
       layout_blocks: committedLayoutBlocks,
       status,
       lang,
@@ -1476,7 +1475,8 @@ export function PostEditorModal({
         imageId: cardImageId,
         imageUrl: cardImageUrl || null,
         titleSize: cardTitleSize
-      }
+      },
+      tool_layout: (section === 'tools' || section === 'games') ? toolLayout : null
     };
 
     const payload = {
@@ -1484,8 +1484,8 @@ export function PostEditorModal({
       title: normalizedTitle,
       excerpt: normalizedExcerpt || '',
       content_md: combinedHtml,
-      content_before_md: usesLayoutBlocksEditor ? leftColumnHtml : usesSplitEditor ? beforeHtml : '',
-      content_after_md: usesLayoutBlocksEditor ? rightColumnHtml : usesSplitEditor ? afterHtml : '',
+      content_before_md: usesSplitEditor ? beforeHtml : '',
+      content_after_md: usesSplitEditor ? afterHtml : '',
       layout_blocks: committedLayoutBlocks,
       status,
       lang,
@@ -1912,59 +1912,15 @@ export function PostEditorModal({
             <div className="admin-card-settings">
               <h3>Body</h3>
               <p className="list-tags">H1 is generated automatically from the post title. Use H2/H3 in body.</p>
-              {usesLayoutBlocksEditor ? (
+              {usesSplitEditor ? (
                 <p className="list-tags">
-                  Non-game pages use draggable layout blocks. Mix text and tool blocks across left and right columns, hide blocks without deleting
-                  them, and edit fixed copy by selecting a text block below.
+                  Structured tool and program pages keep two text areas. Content above is rendered before the tool area and content below is
+                  rendered after it. Formatting tools apply to the currently focused area.
                 </p>
-              ) : usesSplitEditor ? (
-                <p className="list-tags">
-                  Built-in programs always keep two editable text areas. Content above is rendered before the program and content below is rendered
-                  after it. Formatting tools apply to the currently focused area.
-                </p>
-              ) : null}
-
-              {usesLayoutBlocksEditor ? (
-                <div className="admin-layout-builder">
-                  {renderLayoutColumnManager('left', 'Left column', leftColumnLayoutBlocks)}
-                  {renderLayoutColumnManager('right', 'Right column', rightColumnLayoutBlocks)}
-                </div>
               ) : null}
 
               <div className={`admin-editor-workbench${usesLegacySplitEditor ? ' admin-editor-workbench--split' : ''}`}>
-                {usesLayoutBlocksEditor ? (
-                  <div className="admin-layout-editor__head">
-                    <div>
-                      <strong>{selectedLayoutBlock ? 'Selected block' : 'Layout editor'}</strong>
-                      <p className="list-tags">
-                        {isSelectedTextLayoutBlock
-                          ? 'Edit the selected text block here. The label is editor-only and does not render on the page.'
-                          : selectedLayoutBlock
-                            ? 'Tool blocks keep the live calculator and result UI. Add text blocks around them for fixed copy.'
-                            : 'Select a block to edit it, or add a new block to either column.'}
-                      </p>
-                    </div>
-                    {isSelectedTextLayoutBlock ? (
-                      <label className="admin-layout-editor__label">
-                        Block label
-                        <input
-                          value={selectedLayoutBlock?.title || ''}
-                          onChange={(event) =>
-                            setLayoutBlocks((prev) =>
-                              prev.map((block) =>
-                                block.id === selectedLayoutBlock?.id ? { ...block, title: event.target.value || null } : block
-                              )
-                            )
-                          }
-                          placeholder="Section intro"
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {!usesLayoutBlocksEditor || isSelectedTextLayoutBlock ? (
-                  <fieldset className="admin-editor-fieldset">
+                <fieldset className="admin-editor-fieldset">
                     <div className="editor-toolbar" role="toolbar" aria-label="Editor toolbar">
                     <label className="editor-toolbar__label">
                       Style
@@ -2209,48 +2165,19 @@ export function PostEditorModal({
                       </div>
                     ) : null}
                   </fieldset>
-                ) : null}
 
-                {usesLayoutBlocksEditor ? (
-                  isSelectedTextLayoutBlock ? (
-                    <>
-                      {renderEditorSurface('body', 'Selected text block', 'Only this fixed-copy block is editable here.')}
-                      <div className="editor-image-tools">
-                        <span>Image</span>
-                        <button type="button" onClick={() => setSelectedImageAlign('left')}>
-                          Left
-                        </button>
-                        <button type="button" onClick={() => setSelectedImageAlign('center')}>
-                          Center
-                        </button>
-                        <button type="button" onClick={() => setSelectedImageAlign('right')}>
-                          Right
-                        </button>
-                        <button type="button" onClick={deleteSelectedImage}>
-                          Delete image
-                        </button>
-                        <span className="list-tags">Drag image edge to resize. Alignment applies only to standalone images.</span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="admin-layout-editor__empty">
-                      {selectedLayoutBlock
-                        ? 'This block is a built-in tool. Move it between columns, hide it, or place text blocks before and after it.'
-                        : 'Add a block to the left or right column, then select it to edit.'}
-                    </div>
-                  )
-                ) : usesLegacySplitEditor ? (
+                {usesLegacySplitEditor ? (
                   <>
                     <div className="admin-editor-stack">
                       {renderEditorSurface(
                         'before',
-                        'Content above the program',
-                        'Rendered before the embedded tool/game when this area has content.'
+                        'Content above the tool area',
+                        'Rendered before the embedded tool or structured section area when this block has content.'
                       )}
                       {renderEditorSurface(
                         'after',
-                        'Content below the program',
-                        'Rendered after the embedded tool/game when this area has content.'
+                        'Content below the tool area',
+                        'Rendered after the embedded tool or structured section area when this block has content.'
                       )}
                     </div>
                     <div className="editor-image-tools">

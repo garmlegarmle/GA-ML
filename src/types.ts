@@ -482,4 +482,5 @@ export interface PostSaveSnapshot {
   };
   schemaType: 'BlogPosting' | 'Service' | null;
   card: CardData;
+  tool_layout?: ToolLayout | null;
 }
