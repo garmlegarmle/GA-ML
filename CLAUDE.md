@@ -10,7 +10,7 @@
 - **언어**: 한국어(ko) / 영어(en) 이중 언어 CMS 사이트
 - **배포**: VPS (Docker Compose) + Cloudflare CDN
 - **GitHub**: `https://github.com/garmlegarmle/GA-ML.git`
-- **운영 브랜치**: `v2.8` (현재 프로덕션)
+- **운영 브랜치**: `main` (현재 프로덕션)
 
 ---
 
@@ -113,13 +113,13 @@ npm run build        # 프로덕션 빌드
    ```bash
    git add <파일들>
    git commit -m "..."
-   git push origin v2.8
+   git push origin main
    ```
 
 2. VPS에서 배포 스크립트 실행
    ```bash
    ssh -i ~/.ssh/id_ed25519 root@72.62.152.205 \
-     "sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box v2.8"
+     "sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box main"
    ```
 
 > SSH 키: `~/.ssh/id_ed25519`
@@ -173,3 +173,17 @@ npm run build        # 프로덕션 빌드
 **민감정보 위치:**
 - 로컬: `CLAUDE_LOCAL_SECRETS.md` (gitignore)
 - VPS: `deploy/vps/env/utility-box.api.env`
+
+---
+
+## 13. Compact Instructions
+
+자동 압축(auto-compact) 시 반드시 보존할 정보:
+
+- **VPS 접속**: `root@72.62.152.205`, SSH 키 `~/.ssh/id_ed25519`
+- **배포 명령**: `ssh -i ~/.ssh/id_ed25519 root@72.62.152.205 "sh /opt/utility-box/app/deploy/vps/scripts/deploy-utility-box.sh /opt/utility-box main"`
+- **현재 운영 브랜치**: `main`
+- **GitHub 리모트**: `https://github.com/garmlegarmle/GA-ML.git`
+- **진행 중인 작업 및 미완성 사항** (있으면 보존)
+- **발견된 버그 및 수정 내용 요약**
+- **이 파일(CLAUDE.md)의 존재** — 새 세션에서 반드시 먼저 읽을 것
