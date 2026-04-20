@@ -62,7 +62,17 @@ export type UiTextKey =
   | 'layout.textAlign'
   | 'layout.imageUrl'
   | 'layout.noContent'
-  | 'layout.fallbackNotice';
+  | 'layout.fallbackNotice'
+  | 'layout.addTable'
+  | 'layout.addShape'
+  | 'layout.fontFamily'
+  | 'layout.bgColor'
+  | 'layout.pageBg'
+  | 'layout.shapeType'
+  | 'layout.fill'
+  | 'layout.stroke'
+  | 'layout.strokeWidth'
+  | 'layout.pageSettings';
 
 const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
   en: {
@@ -125,7 +135,17 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'layout.textAlign': 'Align',
     'layout.imageUrl': 'Image URL',
     'layout.noContent': 'No layout content yet. Click Edit Body Layout to start.',
-    'layout.fallbackNotice': 'Existing content imported as initial text block.'
+    'layout.fallbackNotice': 'Existing content imported as initial text block.',
+    'layout.addTable': '+ Table',
+    'layout.addShape': '+ Shape',
+    'layout.fontFamily': 'Font',
+    'layout.bgColor': 'BG Color',
+    'layout.pageBg': 'Page BG',
+    'layout.shapeType': 'Shape',
+    'layout.fill': 'Fill',
+    'layout.stroke': 'Stroke',
+    'layout.strokeWidth': 'Stroke W',
+    'layout.pageSettings': 'Page Settings'
   },
   ko: {
     'nav.home': '홈',
@@ -187,7 +207,17 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'layout.textAlign': '정렬',
     'layout.imageUrl': '이미지 URL',
     'layout.noContent': '레이아웃 내용이 없습니다. 본문 레이아웃 편집을 시작하세요.',
-    'layout.fallbackNotice': '기존 본문이 초기 텍스트 박스로 변환되었습니다.'
+    'layout.fallbackNotice': '기존 본문이 초기 텍스트 박스로 변환되었습니다.',
+    'layout.addTable': '+ 표',
+    'layout.addShape': '+ 도형',
+    'layout.fontFamily': '폰트',
+    'layout.bgColor': '배경색',
+    'layout.pageBg': '페이지 배경',
+    'layout.shapeType': '도형 종류',
+    'layout.fill': '채우기',
+    'layout.stroke': '선 색',
+    'layout.strokeWidth': '선 두께',
+    'layout.pageSettings': '페이지 설정'
   }
 };
 

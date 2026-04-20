@@ -8,6 +8,9 @@ export type PostLayoutColumn = 'left' | 'right';
 
 export interface BodyPage {
   id: string;
+  bgColor?: string;
+  bgImage?: string;
+  bgImageFit?: 'contain' | 'cover' | 'fill';
 }
 
 export interface BodyTextStyle {
@@ -18,6 +21,7 @@ export interface BodyTextStyle {
   color?: string;
   fontFamily?: string;
   lineHeight?: number;
+  bgColor?: string;
 }
 
 export interface BodyImageStyle {
@@ -27,7 +31,7 @@ export interface BodyImageStyle {
 
 interface BodyElementBase {
   id: string;
-  type: 'text' | 'image';
+  type: 'text' | 'image' | 'table' | 'shape';
   pageId: string;
   x: number;
   y: number;
@@ -44,6 +48,14 @@ export interface BodyTextElement extends BodyElementBase {
   style: BodyTextStyle;
 }
 
+export interface BodyTableElement extends BodyElementBase {
+  type: 'table';
+  html: string;
+  rows: number;
+  cols: number;
+  style: BodyTextStyle;
+}
+
 export interface BodyImageElement extends BodyElementBase {
   type: 'image';
   mediaId?: number | null;
@@ -52,7 +64,17 @@ export interface BodyImageElement extends BodyElementBase {
   imageStyle?: BodyImageStyle;
 }
 
-export type BodyElement = BodyTextElement | BodyImageElement;
+export type BodyShapeType = 'rect' | 'ellipse' | 'line';
+
+export interface BodyShapeElement extends BodyElementBase {
+  type: 'shape';
+  shapeType: BodyShapeType;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+}
+
+export type BodyElement = BodyTextElement | BodyTableElement | BodyImageElement | BodyShapeElement;
 
 export interface BodyLayout {
   version: 1;

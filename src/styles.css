@@ -4437,26 +4437,81 @@ body.is-resizing-editor-image {
   gap: 6px;
 }
 
+.ble-btn--sm {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+
 .ble-page-label {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 8px;
+  background: #1e2230;
+  color: #a0aacc;
   font-size: 11px;
-  color: #8898aa;
-  padding: 0 2px;
+  border-radius: 4px 4px 0 0;
+  flex-wrap: wrap;
 }
 
-.ble-page-delete-btn {
-  font-size: 11px;
-  color: #f87171;
+.ble-page-label__name {
+  font-weight: 600;
+  color: #7080aa;
+  margin-right: 4px;
+}
+
+.ble-page-label__tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.ble-shape-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.ble-shape-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 200;
+  background: #1e2230;
+  border: 1px solid #3a4060;
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 110px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.ble-shape-menu__item {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
   background: none;
   border: none;
+  color: #c0c8e0;
+  font-size: 12px;
   cursor: pointer;
-  padding: 2px 6px;
+  text-align: left;
 }
 
-.ble-page-delete-btn:hover {
-  text-decoration: underline;
+.ble-shape-menu__item:hover {
+  background: rgba(255,255,255,0.07);
+}
+
+.ble-bg-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #252840;
+  border: 1px solid #3a4060;
+  border-top: none;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #a0aacc;
 }
 
 .ble-page-frame {
@@ -4546,6 +4601,11 @@ body.is-resizing-editor-image {
 
 .ble-props-input--wide {
   width: 110px;
+}
+
+.ble-props-select--wide {
+  flex: 1;
+  min-width: 0;
 }
 
 .ble-props-select {
@@ -4652,3 +4712,34 @@ body.is-resizing-editor-image {
   color: #92400e;
 }
 
+
+/* ── Table elements in layout renderer / editor ───────────────────────────── */
+
+.blr-table-element table,
+.ble-element table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.blr-table-element th,
+.blr-table-element td,
+.ble-element th,
+.ble-element td {
+  border: 1px solid #ccc;
+  padding: 4px 6px;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.blr-table-element th,
+.ble-element th {
+  background: #f0f2f8;
+  font-weight: 600;
+}
+
+/* ── Shape element ────────────────────────────────────────────────────────── */
+
+.blr-shape-element {
+  overflow: visible;
+}
