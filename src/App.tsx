@@ -7,6 +7,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminPasswordModal } from './components/AdminPasswordModal';
 import { EntryCard } from './components/EntryCard';
 import { PageManagerModal } from './components/PageManagerModal';
+import { PagedRichColumn, type PagedRichColumnSegment } from './components/PagedRichColumn';
 import { PostEditorModal } from './components/PostEditorModal';
 import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
@@ -78,7 +79,8 @@ function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
     og: snapshot.og || existing?.og || { title: null, description: null, imageUrl: null },
     schemaType: snapshot.schemaType ?? existing?.schemaType ?? null,
     cover: existing?.cover || null,
-    card: snapshot.card
+    card: snapshot.card,
+    tool_layout: snapshot.tool_layout ?? existing?.tool_layout ?? null
   };
 }
 
@@ -108,10 +110,56 @@ function resolveColumnSources(post: Pick<PostItem, 'content_md' | 'content_befor
   };
 }
 
+function canPaginateLayoutBlocks(blocks: PostLayoutBlock[]): boolean {
+  return blocks.every((block) => block.type === 'text');
+}
+
+function toPagedSegmentsFromHtml(html: string | null | undefined, key: string): PagedRichColumnSegment[] {
+  const value = String(html || '').trim();
+  return value ? [{ key, html: value }] : [];
+}
+
+function toPagedSegmentsFromBlocks(blocks: PostLayoutBlock[]): PagedRichColumnSegment[] {
+  return blocks.flatMap((block) => {
+    if (block.type !== 'text') return [];
+
+    const html = renderRichContent(block.html);
+    const value = String(html || '').trim();
+    return value ? [{ key: block.id, html: value }] : [];
+  });
+}
+
 function sortLayoutBlocks(blocks: PostLayoutBlock[] | null | undefined, column: 'left' | 'right') {
   return (Array.isArray(blocks) ? blocks : [])
     .filter((block) => block.visible !== false && block.column === column)
     .sort((left, right) => Number(left.order || 0) - Number(right.order || 0));
+}
+
+function sortLayoutBlocksForSingleFlow(blocks: PostLayoutBlock[] | null | undefined) {
+  return (Array.isArray(blocks) ? blocks : [])
+    .filter((block) => block.visible !== false)
+    .sort((left, right) => {
+      if (left.column !== right.column) {
+        return left.column === 'left' ? -1 : 1;
+      }
+      return Number(left.order || 0) - Number(right.order || 0);
+    });
+}
+
+function resolveLinearBodySource(post: Pick<PostItem, 'content_md' | 'content_before_md' | 'content_after_md' | 'layout_blocks'> | null | undefined) {
+  const direct = String(post?.content_md || '').trim();
+  if (direct) return direct;
+
+  const fromBlocks = sortLayoutBlocksForSingleFlow(post?.layout_blocks)
+    .filter((block) => block.type === 'text')
+    .map((block) => String(block.html || '').trim())
+    .filter(Boolean)
+    .join('\n');
+  if (fromBlocks) return fromBlocks;
+
+  const before = String(post?.content_before_md || '').trim();
+  const after = String(post?.content_after_md || '').trim();
+  return [before, after].filter(Boolean).join('\n');
 }
 
 function upsertPost(list: PostItem[], snapshot: PostSaveSnapshot, maxItems?: number): PostItem[] {
@@ -1033,7 +1081,10 @@ function DetailPage({
     };
   }, [post]);
 
-  const html = useMemo(() => renderRichContent(post?.content_md), [post?.content_md]);
+  const linearBodyHtml = useMemo(
+    () => renderRichContent(resolveLinearBodySource(post)),
+    [post?.content_after_md, post?.content_before_md, post?.content_md, post?.layout_blocks]
+  );
 
   const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
   const enableHiddenPolicyLogin =
@@ -1043,14 +1094,18 @@ function DetailPage({
   const isTrendAnalyzerTool = section === 'tools' && slug === TREND_ANALYZER_TOOL_SLUG;
   const isHoldemTournamentGame = section === 'games' && slug === TEXAS_HOLDEM_TOURNAMENT_SLUG;
   const isMineCartDuelGame = section === 'games' && slug === MINE_CART_DUEL_SLUG;
-  const usesSplitLayout = section !== 'games';
   const isEmbeddedProgramPost = isChartInterpretationTool || isTrendAnalyzerTool || isHoldemTournamentGame || isMineCartDuelGame;
-  const hasBlockLayout = usesSplitLayout && Array.isArray(post?.layout_blocks) && post.layout_blocks.length > 0;
   const columnSources = useMemo(() => resolveColumnSources(post), [post?.content_after_md, post?.content_before_md, post?.content_md]);
   const leftColumnHtml = useMemo(() => renderRichContent(columnSources.leftSource), [columnSources.leftSource]);
   const rightColumnHtml = useMemo(() => renderRichContent(columnSources.rightSource), [columnSources.rightSource]);
-  const leftLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'left'), [post?.layout_blocks]);
-  const rightLayoutBlocks = useMemo(() => sortLayoutBlocks(post?.layout_blocks, 'right'), [post?.layout_blocks]);
+  const hasStructuredToolLayout = Boolean(
+    section === 'tools' && post?.tool_layout?.sections?.some((toolSection) => toolSection.enabled)
+  );
+  const usesPagedDetailFlow = Boolean((section === 'blog' || section === 'pages') && linearBodyHtml);
+  const pagedSegments = useMemo(
+    () => (usesPagedDetailFlow ? toPagedSegmentsFromHtml(linearBodyHtml, `post-${post?.id ?? 'content'}`) : []),
+    [linearBodyHtml, post?.id, usesPagedDetailFlow]
+  );
   const loadingCopy = t(lang, 'common.loading');
   const schemaJson = useMemo(() => {
     if (!post?.schemaType) return '';
@@ -1095,30 +1150,145 @@ function DetailPage({
     );
   }
 
-  function renderDetailLayoutBlock(block: PostLayoutBlock) {
-    if (block.type === 'tool') {
-      if (block.toolKey === CHART_INTERPRETATION_TOOL_SLUG) {
-        return renderEmbeddedProgramSection(
-          <LazyChartInterpretationToolContent lang={lang} embedded />,
-          'tool',
-          'Tool area',
-          block.id
-        );
-      }
-      if (block.toolKey === TREND_ANALYZER_TOOL_SLUG) {
-        return renderEmbeddedProgramSection(
-          <LazyTrendAnalyzerToolContent lang={lang} embedded />,
-          'tool',
-          'Tool area',
-          block.id
-        );
-      }
-      return null;
+  function renderToolSections() {
+    const toolLayout = post?.tool_layout;
+    const enabledSections = toolLayout?.sections?.filter((toolSection) => toolSection.enabled) || [];
+    if (!enabledSections.length) {
+      return (
+        <section className="detail-program" aria-label="Program area">
+          {post?.cover?.url ? (
+            <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+          ) : (
+            <div className="detail-program__placeholder">
+              {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+            </div>
+          )}
+        </section>
+      );
     }
 
-    const blockHtml = renderRichContent(block.html);
-    if (!blockHtml) return null;
-    return <section key={block.id} className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: blockHtml }} />;
+    return (
+      <>
+        {enabledSections.map((toolSection) => {
+          if (toolSection.layout === 'two-col') {
+            return (
+              <div key={toolSection.id} className="tool-section tool-section--two-col">
+                {toolSection.slots.map((slot, index) => (
+                  <div key={index} className="tool-section__slot">
+                    {slot.type === 'program' ? (
+                      post?.cover?.url ? (
+                        <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" className="tool-section__cover" />
+                      ) : (
+                        <div className="detail-program__placeholder">
+                          {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                        </div>
+                      )
+                    ) : (
+                      <div
+                        className="content-prose tool-section__text"
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          const slot = toolSection.slots[0];
+          if (!slot) return null;
+          return (
+            <div key={toolSection.id} className="tool-section tool-section--full">
+              {slot.type === 'program' ? (
+                <section className="detail-program" aria-label="Program area">
+                  {post?.cover?.url ? (
+                    <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+                  ) : (
+                    <div className="detail-program__placeholder">
+                      {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+                    </div>
+                  )}
+                </section>
+              ) : (
+                <div
+                  className="content-prose tool-section__text"
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  function renderDetailBody() {
+    if (usesPagedDetailFlow) {
+      return <PagedRichColumn className="detail-layout__flow" segments={pagedSegments} />;
+    }
+
+    if (isEmbeddedProgramPost) {
+      return (
+        <div className="detail-layout__flow">
+          {leftColumnHtml ? (
+            <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
+          ) : null}
+
+          {isChartInterpretationTool ? (
+            renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
+          ) : isTrendAnalyzerTool ? (
+            renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
+          ) : isHoldemTournamentGame ? (
+            renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
+          ) : isMineCartDuelGame ? (
+            renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
+          ) : null}
+
+          {rightColumnHtml ? (
+            <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
+          ) : null}
+        </div>
+      );
+    }
+
+    if (section === 'tools') {
+      return (
+        <div className="detail-layout__flow">
+          {leftColumnHtml ? (
+            <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
+          ) : null}
+          {renderToolSections()}
+          {rightColumnHtml ? (
+            <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
+          ) : null}
+        </div>
+      );
+    }
+
+    if (section === 'games') {
+      return (
+        <div className="detail-layout__flow">
+          <section className="detail-program" aria-label="Program area">
+            {post?.cover?.url ? (
+              <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
+            ) : (
+              <div className="detail-program__placeholder">
+                {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
+              </div>
+            )}
+          </section>
+          {linearBodyHtml ? (
+            <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: linearBodyHtml }} />
+          ) : null}
+        </div>
+      );
+    }
+
+    return linearBodyHtml ? (
+      <div className="detail-layout__flow">
+        <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: linearBodyHtml }} />
+      </div>
+    ) : null;
   }
 
   if (!isValidSection || !section) return <Navigate to={`/${lang}/`} replace />;
@@ -1131,9 +1301,7 @@ function DetailPage({
       languageToggleState={languageToggle.state}
     >
       <article className="page-section">
-        <div
-          className={`container detail-layout${isEmbeddedProgramPost ? ' detail-layout--program' : ''}${isHoldemTournamentGame || isMineCartDuelGame ? ' detail-layout--game' : ''}${usesSplitLayout ? ' detail-layout--split' : ''}`}
-        >
+        <div className={`container detail-layout${usesPagedDetailFlow ? ' detail-layout--paged' : ''}`}>
           {loading ? <p>{t(lang, 'common.loading')}</p> : null}
           {error ? <p>{error}</p> : null}
           {!loading && !error && post ? (
@@ -1189,141 +1357,7 @@ function DetailPage({
                   </h1>
                 </div>
               </header>
-
-              {usesSplitLayout ? (
-                <div className="detail-layout__columns">
-                  <div className="detail-layout__column detail-layout__column--left">
-                    {hasBlockLayout
-                      ? leftLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
-                      : leftColumnHtml
-                        ? <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
-                        : null}
-                  </div>
-
-                  <div className="detail-layout__column detail-layout__column--right">
-                    {hasBlockLayout ? (
-                      rightLayoutBlocks.map((block) => renderDetailLayoutBlock(block))
-                    ) : (
-                      <>
-                        {isChartInterpretationTool ? (
-                          renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
-                        ) : isTrendAnalyzerTool ? (
-                          renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
-                        ) : isHoldemTournamentGame ? (
-                          renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
-                        ) : isMineCartDuelGame ? (
-                          renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
-                        ) : section === 'tools' ? (() => {
-                          const tl = post.tool_layout;
-                          if (tl && tl.sections && tl.sections.length > 0) {
-                            return (
-                              <>
-                                {tl.sections.filter((s) => s.enabled).map((toolSection) => {
-                                  if (toolSection.layout === 'two-col') {
-                                    return (
-                                      <div key={toolSection.id} className="tool-section tool-section--two-col">
-                                        {toolSection.slots.map((slot, i) => (
-                                          <div key={i} className="tool-section__slot">
-                                            {slot.type === 'program' ? (
-                                              post.cover?.url ? (
-                                                <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" className="tool-section__cover" />
-                                              ) : (
-                                                <div className="detail-program__placeholder">
-                                                  {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
-                                                </div>
-                                              )
-                                            ) : (
-                                              <div
-                                                className="content-prose tool-section__text"
-                                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
-                                              />
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    );
-                                  }
-                                  const slot = toolSection.slots[0];
-                                  if (!slot) return null;
-                                  return (
-                                    <div key={toolSection.id} className="tool-section tool-section--full">
-                                      {slot.type === 'program' ? (
-                                        <section className="detail-program" aria-label="Program area">
-                                          {post.cover?.url ? (
-                                            <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
-                                          ) : (
-                                            <div className="detail-program__placeholder">
-                                              {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
-                                            </div>
-                                          )}
-                                        </section>
-                                      ) : (
-                                        <div
-                                          className="content-prose tool-section__text"
-                                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(slot.content || '') }}
-                                        />
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            );
-                          }
-                          return (
-                            <section className="detail-program" aria-label="Program area">
-                              {post.cover?.url ? (
-                                <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
-                              ) : (
-                                <div className="detail-program__placeholder">
-                                  {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
-                                </div>
-                              )}
-                            </section>
-                          );
-                        })() : null}
-
-                        {rightColumnHtml ? (
-                          <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {isEmbeddedProgramPost && leftColumnHtml ? (
-                    <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
-                  ) : null}
-
-                  {isChartInterpretationTool ? (
-                    renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
-                  ) : isTrendAnalyzerTool ? (
-                    renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
-                  ) : isHoldemTournamentGame ? (
-                    renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
-                  ) : isMineCartDuelGame ? (
-                    renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
-                  ) : section === 'games' && (
-                    <section className="detail-program" aria-label="Program area">
-                      {post.cover?.url ? (
-                        <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />
-                      ) : (
-                        <div className="detail-program__placeholder">
-                          {lang === 'ko' ? '도구 / 게임 영역' : 'Tool / Game Area'}
-                        </div>
-                      )}
-                    </section>
-                  )}
-
-                  {isEmbeddedProgramPost ? (
-                    rightColumnHtml ? (
-                      <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
-                    ) : null
-                  ) : (
-                    <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: html }} />
-                  )}
-                </>
-              )}
+              {renderDetailBody()}
               {!isStandalonePage && relatedPosts.length > 0 ? (
                 <section className="detail-related" aria-label={t(lang, 'detail.related')}>
                   <h2>{`${t(lang, 'detail.related')}: #${post.tags[0]}`}</h2>
