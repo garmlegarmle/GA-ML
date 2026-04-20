@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
-import type { BodyElement, BodyLayout, BodyPage } from '../types';
+import type { BodyElement, BodyLayout, BodyPage, BodyShapeElement, BodyTableElement, BodyTextElement } from '../types';
 
-const A3_LANDSCAPE_RATIO = 297 / 420; // height/width
+const A3_LANDSCAPE_RATIO = 297 / 420;
 
 interface BodyLayoutRendererProps {
   layout: BodyLayout;
@@ -16,13 +16,13 @@ function elementsForPage(layout: BodyLayout, pageId: string): BodyElement[] {
     .sort((a, b) => a.zIndex - b.zIndex);
 }
 
-function TextBlock({
+function TextOrTableBlock({
   element,
   isEditMode,
   isSelected,
   onSelect
 }: {
-  element: Extract<BodyElement, { type: 'text' }>;
+  element: BodyTextElement | BodyTableElement;
   isEditMode: boolean;
   isSelected: boolean;
   onSelect?: () => void;
@@ -44,17 +44,22 @@ function TextBlock({
     fontStyle: style.fontStyle,
     textAlign: style.textAlign as React.CSSProperties['textAlign'],
     color: style.color,
-    fontFamily: style.fontFamily,
+    fontFamily: style.fontFamily || undefined,
     lineHeight: style.lineHeight,
+    background: style.bgColor || 'transparent',
     cursor: isEditMode ? 'pointer' : 'default',
-    outline: isEditMode && isSelected ? '2px solid var(--layout-select-color, #3b82f6)' : isEditMode ? '1px dashed rgba(59,130,246,0.3)' : 'none',
+    outline: isEditMode && isSelected
+      ? '2px solid var(--layout-select-color, #3b82f6)'
+      : isEditMode
+      ? '1px dashed rgba(59,130,246,0.3)'
+      : 'none',
     outlineOffset: isEditMode ? '-1px' : undefined
   };
 
   return (
     <div
       style={inlineStyle}
-      className="blr-text-element"
+      className={element.type === 'table' ? 'blr-table-element' : 'blr-text-element'}
       onClick={isEditMode ? onSelect : undefined}
       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(element.html || '') }}
     />
@@ -85,7 +90,11 @@ function ImageBlock({
     overflow: 'hidden',
     boxSizing: 'border-box',
     cursor: isEditMode ? 'pointer' : 'default',
-    outline: isEditMode && isSelected ? '2px solid var(--layout-select-color, #3b82f6)' : isEditMode ? '1px dashed rgba(59,130,246,0.3)' : 'none',
+    outline: isEditMode && isSelected
+      ? '2px solid var(--layout-select-color, #3b82f6)'
+      : isEditMode
+      ? '1px dashed rgba(59,130,246,0.3)'
+      : 'none',
     outlineOffset: isEditMode ? '-1px' : undefined
   };
 
@@ -108,6 +117,59 @@ function ImageBlock({
   );
 }
 
+function ShapeBlock({
+  element,
+  isEditMode,
+  isSelected,
+  onSelect
+}: {
+  element: BodyShapeElement;
+  isEditMode: boolean;
+  isSelected: boolean;
+  onSelect?: () => void;
+}) {
+  const { shapeType = 'rect', fill = 'rgba(59,130,246,0.25)', stroke = '#3b82f6', strokeWidth = 2 } = element;
+
+  const containerStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: `${element.x}%`,
+    top: `${element.y}%`,
+    width: `${element.width}%`,
+    height: `${element.height}%`,
+    zIndex: element.zIndex,
+    boxSizing: 'border-box',
+    cursor: isEditMode ? 'pointer' : 'default',
+    outline: isEditMode && isSelected
+      ? '2px solid var(--layout-select-color, #3b82f6)'
+      : isEditMode
+      ? '1px dashed rgba(59,130,246,0.3)'
+      : 'none',
+    outlineOffset: isEditMode ? '-1px' : undefined
+  };
+
+  let innerStyle: React.CSSProperties = {};
+  if (shapeType === 'line') {
+    innerStyle = {
+      position: 'absolute', top: '50%', left: 0, right: 0,
+      height: strokeWidth, background: stroke, transform: 'translateY(-50%)'
+    };
+  } else {
+    innerStyle = {
+      width: '100%', height: '100%',
+      background: fill,
+      border: `${strokeWidth}px solid ${stroke}`,
+      borderRadius: shapeType === 'ellipse' ? '50%' : 0,
+      boxSizing: 'border-box'
+    };
+  }
+
+  return (
+    <div style={containerStyle} className="blr-shape-element" onClick={isEditMode ? onSelect : undefined}>
+      <div style={innerStyle} />
+    </div>
+  );
+}
+
 function LayoutPage({
   page,
   elements,
@@ -121,22 +183,35 @@ function LayoutPage({
   selectedElementId?: string | null;
   onSelectElement?: (id: string) => void;
 }) {
+  const pageStyle: React.CSSProperties = {
+    paddingBottom: `${A3_LANDSCAPE_RATIO * 100}%`,
+    position: 'relative',
+    background: page.bgColor || '#fff'
+  };
+
+  if (page.bgImage) {
+    pageStyle.backgroundImage = `url(${page.bgImage})`;
+    pageStyle.backgroundSize = page.bgImageFit || 'cover';
+    pageStyle.backgroundPosition = 'center';
+    pageStyle.backgroundRepeat = 'no-repeat';
+  }
+
   return (
     <div
       className={`blr-page${isEditMode ? ' blr-page--edit' : ''}`}
       data-page-id={page.id}
-      style={{ paddingBottom: `${A3_LANDSCAPE_RATIO * 100}%`, position: 'relative' }}
+      style={pageStyle}
     >
       <div className="blr-page__inner">
         {elements.map((el) => {
           const isSelected = selectedElementId === el.id;
           const onSelect = onSelectElement ? () => onSelectElement(el.id) : undefined;
 
-          if (el.type === 'text') {
+          if (el.type === 'text' || el.type === 'table') {
             return (
-              <TextBlock
+              <TextOrTableBlock
                 key={el.id}
-                element={el}
+                element={el as BodyTextElement | BodyTableElement}
                 isEditMode={isEditMode}
                 isSelected={isSelected}
                 onSelect={onSelect}
@@ -148,6 +223,17 @@ function LayoutPage({
               <ImageBlock
                 key={el.id}
                 element={el}
+                isEditMode={isEditMode}
+                isSelected={isSelected}
+                onSelect={onSelect}
+              />
+            );
+          }
+          if (el.type === 'shape') {
+            return (
+              <ShapeBlock
+                key={el.id}
+                element={el as BodyShapeElement}
                 isEditMode={isEditMode}
                 isSelected={isSelected}
                 onSelect={onSelect}

@@ -7,17 +7,34 @@ import type {
   BodyImageElement,
   BodyLayout,
   BodyPage,
+  BodyShapeElement,
+  BodyShapeType,
+  BodyTableElement,
   BodyTextElement,
   PostItem,
   SiteLang
 } from '../types';
-import { BodyLayoutRenderer } from './BodyLayoutRenderer';
 
 const A3_LANDSCAPE_RATIO = 297 / 420;
 const HANDLE_SIZE = 8;
+const DRAG_THRESHOLD = 4;
 
 type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 const RESIZE_HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+const FONT_FAMILIES = [
+  { label: 'System', value: '' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Helvetica', value: 'Helvetica Neue, Helvetica, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+  { label: 'Tahoma', value: 'Tahoma, sans-serif' },
+  { label: 'Nanum Gothic', value: '"Nanum Gothic", sans-serif' },
+  { label: 'Nanum Myeongjo', value: '"Nanum Myeongjo", serif' },
+  { label: 'Apple SD Gothic', value: '"Apple SD Gothic Neo", sans-serif' },
+];
 
 function makeId(): string {
   return `${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`;
@@ -59,41 +76,225 @@ function buildFallbackLayout(post: PostItem): BodyLayout {
   };
 }
 
+function buildTableHtml(rows: number, cols: number): string {
+  const headerRow = `<tr>${Array.from({ length: cols }, (_, i) => `<th>Header ${i + 1}</th>`).join('')}</tr>`;
+  const dataRows = Array.from({ length: Math.max(rows - 1, 1) }, (_, r) =>
+    `<tr>${Array.from({ length: cols }, (_, c) => `<td>Cell ${r + 1},${c + 1}</td>`).join('')}</tr>`
+  ).join('');
+  return `<table><thead>${headerRow}</thead><tbody>${dataRows}</tbody></table>`;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+// ── Element content components ──────────────────────────────────────────────
+
+function TextOrTableContent({
+  element,
+  isEditing,
+  onChange
+}: {
+  element: BodyTextElement | BodyTableElement;
+  isEditing: boolean;
+  onChange: (html: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const { style } = element;
+  const fontSizePx = style.fontSizePt ? `${(style.fontSizePt * 4) / 3}px` : undefined;
+
+  // Sync HTML from state → DOM, but NEVER while editing (would overwrite user input)
+  useEffect(() => {
+    if (!ref.current || isEditing) return;
+    const sanitized = DOMPurify.sanitize(element.html || '');
+    if (ref.current.innerHTML !== sanitized) {
+      ref.current.innerHTML = sanitized;
+    }
+  }, [element.html, isEditing]);
+
+  // Focus and move cursor to end when entering edit mode
+  useEffect(() => {
+    if (!isEditing || !ref.current) return;
+    ref.current.focus();
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(ref.current);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }, [isEditing]);
+
+  function handleBlur() {
+    if (!ref.current) return;
+    onChange(DOMPurify.sanitize(ref.current.innerHTML || ''));
+  }
+
+  return (
+    <div
+      ref={ref}
+      contentEditable={isEditing || undefined}
+      suppressContentEditableWarning
+      style={{
+        width: '100%',
+        height: '100%',
+        padding: '4px',
+        boxSizing: 'border-box',
+        fontSize: fontSizePx,
+        fontWeight: style.fontWeight,
+        fontStyle: style.fontStyle,
+        textAlign: style.textAlign as React.CSSProperties['textAlign'],
+        color: style.color,
+        fontFamily: style.fontFamily || undefined,
+        lineHeight: style.lineHeight,
+        background: style.bgColor || 'transparent',
+        overflow: 'auto',
+        outline: 'none',
+        cursor: isEditing ? 'text' : 'inherit'
+      }}
+      onBlur={isEditing ? handleBlur : undefined}
+    />
+  );
+}
+
+function ImageElementContent({ element }: { element: BodyImageElement }) {
+  const fit = element.imageStyle?.fit || 'contain';
+  const objectPosition = element.imageStyle?.objectPosition || 'center';
+
+  if (!element.src) {
+    return <div className="ble-image-placeholder">{element.alt || 'Image'}</div>;
+  }
+
+  return (
+    <img
+      src={element.src}
+      alt={element.alt || ''}
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: fit as React.CSSProperties['objectFit'],
+        objectPosition,
+        display: 'block'
+      }}
+    />
+  );
+}
+
+function ShapeContent({ element }: { element: BodyShapeElement }) {
+  const { shapeType = 'rect', fill = 'rgba(59,130,246,0.25)', stroke = '#3b82f6', strokeWidth = 2 } = element;
+
+  if (shapeType === 'line') {
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: 0,
+          right: 0,
+          height: strokeWidth,
+          background: stroke,
+          transform: 'translateY(-50%)'
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        background: fill,
+        border: `${strokeWidth}px solid ${stroke}`,
+        borderRadius: shapeType === 'ellipse' ? '50%' : 0,
+        boxSizing: 'border-box'
+      }}
+    />
+  );
+}
+
+// ── Resize handle style helper ───────────────────────────────────────────────
+
+function handleStyle(handle: ResizeHandle): React.CSSProperties {
+  const h = HANDLE_SIZE;
+  const half = h / 2;
+  const base: React.CSSProperties = {
+    position: 'absolute',
+    width: h,
+    height: h,
+    background: '#3b82f6',
+    border: '1px solid #fff',
+    borderRadius: 2,
+    zIndex: 9999
+  };
+  const positions: Record<ResizeHandle, React.CSSProperties> = {
+    nw: { top: -half, left: -half, cursor: 'nw-resize' },
+    n: { top: -half, left: `calc(50% - ${half}px)`, cursor: 'n-resize' },
+    ne: { top: -half, right: -half, cursor: 'ne-resize' },
+    e: { top: `calc(50% - ${half}px)`, right: -half, cursor: 'e-resize' },
+    se: { bottom: -half, right: -half, cursor: 'se-resize' },
+    s: { bottom: -half, left: `calc(50% - ${half}px)`, cursor: 's-resize' },
+    sw: { bottom: -half, left: -half, cursor: 'sw-resize' },
+    w: { top: `calc(50% - ${half}px)`, left: -half, cursor: 'w-resize' }
+  };
+  return { ...base, ...positions[handle] };
+}
+
+// ── PageFrame ────────────────────────────────────────────────────────────────
+
 interface PageFrameProps {
   page: BodyPage;
+  pageIndex: number;
   elements: BodyElement[];
   selectedId: string | null;
   editingId: string | null;
   onSelect: (id: string | null) => void;
   onStartEdit: (id: string) => void;
   onElementChange: (id: string, partial: Partial<BodyElement>) => void;
+  onPageChange: (partial: Partial<BodyPage>) => void;
   onDeletePage: () => void;
+  onAddText: () => void;
+  onAddImage: () => void;
+  onAddTable: () => void;
+  onAddShape: (shapeType: BodyShapeType) => void;
+  onUploadBgImage: (file: File) => Promise<void>;
   lang: SiteLang;
 }
 
 function PageFrame({
   page,
+  pageIndex,
   elements,
   selectedId,
   editingId,
   onSelect,
   onStartEdit,
   onElementChange,
+  onPageChange,
   onDeletePage,
+  onAddText,
+  onAddImage,
+  onAddTable,
+  onAddShape,
+  onUploadBgImage,
   lang
 }: PageFrameProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
+  const bgFileRef = useRef<HTMLInputElement | null>(null);
+  const [showShapeMenu, setShowShapeMenu] = useState(false);
+  const [showBgPanel, setShowBgPanel] = useState(false);
+
   const dragState = useRef<{
     elementId: string;
     startX: number;
     startY: number;
     origX: number;
     origY: number;
+    hasMoved: boolean;
+    wasAlreadySelected: boolean;
   } | null>(null);
+
   const resizeState = useRef<{
     elementId: string;
     handle: ResizeHandle;
@@ -109,42 +310,53 @@ function PageFrame({
     return frameRef.current?.getBoundingClientRect() ?? { width: 1, height: 1, left: 0, top: 0 };
   }
 
-  function toPercX(clientX: number): number {
-    const rect = getPageRect();
-    return ((clientX - rect.left) / rect.width) * 100;
-  }
-
-  function toPercY(clientY: number): number {
-    const rect = getPageRect();
-    return ((clientY - rect.top) / rect.height) * 100;
-  }
-
   function onElementPointerDown(el: BodyElement, event: React.PointerEvent<HTMLDivElement>) {
+    // When editing this element, let native contentEditable handle all events
     if (editingId === el.id) return;
     event.stopPropagation();
-    onSelect(el.id);
+    const wasAlreadySelected = selectedId === el.id;
+    if (!wasAlreadySelected) {
+      onSelect(el.id);
+    }
     dragState.current = {
       elementId: el.id,
       startX: event.clientX,
       startY: event.clientY,
       origX: el.x,
-      origY: el.y
+      origY: el.y,
+      hasMoved: false,
+      wasAlreadySelected
     };
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   }
 
   function onElementPointerMove(el: BodyElement, event: React.PointerEvent<HTMLDivElement>) {
     if (!dragState.current || dragState.current.elementId !== el.id) return;
+    const dx = event.clientX - dragState.current.startX;
+    const dy = event.clientY - dragState.current.startY;
+    if (!dragState.current.hasMoved) {
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+        dragState.current.hasMoved = true;
+      } else {
+        return;
+      }
+    }
     const rect = getPageRect();
-    const dx = ((event.clientX - dragState.current.startX) / rect.width) * 100;
-    const dy = ((event.clientY - dragState.current.startY) / rect.height) * 100;
-    const newX = clamp(dragState.current.origX + dx, 0, 100 - el.width);
-    const newY = clamp(dragState.current.origY + dy, 0, 100 - el.height);
+    const pdx = (dx / rect.width) * 100;
+    const pdy = (dy / rect.height) * 100;
+    const newX = clamp(dragState.current.origX + pdx, 0, 100 - el.width);
+    const newY = clamp(dragState.current.origY + pdy, 0, 100 - el.height);
     onElementChange(el.id, { x: newX, y: newY });
   }
 
-  function onElementPointerUp(_el: BodyElement, _event: React.PointerEvent<HTMLDivElement>) {
+  function onElementPointerUp(el: BodyElement, _event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragState.current) return;
+    const { hasMoved, wasAlreadySelected } = dragState.current;
     dragState.current = null;
+    // Enter edit mode on second click (already selected, no drag) for text/table
+    if (!hasMoved && wasAlreadySelected && (el.type === 'text' || el.type === 'table')) {
+      onStartEdit(el.id);
+    }
   }
 
   function onHandlePointerDown(el: BodyElement, handle: ResizeHandle, event: React.PointerEvent<HTMLDivElement>) {
@@ -172,9 +384,9 @@ function PageFrame({
     let x = origX, y = origY, w = origW, h = origH;
 
     if (handle.includes('e')) { w = clamp(origW + dx, MIN_SIZE, 100 - origX); }
-    if (handle.includes('w')) { const newW = clamp(origW - dx, MIN_SIZE, origX + origW); x = origX + origW - newW; w = newW; }
+    if (handle.includes('w')) { const nw = clamp(origW - dx, MIN_SIZE, origX + origW); x = origX + origW - nw; w = nw; }
     if (handle.includes('s')) { h = clamp(origH + dy, MIN_SIZE, 100 - origY); }
-    if (handle.includes('n')) { const newH = clamp(origH - dy, MIN_SIZE, origY + origH); y = origY + origH - newH; h = newH; }
+    if (handle.includes('n')) { const nh = clamp(origH - dy, MIN_SIZE, origY + origH); y = origY + origH - nh; h = nh; }
 
     onElementChange(el.id, { x, y, width: w, height: h });
   }
@@ -183,21 +395,100 @@ function PageFrame({
     resizeState.current = null;
   }
 
+  async function handleBgImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await onUploadBgImage(file);
+    if (event.target) event.target.value = '';
+  }
+
   const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+
+  const pageStyle: React.CSSProperties = {
+    paddingBottom: `${A3_LANDSCAPE_RATIO * 100}%`,
+    position: 'relative',
+    background: page.bgColor || '#ffffff'
+  };
+
+  if (page.bgImage) {
+    pageStyle.backgroundImage = `url(${page.bgImage})`;
+    pageStyle.backgroundSize = page.bgImageFit || 'cover';
+    pageStyle.backgroundPosition = 'center';
+    pageStyle.backgroundRepeat = 'no-repeat';
+  }
 
   return (
     <div className="ble-page-wrapper">
       <div className="ble-page-label">
-        <span>{page.id.slice(0, 8)}</span>
-        <button type="button" className="ble-page-delete-btn" onClick={onDeletePage}>
-          {t(lang, 'layout.deletePage')}
-        </button>
+        <span className="ble-page-label__name">Page {pageIndex + 1}</span>
+        <div className="ble-page-label__tools">
+          <button type="button" className="ble-btn ble-btn--sm" onClick={onAddText}>{t(lang, 'layout.addText')}</button>
+          <button type="button" className="ble-btn ble-btn--sm" onClick={onAddImage}>{t(lang, 'layout.addImage')}</button>
+          <button type="button" className="ble-btn ble-btn--sm" onClick={onAddTable}>{t(lang, 'layout.addTable')}</button>
+          <div className="ble-shape-menu-wrap">
+            <button type="button" className="ble-btn ble-btn--sm" onClick={() => setShowShapeMenu((v) => !v)}>
+              {t(lang, 'layout.addShape')} ▾
+            </button>
+            {showShapeMenu && (
+              <div className="ble-shape-menu">
+                {(['rect', 'ellipse', 'line'] as BodyShapeType[]).map((st) => (
+                  <button key={st} type="button" className="ble-shape-menu__item"
+                    onClick={() => { onAddShape(st); setShowShapeMenu(false); }}>
+                    {st === 'rect' ? '□ Rect' : st === 'ellipse' ? '○ Ellipse' : '— Line'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button type="button" className="ble-btn ble-btn--sm" onClick={() => setShowBgPanel((v) => !v)}>
+            {t(lang, 'layout.pageBg')} ▾
+          </button>
+          <button type="button" className="ble-btn ble-btn--sm ble-btn--danger" onClick={onDeletePage}>
+            {t(lang, 'layout.deletePage')}
+          </button>
+        </div>
       </div>
+
+      {showBgPanel && (
+        <div className="ble-bg-panel">
+          <label className="ble-props-label">{t(lang, 'layout.bgColor')}</label>
+          <input
+            type="color"
+            className="ble-props-color"
+            value={page.bgColor || '#ffffff'}
+            onChange={(e) => onPageChange({ bgColor: e.target.value })}
+          />
+          <button type="button" className="ble-btn ble-btn--sm" style={{ marginLeft: 8 }}
+            onClick={() => bgFileRef.current?.click()}>
+            Upload BG Image
+          </button>
+          {page.bgImage && (
+            <>
+              <select
+                className="ble-props-select"
+                style={{ marginLeft: 8 }}
+                value={page.bgImageFit || 'cover'}
+                onChange={(e) => onPageChange({ bgImageFit: e.target.value as 'contain' | 'cover' | 'fill' })}
+              >
+                <option value="cover">Cover</option>
+                <option value="contain">Contain</option>
+                <option value="fill">Fill</option>
+              </select>
+              <button type="button" className="ble-btn ble-btn--sm ble-btn--danger" style={{ marginLeft: 8 }}
+                onClick={() => onPageChange({ bgImage: undefined })}>
+                Remove BG
+              </button>
+            </>
+          )}
+          <input ref={bgFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleBgImageUpload} />
+        </div>
+      )}
+
       <div
         className="ble-page-frame"
         ref={frameRef}
-        style={{ paddingBottom: `${A3_LANDSCAPE_RATIO * 100}%`, position: 'relative' }}
-        onClick={() => onSelect(null)}
+        style={pageStyle}
+        onClick={() => { onSelect(null); }}
       >
         <div className="ble-page-frame__inner">
           {sortedElements.map((el) => {
@@ -212,10 +503,10 @@ function PageFrame({
               height: `${el.height}%`,
               zIndex: el.zIndex,
               boxSizing: 'border-box',
-              cursor: isEditing ? 'text' : 'grab',
+              // When editing, use default cursor; otherwise grab for drag
+              cursor: isEditing ? 'default' : 'grab',
               userSelect: isEditing ? 'text' : 'none',
               border: isSelected ? '2px solid #3b82f6' : '1px dashed rgba(100,100,200,0.35)',
-              background: el.type === 'image' ? 'rgba(200,220,255,0.08)' : 'transparent',
               overflow: 'hidden'
             };
 
@@ -227,17 +518,20 @@ function PageFrame({
                 onPointerDown={(e) => onElementPointerDown(el, e)}
                 onPointerMove={(e) => onElementPointerMove(el, e)}
                 onPointerUp={(e) => onElementPointerUp(el, e)}
-                onDoubleClick={(e) => { e.stopPropagation(); onStartEdit(el.id); }}
+                // Fix bug 2: always stop click from bubbling to frame's deselect handler
+                onClick={(e) => e.stopPropagation()}
               >
-                {el.type === 'text' ? (
-                  <TextElementContent
+                {(el.type === 'text' || el.type === 'table') ? (
+                  <TextOrTableContent
                     element={el}
                     isEditing={isEditing}
                     onChange={(html) => onElementChange(el.id, { html })}
                   />
-                ) : (
+                ) : el.type === 'image' ? (
                   <ImageElementContent element={el} />
-                )}
+                ) : el.type === 'shape' ? (
+                  <ShapeContent element={el} />
+                ) : null}
 
                 {isSelected && !isEditing && RESIZE_HANDLES.map((handle) => (
                   <div
@@ -258,97 +552,7 @@ function PageFrame({
   );
 }
 
-function handleStyle(handle: ResizeHandle): React.CSSProperties {
-  const h = HANDLE_SIZE;
-  const half = h / 2;
-  const base: React.CSSProperties = {
-    position: 'absolute',
-    width: h,
-    height: h,
-    background: '#3b82f6',
-    border: '1px solid #fff',
-    borderRadius: 2,
-    zIndex: 9999
-  };
-  const positions: Record<ResizeHandle, React.CSSProperties> = {
-    nw: { top: -half, left: -half, cursor: 'nw-resize' },
-    n: { top: -half, left: `calc(50% - ${half}px)`, cursor: 'n-resize' },
-    ne: { top: -half, right: -half, cursor: 'ne-resize' },
-    e: { top: `calc(50% - ${half}px)`, right: -half, cursor: 'e-resize' },
-    se: { bottom: -half, right: -half, cursor: 'se-resize' },
-    s: { bottom: -half, left: `calc(50% - ${half}px)`, cursor: 's-resize' },
-    sw: { bottom: -half, left: -half, cursor: 'sw-resize' },
-    w: { top: `calc(50% - ${half}px)`, left: -half, cursor: 'w-resize' }
-  };
-  return { ...base, ...positions[handle] };
-}
-
-function TextElementContent({
-  element,
-  isEditing,
-  onChange
-}: {
-  element: BodyTextElement;
-  isEditing: boolean;
-  onChange: (html: string) => void;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const { style } = element;
-  const fontSizePx = style.fontSizePt ? `${(style.fontSizePt * 4) / 3}px` : undefined;
-
-  useEffect(() => {
-    if (!ref.current) return;
-    if (ref.current.innerHTML !== (element.html || '')) {
-      ref.current.innerHTML = DOMPurify.sanitize(element.html || '');
-    }
-  }, [element.html, isEditing]);
-
-  function handleBlur() {
-    if (!ref.current) return;
-    onChange(DOMPurify.sanitize(ref.current.innerHTML || ''));
-  }
-
-  return (
-    <div
-      ref={ref}
-      contentEditable={isEditing}
-      suppressContentEditableWarning
-      style={{
-        width: '100%',
-        height: '100%',
-        padding: '4px',
-        boxSizing: 'border-box',
-        fontSize: fontSizePx,
-        fontWeight: style.fontWeight,
-        fontStyle: style.fontStyle,
-        textAlign: style.textAlign as React.CSSProperties['textAlign'],
-        color: style.color,
-        fontFamily: style.fontFamily,
-        lineHeight: style.lineHeight,
-        overflow: 'hidden',
-        outline: 'none'
-      }}
-      onBlur={isEditing ? handleBlur : undefined}
-    />
-  );
-}
-
-function ImageElementContent({ element }: { element: BodyImageElement }) {
-  const fit = element.imageStyle?.fit || 'contain';
-  const objectPosition = element.imageStyle?.objectPosition || 'center';
-
-  if (!element.src) {
-    return <div className="ble-image-placeholder">{element.alt || 'Image'}</div>;
-  }
-
-  return (
-    <img
-      src={element.src}
-      alt={element.alt || ''}
-      style={{ width: '100%', height: '100%', objectFit: fit as React.CSSProperties['objectFit'], objectPosition, display: 'block' }}
-    />
-  );
-}
+// ── PropertiesPanel ──────────────────────────────────────────────────────────
 
 interface PropertiesPanelProps {
   element: BodyElement;
@@ -386,6 +590,16 @@ function PropertiesPanel({
     if (event.target) event.target.value = '';
   }
 
+  const isTextLike = element.type === 'text' || element.type === 'table';
+  const textEl = isTextLike ? (element as BodyTextElement | BodyTableElement) : null;
+  const imgEl = element.type === 'image' ? (element as BodyImageElement) : null;
+  const shapeEl = element.type === 'shape' ? (element as BodyShapeElement) : null;
+
+  function onStyleChange(partial: Partial<(BodyTextElement | BodyTableElement)['style']>) {
+    if (!textEl) return;
+    onChange({ style: { ...textEl.style, ...partial } } as Partial<BodyElement>);
+  }
+
   return (
     <div className="ble-props-panel">
       <div className="ble-props-panel__row ble-props-panel__row--actions">
@@ -397,115 +611,90 @@ function PropertiesPanel({
 
       <div className="ble-props-panel__row">
         <label className="ble-props-label">X%</label>
-        <input
-          type="number"
-          className="ble-props-input"
-          value={Math.round(element.x * 10) / 10}
-          step={0.5}
-          onChange={(e) => onChange({ x: clamp(parseFloat(e.target.value) || 0, 0, 100 - element.width) })}
-        />
+        <input type="number" className="ble-props-input" value={Math.round(element.x * 10) / 10} step={0.5}
+          onChange={(e) => onChange({ x: clamp(parseFloat(e.target.value) || 0, 0, 100 - element.width) })} />
         <label className="ble-props-label">Y%</label>
-        <input
-          type="number"
-          className="ble-props-input"
-          value={Math.round(element.y * 10) / 10}
-          step={0.5}
-          onChange={(e) => onChange({ y: clamp(parseFloat(e.target.value) || 0, 0, 100 - element.height) })}
-        />
+        <input type="number" className="ble-props-input" value={Math.round(element.y * 10) / 10} step={0.5}
+          onChange={(e) => onChange({ y: clamp(parseFloat(e.target.value) || 0, 0, 100 - element.height) })} />
       </div>
 
       <div className="ble-props-panel__row">
         <label className="ble-props-label">W%</label>
-        <input
-          type="number"
-          className="ble-props-input"
-          value={Math.round(element.width * 10) / 10}
-          step={0.5}
-          min={5}
-          max={100}
-          onChange={(e) => onChange({ width: clamp(parseFloat(e.target.value) || 5, 5, 100 - element.x) })}
-        />
+        <input type="number" className="ble-props-input" value={Math.round(element.width * 10) / 10} step={0.5} min={5} max={100}
+          onChange={(e) => onChange({ width: clamp(parseFloat(e.target.value) || 5, 5, 100 - element.x) })} />
         <label className="ble-props-label">H%</label>
-        <input
-          type="number"
-          className="ble-props-input"
-          value={Math.round(element.height * 10) / 10}
-          step={0.5}
-          min={5}
-          max={100}
-          onChange={(e) => onChange({ height: clamp(parseFloat(e.target.value) || 5, 5, 100 - element.y) })}
-        />
+        <input type="number" className="ble-props-input" value={Math.round(element.height * 10) / 10} step={0.5} min={5} max={100}
+          onChange={(e) => onChange({ height: clamp(parseFloat(e.target.value) || 5, 5, 100 - element.y) })} />
       </div>
 
-      {element.type === 'text' && (
+      {textEl && (
         <>
           <div className="ble-props-panel__row">
             <label className="ble-props-label">{t(lang, 'layout.fontSize')}</label>
-            <input
-              type="number"
-              className="ble-props-input"
-              value={element.style.fontSizePt ?? 11}
-              min={6}
-              max={200}
-              step={1}
-              onChange={(e) => onChange({ style: { ...element.style, fontSizePt: parseInt(e.target.value, 10) || 11 } } as Partial<BodyTextElement>)}
-            />
+            <input type="number" className="ble-props-input" value={textEl.style.fontSizePt ?? 11}
+              min={6} max={200} step={1}
+              onChange={(e) => onStyleChange({ fontSizePt: parseInt(e.target.value, 10) || 11 })} />
           </div>
+
+          <div className="ble-props-panel__row">
+            <label className="ble-props-label">{t(lang, 'layout.fontFamily')}</label>
+            <select className="ble-props-select ble-props-select--wide"
+              value={textEl.style.fontFamily || ''}
+              onChange={(e) => onStyleChange({ fontFamily: e.target.value || undefined })}>
+              {FONT_FAMILIES.map((f) => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="ble-props-panel__row">
             <label className="ble-props-label">{t(lang, 'layout.textAlign')}</label>
-            <select
-              className="ble-props-select"
-              value={element.style.textAlign || 'left'}
-              onChange={(e) => onChange({ style: { ...element.style, textAlign: e.target.value as 'left' | 'center' | 'right' | 'justify' } } as Partial<BodyTextElement>)}
-            >
+            <select className="ble-props-select"
+              value={textEl.style.textAlign || 'left'}
+              onChange={(e) => onStyleChange({ textAlign: e.target.value as 'left' | 'center' | 'right' | 'justify' })}>
               <option value="left">Left</option>
               <option value="center">Center</option>
               <option value="right">Right</option>
               <option value="justify">Justify</option>
             </select>
           </div>
+
           <div className="ble-props-panel__row">
             <label className="ble-props-label">Bold</label>
-            <input
-              type="checkbox"
-              checked={element.style.fontWeight === 'bold'}
-              onChange={(e) => onChange({ style: { ...element.style, fontWeight: e.target.checked ? 'bold' : 'normal' } } as Partial<BodyTextElement>)}
-            />
+            <input type="checkbox" checked={textEl.style.fontWeight === 'bold'}
+              onChange={(e) => onStyleChange({ fontWeight: e.target.checked ? 'bold' : 'normal' })} />
             <label className="ble-props-label">Italic</label>
-            <input
-              type="checkbox"
-              checked={element.style.fontStyle === 'italic'}
-              onChange={(e) => onChange({ style: { ...element.style, fontStyle: e.target.checked ? 'italic' : 'normal' } } as Partial<BodyTextElement>)}
-            />
+            <input type="checkbox" checked={textEl.style.fontStyle === 'italic'}
+              onChange={(e) => onStyleChange({ fontStyle: e.target.checked ? 'italic' : 'normal' })} />
           </div>
+
           <div className="ble-props-panel__row">
             <label className="ble-props-label">Color</label>
-            <input
-              type="color"
-              className="ble-props-color"
-              value={element.style.color || '#000000'}
-              onChange={(e) => onChange({ style: { ...element.style, color: e.target.value } } as Partial<BodyTextElement>)}
-            />
+            <input type="color" className="ble-props-color"
+              value={textEl.style.color || '#000000'}
+              onChange={(e) => onStyleChange({ color: e.target.value })} />
+            <label className="ble-props-label">{t(lang, 'layout.bgColor')}</label>
+            <input type="color" className="ble-props-color"
+              value={textEl.style.bgColor || '#ffffff'}
+              onChange={(e) => onStyleChange({ bgColor: e.target.value })} />
+            <button type="button" className="ble-btn ble-btn--sm" style={{ marginLeft: 4 }}
+              onClick={() => onStyleChange({ bgColor: undefined })}>✕</button>
           </div>
         </>
       )}
 
-      {element.type === 'image' && (
+      {imgEl && (
         <>
           <div className="ble-props-panel__row">
             <label className="ble-props-label">Upload</label>
-            <button type="button" className="ble-btn" onClick={() => fileRef.current?.click()}>
-              Choose file
-            </button>
+            <button type="button" className="ble-btn" onClick={() => fileRef.current?.click()}>Choose file</button>
             <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
           </div>
           <div className="ble-props-panel__row">
             <label className="ble-props-label">Fit</label>
-            <select
-              className="ble-props-select"
-              value={element.imageStyle?.fit || 'contain'}
-              onChange={(e) => onChange({ imageStyle: { ...element.imageStyle, fit: e.target.value as 'contain' | 'cover' | 'fill' } } as Partial<BodyImageElement>)}
-            >
+            <select className="ble-props-select"
+              value={imgEl.imageStyle?.fit || 'contain'}
+              onChange={(e) => onChange({ imageStyle: { ...imgEl.imageStyle, fit: e.target.value as 'contain' | 'cover' | 'fill' } } as Partial<BodyImageElement>)}>
               <option value="contain">Contain</option>
               <option value="cover">Cover</option>
               <option value="fill">Fill</option>
@@ -513,19 +702,48 @@ function PropertiesPanel({
           </div>
           <div className="ble-props-panel__row">
             <label className="ble-props-label">Alt</label>
-            <input
-              type="text"
-              className="ble-props-input ble-props-input--wide"
-              value={element.alt || ''}
-              onChange={(e) => onChange({ alt: e.target.value } as Partial<BodyImageElement>)}
-            />
+            <input type="text" className="ble-props-input ble-props-input--wide" value={imgEl.alt || ''}
+              onChange={(e) => onChange({ alt: e.target.value } as Partial<BodyImageElement>)} />
           </div>
           {uploadError ? <div className="ble-props-error">{uploadError}</div> : null}
+        </>
+      )}
+
+      {shapeEl && (
+        <>
+          <div className="ble-props-panel__row">
+            <label className="ble-props-label">{t(lang, 'layout.shapeType')}</label>
+            <select className="ble-props-select"
+              value={shapeEl.shapeType}
+              onChange={(e) => onChange({ shapeType: e.target.value as BodyShapeType } as Partial<BodyShapeElement>)}>
+              <option value="rect">Rectangle</option>
+              <option value="ellipse">Ellipse</option>
+              <option value="line">Line</option>
+            </select>
+          </div>
+          <div className="ble-props-panel__row">
+            <label className="ble-props-label">{t(lang, 'layout.fill')}</label>
+            <input type="color" className="ble-props-color"
+              value={shapeEl.fill || '#3b82f6'}
+              onChange={(e) => onChange({ fill: e.target.value } as Partial<BodyShapeElement>)} />
+            <label className="ble-props-label">{t(lang, 'layout.stroke')}</label>
+            <input type="color" className="ble-props-color"
+              value={shapeEl.stroke || '#1d4ed8'}
+              onChange={(e) => onChange({ stroke: e.target.value } as Partial<BodyShapeElement>)} />
+          </div>
+          <div className="ble-props-panel__row">
+            <label className="ble-props-label">{t(lang, 'layout.strokeWidth')}</label>
+            <input type="number" className="ble-props-input" value={shapeEl.strokeWidth ?? 2}
+              min={0} max={50} step={1}
+              onChange={(e) => onChange({ strokeWidth: parseInt(e.target.value, 10) || 0 } as Partial<BodyShapeElement>)} />
+          </div>
         </>
       )}
     </div>
   );
 }
+
+// ── Main BodyLayoutEditor ────────────────────────────────────────────────────
 
 interface BodyLayoutEditorProps {
   post: PostItem;
@@ -553,6 +771,13 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
     }));
   }, []);
 
+  const updatePage = useCallback((pageId: string, partial: Partial<BodyPage>) => {
+    setLayout((prev) => ({
+      ...prev,
+      pages: prev.pages.map((p) => p.id === pageId ? { ...p, ...partial } : p)
+    }));
+  }, []);
+
   function addPage() {
     const pageId = `page-${makeId()}`;
     setLayout((prev) => ({
@@ -571,51 +796,65 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
     if (selectedElement?.pageId === pageId) setSelectedId(null);
   }
 
+  function maxZIndex(): number {
+    return layout.elements.reduce((max, el) => Math.max(max, el.zIndex), 0);
+  }
+
   function addTextElement(pageId: string) {
     const el: BodyTextElement = {
-      id: `el-${makeId()}`,
-      type: 'text',
-      pageId,
-      x: 10,
-      y: 10,
-      width: 40,
-      height: 30,
-      zIndex: maxZIndex() + 1,
-      visible: true,
-      html: '<p>Text</p>',
-      style: { fontSizePt: 11, textAlign: 'left' }
+      id: `el-${makeId()}`, type: 'text', pageId,
+      x: 10, y: 10, width: 40, height: 30,
+      zIndex: maxZIndex() + 1, visible: true,
+      html: '<p>Text</p>', style: { fontSizePt: 11, textAlign: 'left' }
     };
     setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
     setSelectedId(el.id);
+    setEditingId(null);
   }
 
   function addImageElement(pageId: string) {
     const el: BodyImageElement = {
-      id: `el-${makeId()}`,
-      type: 'image',
-      pageId,
-      x: 10,
-      y: 10,
-      width: 40,
-      height: 40,
-      zIndex: maxZIndex() + 1,
-      visible: true,
-      src: null,
-      alt: 'Image',
-      imageStyle: { fit: 'contain' }
+      id: `el-${makeId()}`, type: 'image', pageId,
+      x: 10, y: 10, width: 40, height: 40,
+      zIndex: maxZIndex() + 1, visible: true,
+      src: null, alt: 'Image', imageStyle: { fit: 'contain' }
     };
     setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
     setSelectedId(el.id);
+    setEditingId(null);
   }
 
-  function maxZIndex(): number {
-    return layout.elements.reduce((max, el) => Math.max(max, el.zIndex), 0);
+  function addTableElement(pageId: string) {
+    const rows = 3, cols = 3;
+    const el: BodyTableElement = {
+      id: `el-${makeId()}`, type: 'table', pageId,
+      x: 5, y: 10, width: 60, height: 40,
+      zIndex: maxZIndex() + 1, visible: true,
+      html: buildTableHtml(rows, cols), rows, cols,
+      style: { fontSizePt: 11, textAlign: 'left' }
+    };
+    setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
+    setSelectedId(el.id);
+    setEditingId(null);
+  }
+
+  function addShapeElement(pageId: string, shapeType: BodyShapeType) {
+    const el: BodyShapeElement = {
+      id: `el-${makeId()}`, type: 'shape', pageId,
+      x: 20, y: 20, width: 30, height: shapeType === 'line' ? 5 : 25,
+      zIndex: maxZIndex() + 1, visible: true,
+      shapeType, fill: 'rgba(59,130,246,0.25)', stroke: '#3b82f6', strokeWidth: 2
+    };
+    setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
+    setSelectedId(el.id);
+    setEditingId(null);
   }
 
   function deleteSelectedElement() {
     if (!selectedId) return;
     setLayout((prev) => ({ ...prev, elements: prev.elements.filter((el) => el.id !== selectedId) }));
     setSelectedId(null);
+    setEditingId(null);
   }
 
   function duplicateSelectedElement() {
@@ -629,6 +868,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
     };
     setLayout((prev) => ({ ...prev, elements: [...prev.elements, copy] }));
     setSelectedId(copy.id);
+    setEditingId(null);
   }
 
   function bringForward() {
@@ -645,10 +885,13 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
     if (!selectedElement || selectedElement.type !== 'image') return;
     const result = await uploadMedia(file, selectedElement.alt || '');
     const srcUrl = Object.values(result.urls)[0] || null;
-    updateElement(selectedId!, {
-      src: srcUrl,
-      mediaId: result.mediaId
-    } as Partial<BodyImageElement>);
+    updateElement(selectedId!, { src: srcUrl, mediaId: result.mediaId } as Partial<BodyImageElement>);
+  }
+
+  async function handleUploadPageBgImage(pageId: string, file: File) {
+    const result = await uploadMedia(file, 'page background');
+    const srcUrl = Object.values(result.urls)[0] || null;
+    if (srcUrl) updatePage(pageId, { bgImage: srcUrl });
   }
 
   async function handleSave() {
@@ -670,30 +913,22 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
       deleteSelectedElement();
     }
     if (event.key === 'Escape') {
-      if (editingId) {
-        setEditingId(null);
-      } else {
-        setSelectedId(null);
-      }
+      if (editingId) setEditingId(null);
+      else setSelectedId(null);
     }
   }
 
-  const firstPageId = layout.pages[0]?.id ?? '';
+  function handleSelect(id: string | null) {
+    setSelectedId(id);
+    if (id !== editingId) setEditingId(null);
+  }
 
   return (
     <div className="ble-root" tabIndex={-1} onKeyDown={handleKeyDown}>
       <div className="ble-toolbar">
         <span className="ble-toolbar__label">{t(lang, 'layout.editMode')}</span>
-        <div className="ble-toolbar__group">
-          <button type="button" className="ble-btn" onClick={addPage}>{t(lang, 'layout.addPage')}</button>
-          <button type="button" className="ble-btn" onClick={() => addTextElement(selectedElement?.pageId ?? firstPageId)}>
-            {t(lang, 'layout.addText')}
-          </button>
-          <button type="button" className="ble-btn" onClick={() => addImageElement(selectedElement?.pageId ?? firstPageId)}>
-            {t(lang, 'layout.addImage')}
-          </button>
-        </div>
         <div className="ble-toolbar__group ble-toolbar__group--right">
+          <button type="button" className="ble-btn" onClick={addPage}>{t(lang, 'layout.addPage')}</button>
           {error ? <span className="ble-toolbar__error">{error}</span> : null}
           <button type="button" className="ble-btn ble-btn--primary" onClick={handleSave} disabled={saving}>
             {saving ? t(lang, 'layout.saving') : t(lang, 'layout.save')}
@@ -708,17 +943,24 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
 
       <div className="ble-workspace">
         <div className="ble-canvas">
-          {layout.pages.map((page) => (
+          {layout.pages.map((page, pageIndex) => (
             <PageFrame
               key={page.id}
               page={page}
+              pageIndex={pageIndex}
               elements={layout.elements.filter((el) => el.pageId === page.id)}
               selectedId={selectedId}
               editingId={editingId}
-              onSelect={(id) => { setSelectedId(id); if (id !== editingId) setEditingId(null); }}
+              onSelect={handleSelect}
               onStartEdit={(id) => setEditingId(id)}
               onElementChange={updateElement}
+              onPageChange={(partial) => updatePage(page.id, partial)}
               onDeletePage={() => deletePage(page.id)}
+              onAddText={() => addTextElement(page.id)}
+              onAddImage={() => addImageElement(page.id)}
+              onAddTable={() => addTableElement(page.id)}
+              onAddShape={(st) => addShapeElement(page.id, st)}
+              onUploadBgImage={(file) => handleUploadPageBgImage(page.id, file)}
               lang={lang}
             />
           ))}
