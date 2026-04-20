@@ -4,6 +4,62 @@ export type CardTitleSize = 'auto' | 'default' | 'compact' | 'tight' | 'ultra-ti
 export type PostLayoutBlockType = 'text' | 'tool';
 export type PostLayoutColumn = 'left' | 'right';
 
+// ── Body Layout (InDesign-style on-page editor) ──────────────────────────────
+
+export interface BodyPage {
+  id: string;
+}
+
+export interface BodyTextStyle {
+  fontSizePt?: number;
+  fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  color?: string;
+  fontFamily?: string;
+  lineHeight?: number;
+}
+
+export interface BodyImageStyle {
+  fit?: 'contain' | 'cover' | 'fill';
+  objectPosition?: string;
+}
+
+interface BodyElementBase {
+  id: string;
+  type: 'text' | 'image';
+  pageId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+  visible: boolean;
+  locked?: boolean;
+}
+
+export interface BodyTextElement extends BodyElementBase {
+  type: 'text';
+  html: string;
+  style: BodyTextStyle;
+}
+
+export interface BodyImageElement extends BodyElementBase {
+  type: 'image';
+  mediaId?: number | null;
+  src?: string | null;
+  alt?: string;
+  imageStyle?: BodyImageStyle;
+}
+
+export type BodyElement = BodyTextElement | BodyImageElement;
+
+export interface BodyLayout {
+  version: 1;
+  pages: BodyPage[];
+  elements: BodyElement[];
+}
+
 export interface PostLayoutBlock {
   id: string;
   type: PostLayoutBlockType;
@@ -54,6 +110,7 @@ export interface PostItem {
   content_before_md: string | null;
   content_after_md: string | null;
   layout_blocks: PostLayoutBlock[] | null;
+  body_layout_json: BodyLayout | null;
   status: 'draft' | 'published';
   published_at: string | null;
   created_at: string;
@@ -466,6 +523,7 @@ export interface PostSaveSnapshot {
   content_before_md: string | null;
   content_after_md: string | null;
   layout_blocks: PostLayoutBlock[] | null;
+  body_layout_json: BodyLayout | null;
   status: 'draft' | 'published';
   lang: SiteLang;
   section: SiteSection;

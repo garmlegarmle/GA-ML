@@ -150,6 +150,9 @@ ALTER TABLE posts
 ALTER TABLE posts
   ALTER COLUMN card_title_size SET DEFAULT 'auto';
 
+ALTER TABLE posts
+  ADD COLUMN IF NOT EXISTS body_layout_json TEXT;
+
 UPDATE posts
 SET card_title_size = 'auto'
 WHERE card_title_size IS NULL;

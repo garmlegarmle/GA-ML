@@ -662,6 +662,19 @@ function parseToolLayout(raw) {
   }
 }
 
+function parseBodyLayoutJson(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(String(raw));
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.version !== 1) return null;
+    if (!Array.isArray(parsed.pages) || !Array.isArray(parsed.elements)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function mapPostRow(row, tags, request, publicOrigin = '') {
   const { origin } = requestOrigin(request, publicOrigin);
   const coverUrl = row.cover_image_id ? `${origin}/api/media/${row.cover_image_id}/file` : null;
@@ -679,6 +692,7 @@ export function mapPostRow(row, tags, request, publicOrigin = '') {
     content_before_md: row.content_before_md || null,
     content_after_md: row.content_after_md || null,
     layout_blocks: parseLayoutBlocksJson(row.layout_blocks_json),
+    body_layout_json: parseBodyLayoutJson(row.body_layout_json),
     status: row.status,
     published_at: row.published_at ? new Date(row.published_at).toISOString() : null,
     created_at: new Date(row.created_at).toISOString(),

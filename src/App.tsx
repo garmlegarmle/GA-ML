@@ -5,6 +5,8 @@ import { marked } from 'marked';
 import { AdminDock } from './components/AdminDock';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminPasswordModal } from './components/AdminPasswordModal';
+import { BodyLayoutEditorInline } from './components/BodyLayoutEditor';
+import { BodyLayoutRenderer } from './components/BodyLayoutRenderer';
 import { EntryCard } from './components/EntryCard';
 import { PageManagerModal } from './components/PageManagerModal';
 import { PagedRichColumn, type PagedRichColumnSegment } from './components/PagedRichColumn';
@@ -20,7 +22,7 @@ import {
   TREND_ANALYZER_TOOL_SLUG
 } from './lib/postSlugs';
 import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
-import type { PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from './types';
+import type { BodyLayout, PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from './types';
 
 interface AdminState {
   loading: boolean;
@@ -66,6 +68,7 @@ function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
     content_before_md: snapshot.content_before_md ?? existing?.content_before_md ?? null,
     content_after_md: snapshot.content_after_md ?? existing?.content_after_md ?? null,
     layout_blocks: snapshot.layout_blocks ?? existing?.layout_blocks ?? null,
+    body_layout_json: snapshot.body_layout_json ?? existing?.body_layout_json ?? null,
     status: snapshot.status,
     published_at: snapshot.status === 'published' ? existing?.published_at || snapshot.updated_at : null,
     created_at: existing?.created_at || snapshot.updated_at,
@@ -933,6 +936,7 @@ function DetailPage({
   const [previousPost, setPreviousPost] = useState<PostItem | null>(null);
   const [nextPost, setNextPost] = useState<PostItem | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<PostItem[]>([]);
+  const [layoutEditMode, setLayoutEditMode] = useState(false);
   const languageToggle = useMemo(
     () => buildDetailLanguageToggle(lang, section, slug, post?.pair_slug),
     [lang, post?.pair_slug, section, slug]
@@ -1222,7 +1226,35 @@ function DetailPage({
     );
   }
 
+  const isLayoutSection = section === 'blog' || section === 'pages';
+
+  function handleLayoutSaved(layout: BodyLayout) {
+    setPost((prev) => prev ? { ...prev, body_layout_json: layout } : prev);
+    setLayoutEditMode(false);
+  }
+
   function renderDetailBody() {
+    if (layoutEditMode && admin.isAdmin && isLayoutSection && post) {
+      return (
+        <div className="detail-layout__flow">
+          <BodyLayoutEditorInline
+            post={post}
+            lang={lang}
+            onSaved={handleLayoutSaved}
+            onExit={() => setLayoutEditMode(false)}
+          />
+        </div>
+      );
+    }
+
+    if (isLayoutSection && post?.body_layout_json) {
+      return (
+        <div className="detail-layout__flow detail-layout__flow--layout-renderer">
+          <BodyLayoutRenderer layout={post.body_layout_json} />
+        </div>
+      );
+    }
+
     if (usesPagedDetailFlow) {
       return <PagedRichColumn className="detail-layout__flow" segments={pagedSegments} />;
     }
@@ -1388,6 +1420,7 @@ function DetailPage({
           onWrite={() => openCreate(section)}
           onManagePages={openPageManager}
           onEditCurrent={post ? () => openCreate(section, post) : undefined}
+          onEditBodyLayout={post && admin.isAdmin && isLayoutSection ? () => setLayoutEditMode(true) : undefined}
           onChangePassword={openPasswordChange}
         />
       ) : null}
