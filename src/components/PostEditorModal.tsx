@@ -522,6 +522,7 @@ export function PostEditorModal({
         Boolean(initialPost?.tool_layout?.sections?.some((toolSection) => toolSection.enabled))),
     [initialPost?.tool_layout?.sections, section, toolLayout]
   );
+  const usesBodyLayoutEditor = section === 'blog' || section === 'pages';
   const usesLayoutBlocksEditor = false;
   const usesLegacySplitEditor = hasEmbeddedProgramPost || hasStructuredToolSections;
   const usesSplitEditor = usesLegacySplitEditor;
@@ -1451,6 +1452,7 @@ export function PostEditorModal({
       content_before_md: usesSplitEditor ? beforeHtml || null : null,
       content_after_md: usesSplitEditor ? afterHtml || null : null,
       layout_blocks: committedLayoutBlocks,
+      body_layout_json: initialPost?.body_layout_json ?? null,
       status,
       lang,
       section,
@@ -1917,6 +1919,21 @@ export function PostEditorModal({
                   Structured tool and program pages keep two text areas. Content above is rendered before the tool area and content below is
                   rendered after it. Formatting tools apply to the currently focused area.
                 </p>
+              ) : null}
+
+              {usesBodyLayoutEditor ? (
+                <div className="admin-editor-layout-notice">
+                  <p>
+                    <strong>Body layout</strong> for this post is edited directly on the post page (InDesign-style).
+                    Use <em>Edit Body Layout</em> in the admin menu on the post page.
+                    The rich-text editor below is kept for legacy/fallback content only.
+                  </p>
+                  {initialPost?.body_layout_json ? (
+                    <p className="admin-editor-layout-notice__has">Layout data present ({initialPost.body_layout_json.pages.length} page(s), {initialPost.body_layout_json.elements.length} element(s)).</p>
+                  ) : (
+                    <p className="admin-editor-layout-notice__empty">No layout data yet — opening "Edit Body Layout" will convert existing content.</p>
+                  )}
+                </div>
               ) : null}
 
               <div className={`admin-editor-workbench${usesLegacySplitEditor ? ' admin-editor-workbench--split' : ''}`}>

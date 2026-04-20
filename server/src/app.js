@@ -222,6 +222,26 @@ function parseStoredLayoutBlocks(value) {
   }
 }
 
+function parseStoredBodyLayoutJson(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(String(value));
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (parsed.version !== 1) return null;
+    if (!Array.isArray(parsed.pages) || !Array.isArray(parsed.elements)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeBodyLayoutJson(value) {
+  if (!value || typeof value !== 'object') return null;
+  if (value.version !== 1) return null;
+  if (!Array.isArray(value.pages) || !Array.isArray(value.elements)) return null;
+  return value;
+}
+
 function renderSitemapXml(entries) {
   const body = entries
     .map((entry) => {
@@ -853,13 +873,15 @@ app.post('/api/posts', async (req, res, next) => {
     const contentAfter = String(payload.content_after_md || '').trim();
     const layoutBlocks = normalizeLayoutBlocks(payload.layout_blocks);
     const hasLayoutBlocks = Array.isArray(layoutBlocks) && layoutBlocks.length > 0;
+    const bodyLayoutJson = normalizeBodyLayoutJson(payload.body_layout_json);
+    const hasBodyLayout = Boolean(bodyLayoutJson);
     if (!title) return jsonError(res, 400, 'title is required');
     const lang = normalizeLang(payload.lang || 'en');
     const section = normalizeSection(payload.section || 'blog');
     const slug = slugify(String(payload.slug || title));
     if (!slug) return jsonError(res, 400, 'slug is invalid');
     const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
-    if (!normalizedCombinedContent && !hasLayoutBlocks) return jsonError(res, 400, 'content is required');
+    if (!normalizedCombinedContent && !hasLayoutBlocks && !hasBodyLayout) return jsonError(res, 400, 'content is required');
     const status = normalizeStatus(payload.status || 'draft');
     const tags = dedupeTags(payload.tags || []);
     const excerpt = String(payload.excerpt || '').trim() || (normalizedCombinedContent ? toExcerpt(normalizedCombinedContent) : '');
@@ -894,15 +916,15 @@ app.post('/api/posts', async (req, res, next) => {
         lang, section, pair_slug, created_at, updated_at,
         card_title, card_category, card_tag, card_rank, card_image_id, card_title_size,
         meta_title, meta_description, og_title, og_description, og_image_url, schema_type,
-        tool_layout
+        tool_layout, body_layout_json
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28
       ) RETURNING id`,
       [
-        slug, title, excerpt, content || normalizedCombinedContent, contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
+        slug, title, excerpt, content || normalizedCombinedContent || '', contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
         status, null, publishedAt, lang, section, pairSlug, nowIso(), nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize, metaTitle, metaDescription,
-        ogTitle, ogDescription, null, schemaType, toolLayout
+        ogTitle, ogDescription, null, schemaType, toolLayout, bodyLayoutJson ? JSON.stringify(bodyLayoutJson) : null
       ]
     );
     const postId = Number(insert.rows[0].id);
@@ -930,6 +952,10 @@ app.put('/api/posts/:id', async (req, res, next) => {
         ? normalizeLayoutBlocks(payload.layout_blocks)
         : normalizeLayoutBlocks(parseStoredLayoutBlocks(current.layout_blocks_json));
     const hasLayoutBlocks = Array.isArray(layoutBlocks) && layoutBlocks.length > 0;
+    const bodyLayoutJson = payload.body_layout_json !== undefined
+      ? normalizeBodyLayoutJson(payload.body_layout_json)
+      : parseStoredBodyLayoutJson(current.body_layout_json);
+    const hasBodyLayout = Boolean(bodyLayoutJson);
     if (!title) return jsonError(res, 400, 'title is required');
     const lang = payload.lang !== undefined ? normalizeLang(payload.lang) : current.lang;
     const section = payload.section !== undefined ? normalizeSection(payload.section) : current.section;
@@ -938,7 +964,7 @@ app.put('/api/posts/:id', async (req, res, next) => {
     const contentBefore = payload.content_before_md !== undefined ? String(payload.content_before_md || '').trim() : current.content_before_md || '';
     const contentAfter = payload.content_after_md !== undefined ? String(payload.content_after_md || '').trim() : current.content_after_md || '';
     const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
-    if (!normalizedCombinedContent && !hasLayoutBlocks) return jsonError(res, 400, 'content is required');
+    if (!normalizedCombinedContent && !hasLayoutBlocks && !hasBodyLayout) return jsonError(res, 400, 'content is required');
     const status = payload.status !== undefined ? normalizeStatus(payload.status) : current.status;
     const tags = payload.tags !== undefined ? dedupeTags(payload.tags || []) : await getPostTags(pool, postId);
     const excerpt = payload.excerpt !== undefined
@@ -984,13 +1010,14 @@ app.put('/api/posts/:id', async (req, res, next) => {
          published_at=$10, lang=$11, section=$12, pair_slug=$13, updated_at=$14,
          card_title=$15, card_category=$16, card_tag=$17, card_rank=$18, card_image_id=$19, card_title_size=$20,
          meta_title=$21, meta_description=$22, og_title=$23, og_description=$24, og_image_url=$25, schema_type=$26,
-         tool_layout=$27
-       WHERE id = $28`,
+         tool_layout=$27, body_layout_json=$28
+       WHERE id = $29`,
       [
-        slug, title, excerpt, content || normalizedCombinedContent, contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
+        slug, title, excerpt, content || normalizedCombinedContent || '', contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
         status, current.cover_image_id, publishedAt, lang, section, pairSlug, nowIso(),
         cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize,
-        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, toolLayout, postId
+        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, toolLayout,
+        bodyLayoutJson ? JSON.stringify(bodyLayoutJson) : null, postId
       ]
     );
     if (payload.tags !== undefined) {

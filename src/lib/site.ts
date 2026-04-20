@@ -41,9 +41,28 @@ export type UiTextKey =
   | 'admin.currentPassword'
   | 'admin.newPassword'
   | 'admin.editCurrent'
+  | 'admin.editBodyLayout'
   | 'admin.write'
   | 'admin.pageManager'
-  | 'admin.logout';
+  | 'admin.logout'
+  | 'layout.editMode'
+  | 'layout.exitEdit'
+  | 'layout.save'
+  | 'layout.saving'
+  | 'layout.addPage'
+  | 'layout.addText'
+  | 'layout.addImage'
+  | 'layout.deletePage'
+  | 'layout.deleteElement'
+  | 'layout.duplicate'
+  | 'layout.bringForward'
+  | 'layout.sendBackward'
+  | 'layout.properties'
+  | 'layout.fontSize'
+  | 'layout.textAlign'
+  | 'layout.imageUrl'
+  | 'layout.noContent'
+  | 'layout.fallbackNotice';
 
 const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
   en: {
@@ -85,9 +104,28 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'admin.currentPassword': 'Current password',
     'admin.newPassword': 'New password',
     'admin.editCurrent': 'edit current post',
+    'admin.editBodyLayout': 'edit body layout',
     'admin.write': 'write post',
     'admin.pageManager': 'page manager',
-    'admin.logout': 'logout'
+    'admin.logout': 'logout',
+    'layout.editMode': 'Layout Edit Mode',
+    'layout.exitEdit': 'Exit Edit',
+    'layout.save': 'Save Layout',
+    'layout.saving': 'Saving...',
+    'layout.addPage': '+ Page',
+    'layout.addText': '+ Text',
+    'layout.addImage': '+ Image',
+    'layout.deletePage': 'Delete Page',
+    'layout.deleteElement': 'Delete',
+    'layout.duplicate': 'Duplicate',
+    'layout.bringForward': 'Forward',
+    'layout.sendBackward': 'Backward',
+    'layout.properties': 'Properties',
+    'layout.fontSize': 'Font size (pt)',
+    'layout.textAlign': 'Align',
+    'layout.imageUrl': 'Image URL',
+    'layout.noContent': 'No layout content yet. Click Edit Body Layout to start.',
+    'layout.fallbackNotice': 'Existing content imported as initial text block.'
   },
   ko: {
     'nav.home': '홈',
@@ -128,9 +166,28 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'admin.currentPassword': '현재 비밀번호',
     'admin.newPassword': '새 비밀번호',
     'admin.editCurrent': '현재 글 수정',
+    'admin.editBodyLayout': '본문 레이아웃 편집',
     'admin.write': '글쓰기',
     'admin.pageManager': '페이지 관리',
-    'admin.logout': '로그아웃'
+    'admin.logout': '로그아웃',
+    'layout.editMode': '레이아웃 편집 모드',
+    'layout.exitEdit': '편집 종료',
+    'layout.save': '레이아웃 저장',
+    'layout.saving': '저장 중...',
+    'layout.addPage': '+ 페이지',
+    'layout.addText': '+ 텍스트',
+    'layout.addImage': '+ 이미지',
+    'layout.deletePage': '페이지 삭제',
+    'layout.deleteElement': '삭제',
+    'layout.duplicate': '복제',
+    'layout.bringForward': '앞으로',
+    'layout.sendBackward': '뒤로',
+    'layout.properties': '속성',
+    'layout.fontSize': '글자 크기 (pt)',
+    'layout.textAlign': '정렬',
+    'layout.imageUrl': '이미지 URL',
+    'layout.noContent': '레이아웃 내용이 없습니다. 본문 레이아웃 편집을 시작하세요.',
+    'layout.fallbackNotice': '기존 본문이 초기 텍스트 박스로 변환되었습니다.'
   }
 };
 
