@@ -4435,9 +4435,7 @@ body.is-resizing-editor-image {
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* pages stretch to fill available width */
   align-items: stretch;
-  scroll-snap-type: y proximity;
 }
 
 
@@ -4445,9 +4443,6 @@ body.is-resizing-editor-image {
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* each page fills the viewport (minus toolbar) so one page = one screen */
-  min-height: calc(100vh - 50px);
-  scroll-snap-align: start;
   padding: 0 0 24px;
   border-bottom: 8px solid #e0e2ea;
 }
@@ -4466,6 +4461,9 @@ body.is-resizing-editor-image {
 }
 
 .ble-page-label {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 6px;
