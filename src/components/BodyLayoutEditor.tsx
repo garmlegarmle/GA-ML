@@ -777,7 +777,7 @@ function PropertiesPanel({
   }
 
   return (
-    <div className="ble-props-panel">
+    <div>
       <div className="ble-props-panel__row ble-props-panel__row--actions">
         <button type="button" className="ble-btn ble-btn--danger" onClick={onDelete}>{t(lang, 'layout.deleteElement')}</button>
         <button type="button" className="ble-btn" onClick={onDuplicate}>{t(lang, 'layout.duplicate')}</button>
@@ -960,6 +960,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showPanel, setShowPanel] = useState(true);
   const didFallback = !post.body_layout_json;
 
   const selectedElement = selectedId ? layout.elements.find((el) => el.id === selectedId) ?? null : null;
@@ -1096,6 +1097,11 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
         <span className="ble-toolbar__label">{t(lang, 'layout.editMode')}</span>
         <div className="ble-toolbar__group ble-toolbar__group--right">
           <button type="button" className="ble-btn" onClick={addPage}>{t(lang, 'layout.addPage')}</button>
+          {!showPanel && (
+            <button type="button" className="ble-btn ble-btn--show-panel" onClick={() => setShowPanel(true)}>
+              속성 ▶
+            </button>
+          )}
           {error && <span className="ble-toolbar__error">{error}</span>}
           <button type="button" className="ble-btn ble-btn--primary" onClick={handleSave} disabled={saving}>
             {saving ? t(lang, 'layout.saving') : t(lang, 'layout.save')}
@@ -1131,18 +1137,34 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
           ))}
         </div>
 
-        {selectedElement && (
-          <PropertiesPanel
-            element={selectedElement}
-            selectedCell={selectedCell}
-            onChange={(partial) => updateElement(selectedId!, partial)}
-            onDelete={deleteSelectedElement}
-            onDuplicate={duplicateSelectedElement}
-            onBringForward={() => updateElement(selectedId!, { zIndex: selectedElement.zIndex + 1 })}
-            onSendBackward={() => updateElement(selectedId!, { zIndex: Math.max(1, selectedElement.zIndex - 1) })}
-            onUploadImage={handleUploadImage}
-            lang={lang}
-          />
+        {/* Properties panel — always visible; hide button inside panel header */}
+        {showPanel && (
+          <div className="ble-props-panel">
+            <div className="ble-props-panel__head">
+              <span className="ble-props-panel__title">속성</span>
+              <button type="button" className="ble-props-panel__hide" title="패널 숨기기" onClick={() => setShowPanel(false)}>✕</button>
+            </div>
+            <div className="ble-props-panel__body">
+              {selectedElement ? (
+                <PropertiesPanel
+                  element={selectedElement}
+                  selectedCell={selectedCell}
+                  onChange={(partial) => updateElement(selectedId!, partial)}
+                  onDelete={deleteSelectedElement}
+                  onDuplicate={duplicateSelectedElement}
+                  onBringForward={() => updateElement(selectedId!, { zIndex: selectedElement.zIndex + 1 })}
+                  onSendBackward={() => updateElement(selectedId!, { zIndex: Math.max(1, selectedElement.zIndex - 1) })}
+                  onUploadImage={handleUploadImage}
+                  lang={lang}
+                />
+              ) : (
+                <div className="ble-props-panel__empty">
+                  <div className="ble-props-panel__empty-icon">☐</div>
+                  <div>요소를 클릭하면<br />속성이 표시됩니다</div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
