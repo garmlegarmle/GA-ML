@@ -72,7 +72,13 @@ export type UiTextKey =
   | 'layout.fill'
   | 'layout.stroke'
   | 'layout.strokeWidth'
-  | 'layout.pageSettings';
+  | 'layout.pageSettings'
+  | 'layout.addRow'
+  | 'layout.addCol'
+  | 'layout.deleteRow'
+  | 'layout.deleteCol'
+  | 'layout.cellBgColor'
+  | 'layout.opacity';
 
 const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
   en: {
@@ -145,7 +151,13 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'layout.fill': 'Fill',
     'layout.stroke': 'Stroke',
     'layout.strokeWidth': 'Stroke W',
-    'layout.pageSettings': 'Page Settings'
+    'layout.pageSettings': 'Page Settings',
+    'layout.addRow': '+Row',
+    'layout.addCol': '+Col',
+    'layout.deleteRow': '-Row',
+    'layout.deleteCol': '-Col',
+    'layout.cellBgColor': 'Cell BG',
+    'layout.opacity': 'Opacity'
   },
   ko: {
     'nav.home': '홈',
@@ -217,7 +229,13 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'layout.fill': '채우기',
     'layout.stroke': '선 색',
     'layout.strokeWidth': '선 두께',
-    'layout.pageSettings': '페이지 설정'
+    'layout.pageSettings': '페이지 설정',
+    'layout.addRow': '+행',
+    'layout.addCol': '+열',
+    'layout.deleteRow': '-행',
+    'layout.deleteCol': '-열',
+    'layout.cellBgColor': '셀 배경',
+    'layout.opacity': '투명도'
   }
 };
 

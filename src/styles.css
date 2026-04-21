@@ -4322,12 +4322,16 @@ body.is-resizing-editor-image {
 
 /* ── Body Layout Editor (ble-*) ─────────────────────────────────────────── */
 
+/* Fix #5: editor takes full viewport, toolbar always visible */
 .ble-root {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
   background: #f0f1f4;
   outline: none;
+  overflow: hidden;
 }
 
 .ble-toolbar {
@@ -4418,18 +4422,22 @@ body.is-resizing-editor-image {
 .ble-workspace {
   display: flex;
   flex: 1;
+  min-height: 0;
   gap: 0;
   overflow: hidden;
 }
 
 .ble-canvas {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 28px 24px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 32px;
+  align-items: center;
 }
+
 
 .ble-page-wrapper {
   display: flex;
@@ -4558,11 +4566,12 @@ body.is-resizing-editor-image {
 /* Properties panel */
 
 .ble-props-panel {
-  width: 220px;
-  min-width: 220px;
+  width: 230px;
+  min-width: 230px;
   background: #1e2230;
   border-left: 1px solid rgba(255,255,255,0.07);
   padding: 12px 10px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4634,6 +4643,98 @@ body.is-resizing-editor-image {
 
 .ble-inline-wrap {
   width: 100%;
+  height: 100vh;
+}
+
+/* ── Floating text selection toolbar ─────────────────────────────────────── */
+
+.ble-float-toolbar {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: #1e2230;
+  border: 1px solid #3a4060;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  user-select: none;
+  pointer-events: auto;
+}
+
+.ble-float-btn {
+  padding: 3px 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #c8d0e8;
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.ble-float-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.ble-float-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+.ble-float-color-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+  color: #c8d0e8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.ble-float-color-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.ble-float-color-btn--highlight {
+  color: #fbbf24;
+}
+
+.ble-float-color-btn input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+
+.ble-float-select {
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  color: #c8d0e8;
+  font-size: 11px;
+  cursor: pointer;
+  height: 24px;
+}
+
+.ble-float-select--wide {
+  max-width: 90px;
 }
 
 /* Body Layout Renderer (blr-*) */
