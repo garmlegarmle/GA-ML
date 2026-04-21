@@ -48,12 +48,16 @@ export interface BodyTextElement extends BodyElementBase {
   style: BodyTextStyle;
 }
 
+export interface BodyTableCell {
+  html: string;
+  bgColor?: string;
+}
+
 export interface BodyTableElement extends BodyElementBase {
   type: 'table';
-  html: string;
-  rows: number;
-  cols: number;
+  rows: BodyTableCell[][];
   style: BodyTextStyle;
+  borderColor?: string;
 }
 
 export interface BodyImageElement extends BodyElementBase {
@@ -70,6 +74,7 @@ export interface BodyShapeElement extends BodyElementBase {
   type: 'shape';
   shapeType: BodyShapeType;
   fill?: string;
+  fillOpacity?: number;
   stroke?: string;
   strokeWidth?: number;
 }
