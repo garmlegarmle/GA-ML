@@ -962,6 +962,15 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   const [error, setError] = useState('');
   const [showPanel, setShowPanel] = useState(true);
   const didFallback = !post.body_layout_json;
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const prevPageCount = useRef(layout.pages.length);
+
+  useEffect(() => {
+    if (layout.pages.length > prevPageCount.current && canvasRef.current) {
+      canvasRef.current.scrollTop = canvasRef.current.scrollHeight;
+    }
+    prevPageCount.current = layout.pages.length;
+  }, [layout.pages.length]);
 
   const selectedElement = selectedId ? layout.elements.find((el) => el.id === selectedId) ?? null : null;
 
@@ -1113,7 +1122,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
       {didFallback && <div className="ble-fallback-notice">{t(lang, 'layout.fallbackNotice')}</div>}
 
       <div className="ble-workspace">
-        <div className="ble-canvas">
+        <div className="ble-canvas" ref={canvasRef}>
           {layout.pages.map((page, pageIndex) => (
             <PageFrame
               key={page.id}
