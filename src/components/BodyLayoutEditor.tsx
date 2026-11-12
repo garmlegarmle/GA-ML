@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import DOMPurify from 'dompurify';
-import { updatePost, uploadMedia } from '../lib/api';
+import { createPost, deletePost, updatePost, uploadMedia } from '../lib/api';
+import { menuChoices } from '../lib/navigation';
+import { renderRichContent, resolveLinearBodySource } from '../lib/pageBody';
+import { useSiteNavigation } from './SiteNavigation';
 import { t } from '../lib/site';
 import type {
   BodyElement,
@@ -13,6 +16,7 @@ import type {
   BodyTableCell,
   BodyTableElement,
   BodyTextElement,
+  PageSaveResult,
   PostItem,
   SiteLang
 } from '../types';
@@ -45,36 +49,20 @@ function makeId(): string {
   return `${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`;
 }
 
-function buildFallbackLayout(post: PostItem): BodyLayout {
+function buildFallbackLayout(post: PostItem | null): BodyLayout {
   const pageId = `page-${makeId()}`;
-  const elementId = `el-${makeId()}`;
-  const rawContent = [post.content_before_md, post.content_md, post.content_after_md]
-    .filter(Boolean)
-    .join('\n\n')
-    .trim();
-
-  const html = rawContent
-    ? rawContent
-        .split(/\n{2,}/)
-        .map((block) => `<p>${block.replace(/\n/g, '<br>')}</p>`)
-        .join('')
-    : '<p>Start writing here...</p>';
-
-  const textEl: BodyTextElement = {
-    id: elementId,
-    type: 'text',
-    pageId,
-    x: 5,
-    y: 5,
-    width: 90,
-    height: 80,
-    zIndex: 1,
-    visible: true,
-    html: DOMPurify.sanitize(html),
-    style: { fontSizePt: 11, textAlign: 'left' }
+  const programCopy = post?.section === 'tools' || post?.section === 'games'
+    ? [post.content_before_md, post.content_after_md].filter(Boolean).join('\n\n')
+    : '';
+  const html = renderRichContent(programCopy || resolveLinearBodySource(post));
+  return {
+    version: 1, pages: [{ id: pageId }],
+    elements: html ? [{
+      id: `el-${makeId()}`, type: 'text', pageId,
+      x: 5, y: 5, width: 90, height: 90, zIndex: 1, visible: true,
+      html, scroll: true, style: { fontSizePt: 11, textAlign: 'left' }
+    }] : []
   };
-
-  return { version: 1, pages: [{ id: pageId }], elements: [textEl] };
 }
 
 function buildTableRows(rows: number, cols: number): BodyTableCell[][] {
@@ -283,7 +271,7 @@ function TextContent({
         overflow: 'auto', outline: 'none',
         cursor: isEditing ? 'text' : 'inherit'
       }}
-      onBlur={isEditing ? () => { if (ref.current) onChange(DOMPurify.sanitize(ref.current.innerHTML || '')); } : undefined}
+      onInput={isEditing ? () => { if (ref.current) onChange(DOMPurify.sanitize(ref.current.innerHTML || '')); } : undefined}
     />
   );
 }
@@ -467,6 +455,7 @@ interface PageFrameProps {
   onElementChange: (id: string, partial: Partial<BodyElement>) => void;
   onPageChange: (partial: Partial<BodyPage>) => void;
   onDeletePage: () => void;
+  canDelete: boolean;
   onAddText: () => void;
   onAddImage: () => void;
   onAddTable: () => void;
@@ -479,7 +468,7 @@ function PageFrame({
   page, pageIndex, elements,
   selectedId, editingId, editingCell, selectedCell,
   onSelect, onStartEdit, onSetEditingCell,
-  onElementChange, onPageChange, onDeletePage,
+  onElementChange, onPageChange, onDeletePage, canDelete,
   onAddText, onAddImage, onAddTable, onAddShape,
   onUploadBgImage, lang
 }: PageFrameProps) {
@@ -581,7 +570,7 @@ function PageFrame({
   return (
     <div className="ble-page-wrapper">
       <div className="ble-page-label">
-        <span className="ble-page-label__name">Page {pageIndex + 1}</span>
+        <span className="ble-page-label__name">{lang === 'ko' ? '용지' : 'Sheet'} {pageIndex + 1}</span>
         <div className="ble-page-label__tools">
           <button type="button" className="ble-btn ble-btn--sm" onClick={onAddText}>{t(lang, 'layout.addText')}</button>
           <button type="button" className="ble-btn ble-btn--sm" onClick={onAddImage}>{t(lang, 'layout.addImage')}</button>
@@ -595,7 +584,7 @@ function PageFrame({
                 {(['rect', 'ellipse', 'line'] as BodyShapeType[]).map((st) => (
                   <button key={st} type="button" className="ble-shape-menu__item"
                     onClick={() => { onAddShape(st); setShowShapeMenu(false); }}>
-                    {st === 'rect' ? '□ Rect' : st === 'ellipse' ? '○ Ellipse' : '— Line'}
+                    {st === 'rect' ? (lang === 'ko' ? '사각형' : 'Rectangle') : st === 'ellipse' ? (lang === 'ko' ? '타원' : 'Ellipse') : (lang === 'ko' ? '선' : 'Line')}
                   </button>
                 ))}
               </div>
@@ -604,7 +593,7 @@ function PageFrame({
           <button type="button" className="ble-btn ble-btn--sm" onClick={() => setShowBgPanel((v) => !v)}>
             {t(lang, 'layout.pageBg')} ▾
           </button>
-          <button type="button" className="ble-btn ble-btn--sm ble-btn--danger" onClick={onDeletePage}>
+          <button type="button" className="ble-btn ble-btn--sm ble-btn--danger" onClick={onDeletePage} disabled={!canDelete}>
             {t(lang, 'layout.deletePage')}
           </button>
         </div>
@@ -615,7 +604,7 @@ function PageFrame({
           <label className="ble-props-label">{t(lang, 'layout.bgColor')}</label>
           <input type="color" className="ble-props-color" value={page.bgColor || '#ffffff'}
             onChange={(e) => onPageChange({ bgColor: e.target.value })} />
-          <button type="button" className="ble-btn ble-btn--sm" style={{ marginLeft: 8 }} onClick={() => bgFileRef.current?.click()}>Upload BG</button>
+          <button type="button" className="ble-btn ble-btn--sm" style={{ marginLeft: 8 }} onClick={() => bgFileRef.current?.click()}>{lang === 'ko' ? '배경 올리기' : 'Upload background'}</button>
           {page.bgImage && (
             <>
               <select className="ble-props-select" style={{ marginLeft: 8 }} value={page.bgImageFit || 'cover'}
@@ -623,7 +612,7 @@ function PageFrame({
                 <option value="cover">Cover</option><option value="contain">Contain</option><option value="fill">Fill</option>
               </select>
               <button type="button" className="ble-btn ble-btn--sm ble-btn--danger" style={{ marginLeft: 8 }}
-                onClick={() => onPageChange({ bgImage: undefined })}>Remove BG</button>
+                onClick={() => onPageChange({ bgImage: undefined })}>{lang === 'ko' ? '배경 지우기' : 'Remove background'}</button>
             </>
           )}
           <input ref={bgFileRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -881,8 +870,8 @@ function PropertiesPanel({
       {imgEl && (
         <>
           <div className="ble-props-panel__row">
-            <label className="ble-props-label">Upload</label>
-            <button type="button" className="ble-btn" onClick={() => fileRef.current?.click()}>Choose file</button>
+            <label className="ble-props-label">{lang === 'ko' ? '이미지' : 'Image'}</label>
+            <button type="button" className="ble-btn" onClick={() => fileRef.current?.click()}>{lang === 'ko' ? '파일 선택' : 'Choose file'}</button>
             <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
               onChange={async (e) => {
                 const f = e.target.files?.[0];
@@ -894,14 +883,14 @@ function PropertiesPanel({
               }} />
           </div>
           <div className="ble-props-panel__row">
-            <label className="ble-props-label">Fit</label>
+            <label className="ble-props-label">{lang === 'ko' ? '맞춤' : 'Fit'}</label>
             <select className="ble-props-select" value={imgEl.imageStyle?.fit || 'contain'}
               onChange={(e) => onChange({ imageStyle: { ...imgEl.imageStyle, fit: e.target.value as 'contain' | 'cover' | 'fill' } } as Partial<BodyImageElement>)}>
               <option value="contain">Contain</option><option value="cover">Cover</option><option value="fill">Fill</option>
             </select>
           </div>
           <div className="ble-props-panel__row">
-            <label className="ble-props-label">Alt</label>
+            <label className="ble-props-label">{lang === 'ko' ? '대체 텍스트' : 'Alt text'}</label>
             <input type="text" className="ble-props-input ble-props-input--wide" value={imgEl.alt || ''}
               onChange={(e) => onChange({ alt: e.target.value } as Partial<BodyImageElement>)} />
           </div>
@@ -946,22 +935,40 @@ function PropertiesPanel({
 // ── Main BodyLayoutEditor ─────────────────────────────────────────────────────
 
 interface BodyLayoutEditorProps {
-  post: PostItem;
+  post: PostItem | null;
   lang: SiteLang;
-  onSaved: (layout: BodyLayout) => void;
+  initialMenuId: number | null;
+  onSaved: (page: PageSaveResult) => void;
+  onDeleted: () => void;
   onExit: () => void;
 }
 
-export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEditorProps) {
-  const [layout, setLayout] = useState<BodyLayout>(() => post.body_layout_json ?? buildFallbackLayout(post));
+export function BodyLayoutEditor({ post, lang, initialMenuId, onSaved, onDeleted, onExit }: BodyLayoutEditorProps) {
+  const { menus } = useSiteNavigation();
+  const ko = lang === 'ko';
+  const [title, setTitle] = useState(post?.title ?? '');
+  const [status, setStatus] = useState<'draft' | 'published'>(post?.status ?? 'draft');
+  const [menuId, setMenuId] = useState(post?.menuId ?? initialMenuId);
+  const [layout, setLayout] = useState<BodyLayout>(() => post?.body_layout_json ?? buildFallbackLayout(post));
+  const initialLayout = useRef(layout);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const boards = menuChoices(menus).filter(({ menu }) => menu.kind === 'board');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<[number, number] | null>(null);
   const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [showPanel, setShowPanel] = useState(true);
-  const didFallback = !post.body_layout_json;
+  const didFallback = Boolean(post && !post.body_layout_json && initialLayout.current.elements.length);
+  const dirty = layout !== initialLayout.current || title !== (post?.title ?? '') ||
+    status !== (post?.status ?? 'draft') || menuId !== (post?.menuId ?? initialMenuId);
+
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(event: BeforeUnloadEvent) { event.preventDefault(); }
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
   const canvasRef = useRef<HTMLDivElement>(null);
   const prevPageCount = useRef(layout.pages.length);
 
@@ -1004,12 +1011,24 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
     if (selectedElement?.pageId === pageId) { setSelectedId(null); setEditingId(null); }
   }
 
+  function framePosition(pageId: string, width: number, height: number) {
+    const existing = layout.elements.filter((element) => element.pageId === pageId && element.visible);
+    for (let y = 10; y + height <= 100; y += 10) {
+      for (let x = 10; x + width <= 100; x += 10) {
+        if (existing.every((el) => x + width <= el.x || x >= el.x + el.width || y + height <= el.y || y >= el.y + el.height)) {
+          return { x, y };
+        }
+      }
+    }
+    return { x: 10, y: 10 };
+  }
+
   function addTextElement(pageId: string) {
     const el: BodyTextElement = {
       id: `el-${makeId()}`, type: 'text', pageId,
-      x: 10, y: 10, width: 40, height: 30,
+      ...framePosition(pageId, 40, 30), width: 40, height: 30,
       zIndex: maxZIndex() + 1, visible: true,
-      html: '<p>Text</p>', style: { fontSizePt: 11, textAlign: 'left' }
+      html: ko ? '<p>텍스트</p>' : '<p>Text</p>', style: { fontSizePt: 11, textAlign: 'left' }
     };
     setLayout((prev) => ({ ...prev, elements: [...prev.elements, el] }));
     setSelectedId(el.id); setEditingId(null);
@@ -1018,7 +1037,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   function addImageElement(pageId: string) {
     const el: BodyImageElement = {
       id: `el-${makeId()}`, type: 'image', pageId,
-      x: 10, y: 10, width: 40, height: 40,
+      ...framePosition(pageId, 40, 40), width: 40, height: 40,
       zIndex: maxZIndex() + 1, visible: true,
       src: null, alt: 'Image', imageStyle: { fit: 'contain' }
     };
@@ -1029,7 +1048,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   function addTableElement(pageId: string) {
     const el: BodyTableElement = {
       id: `el-${makeId()}`, type: 'table', pageId,
-      x: 5, y: 10, width: 60, height: 40,
+      ...framePosition(pageId, 60, 40), width: 60, height: 40,
       zIndex: maxZIndex() + 1, visible: true,
       rows: buildTableRows(3, 3), style: { fontSizePt: 11, textAlign: 'left' }
     };
@@ -1040,7 +1059,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   function addShapeElement(pageId: string, shapeType: BodyShapeType) {
     const el: BodyShapeElement = {
       id: `el-${makeId()}`, type: 'shape', pageId,
-      x: 20, y: 20, width: 30, height: shapeType === 'line' ? 5 : 25,
+      ...framePosition(pageId, 30, shapeType === 'line' ? 5 : 25), width: 30, height: shapeType === 'line' ? 5 : 25,
       zIndex: maxZIndex() + 1, visible: true,
       shapeType, fill: '#3b82f6', fillOpacity: 25, stroke: '#3b82f6', strokeWidth: 2
     };
@@ -1069,16 +1088,46 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   }
 
   async function handleUploadPageBgImage(pageId: string, file: File) {
-    const result = await uploadMedia(file, 'page background');
-    const srcUrl = Object.values(result.urls)[0] || null;
-    if (srcUrl) updatePage(pageId, { bgImage: srcUrl });
+    setError('');
+    try {
+      const result = await uploadMedia(file, ko ? '페이지 배경' : 'Page background');
+      const srcUrl = Object.values(result.urls)[0] || null;
+      if (srcUrl) updatePage(pageId, { bgImage: srcUrl });
+    } catch {
+      setError(ko ? '배경 이미지를 올리지 못했습니다.' : 'Could not upload the background image.');
+    }
   }
 
   async function handleSave() {
+    if (saving) return;
+    if (!title.trim()) {
+      setError(ko ? '페이지 제목을 입력해 주세요.' : 'Enter a page title.');
+      titleRef.current?.focus();
+      return;
+    }
     setSaving(true); setError('');
-    try { await updatePost(post.id, { body_layout_json: layout }); onSaved(layout); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Save failed'); }
+    const settings = {
+      title: title.trim(), status, menu_id: menuId,
+      ...(!post || layout !== initialLayout.current ? { body_layout_json: layout } : {})
+    };
+    try {
+      const page = post ? await updatePost(post.id, settings) : await createPost({ ...settings, lang });
+      onSaved(page);
+    } catch {
+      setError(ko ? '페이지를 저장하지 못했습니다. 제목과 소속 메뉴를 확인하고 다시 시도해 주세요.' : 'Could not save the page. Check the title and board, then try again.');
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete() {
+    if (!post || saving || !window.confirm(ko ? '이 페이지를 삭제할까요? 공개 목록과 메뉴에서도 사라집니다.' : 'Delete this page? It will be removed from public lists and menus.')) return;
+    setSaving(true); setError('');
+    try { await deletePost(post.id); onDeleted(); }
+    catch { setError(ko ? '페이지를 삭제하지 못했습니다.' : 'Could not delete the page.'); }
     finally { setSaving(false); }
+  }
+
+  function handleExit() {
+    if (!dirty || window.confirm(ko ? '저장하지 않은 변경을 버릴까요?' : 'Discard unsaved changes?')) onExit();
   }
 
   function handleSelect(id: string | null) {
@@ -1087,6 +1136,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   }
 
   function handleKeyDown(event: React.KeyboardEvent) {
+    if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable=true]')) return;
     if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId && editingId !== selectedId) {
       event.preventDefault();
       deleteSelectedElement();
@@ -1098,30 +1148,25 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
   }
 
   return (
-    <div className="ble-root" tabIndex={-1} onKeyDown={handleKeyDown}>
+    <main className="ble-root ble-root--page" tabIndex={-1} onKeyDown={handleKeyDown}>
       {/* Floating text selection toolbar (rendered via portal to document.body) */}
       <FloatingTextToolbar editingId={editingId} />
 
       <div className="ble-toolbar">
-        <span className="ble-toolbar__label">{t(lang, 'layout.editMode')}</span>
+        <h1 className="ble-toolbar__label">{post ? (ko ? '페이지 편집' : 'Edit page') : (ko ? '페이지 만들기' : 'New page')}</h1>
         <div className="ble-toolbar__group ble-toolbar__group--right">
-          <button type="button" className="ble-btn" onClick={addPage}>{t(lang, 'layout.addPage')}</button>
-          {!showPanel && (
-            <button type="button" className="ble-btn ble-btn--show-panel" onClick={() => setShowPanel(true)}>
-              속성 ▶
-            </button>
-          )}
-          {error && <span className="ble-toolbar__error">{error}</span>}
+          <button type="button" className="ble-btn" onClick={addPage} disabled={saving}>{t(lang, 'layout.addPage')}</button>
+          {error && <span className="ble-toolbar__error" role="alert">{error}</span>}
           <button type="button" className="ble-btn ble-btn--primary" onClick={handleSave} disabled={saving}>
-            {saving ? t(lang, 'layout.saving') : t(lang, 'layout.save')}
+            {saving ? t(lang, 'layout.saving') : (ko ? '페이지 저장' : 'Save page')}
           </button>
-          <button type="button" className="ble-btn" onClick={onExit}>{t(lang, 'layout.exitEdit')}</button>
+          <button type="button" className="ble-btn" onClick={handleExit} disabled={saving}>{ko ? '닫기' : 'Close'}</button>
         </div>
       </div>
 
-      {didFallback && <div className="ble-fallback-notice">{t(lang, 'layout.fallbackNotice')}</div>}
+      {didFallback && <div className="ble-fallback-notice">{ko ? '기존 본문을 텍스트 상자로 불러왔습니다. 본문을 건드리지 않고 설정만 저장하면 원래 배치가 유지됩니다.' : 'Existing content is shown in a text frame. Saving only settings keeps the original body.'}</div>}
 
-      <div className="ble-workspace">
+      <div className="ble-workspace" inert={saving}>
         <div className="ble-canvas" ref={canvasRef}>
           {layout.pages.map((page, pageIndex) => (
             <PageFrame
@@ -1135,7 +1180,7 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
               onSetEditingCell={(pos) => { setEditingCell(pos); setSelectedCell(pos); }}
               onElementChange={updateElement}
               onPageChange={(partial) => updatePage(page.id, partial)}
-              onDeletePage={() => deletePage(page.id)}
+              onDeletePage={() => deletePage(page.id)} canDelete={layout.pages.length > 1}
               onAddText={() => addTextElement(page.id)}
               onAddImage={() => addImageElement(page.id)}
               onAddTable={() => addTableElement(page.id)}
@@ -1146,44 +1191,45 @@ export function BodyLayoutEditor({ post, lang, onSaved, onExit }: BodyLayoutEdit
           ))}
         </div>
 
-        {/* Properties panel — always visible; hide button inside panel header */}
-        {showPanel && (
-          <div className="ble-props-panel">
-            <div className="ble-props-panel__head">
-              <span className="ble-props-panel__title">속성</span>
-              <button type="button" className="ble-props-panel__hide" title="패널 숨기기" onClick={() => setShowPanel(false)}>✕</button>
-            </div>
-            <div className="ble-props-panel__body">
-              {selectedElement ? (
-                <PropertiesPanel
-                  element={selectedElement}
-                  selectedCell={selectedCell}
-                  onChange={(partial) => updateElement(selectedId!, partial)}
-                  onDelete={deleteSelectedElement}
-                  onDuplicate={duplicateSelectedElement}
-                  onBringForward={() => updateElement(selectedId!, { zIndex: selectedElement.zIndex + 1 })}
-                  onSendBackward={() => updateElement(selectedId!, { zIndex: Math.max(1, selectedElement.zIndex - 1) })}
-                  onUploadImage={handleUploadImage}
-                  lang={lang}
-                />
-              ) : (
-                <div className="ble-props-panel__empty">
-                  <div className="ble-props-panel__empty-icon">☐</div>
-                  <div>요소를 클릭하면<br />속성이 표시됩니다</div>
-                </div>
-              )}
-            </div>
+        <aside className="ble-props-panel" aria-label={ko ? '페이지 및 요소 설정' : 'Page and element settings'}>
+          <div className="ble-props-panel__body">
+            <fieldset className="editor-page-settings">
+              <legend>{ko ? '페이지 설정' : 'Page settings'}</legend>
+              <label>{ko ? '제목' : 'Title'}
+                <input ref={titleRef} required maxLength={160} value={title} onChange={(event) => { setTitle(event.target.value); setError(''); }} />
+              </label>
+              <label>{ko ? '공개 상태' : 'Visibility'}
+                <select aria-label={ko ? '공개 상태' : 'Visibility'} value={status} onChange={(event) => setStatus(event.target.value as 'draft' | 'published')}>
+                  <option value="draft">{ko ? '초안' : 'Draft'}</option>
+                  <option value="published">{ko ? '공개' : 'Published'}</option>
+                </select>
+              </label>
+              <label>{ko ? '소속 메뉴' : 'Board'}
+                <select aria-label={ko ? '소속 메뉴' : 'Board'} value={menuId ?? ''} onChange={(event) => setMenuId(Number(event.target.value) || null)}>
+                  <option value="">{ko ? '없음' : 'None'}</option>
+                  {boards.map(({ menu, depth }) =>
+                    <option key={menu.id} value={menu.id}>{'　'.repeat(Math.min(depth, 6))}{menu.label}</option>)}
+                </select>
+              </label>
+              {post && <button type="button" className="ble-btn ble-btn--danger" onClick={handleDelete}>{ko ? '페이지 삭제' : 'Delete page'}</button>}
+            </fieldset>
+            <h2 className="editor-element-heading">{ko ? '선택한 요소' : 'Selected element'}</h2>
+            {selectedElement ? (
+              <PropertiesPanel
+                element={selectedElement}
+                selectedCell={selectedCell}
+                onChange={(partial) => updateElement(selectedElement.id, partial)}
+                onDelete={deleteSelectedElement}
+                onDuplicate={duplicateSelectedElement}
+                onBringForward={() => updateElement(selectedElement.id, { zIndex: selectedElement.zIndex + 1 })}
+                onSendBackward={() => updateElement(selectedElement.id, { zIndex: Math.max(1, selectedElement.zIndex - 1) })}
+                onUploadImage={handleUploadImage}
+                lang={lang}
+              />
+            ) : <p className="workspace-muted">{ko ? '본문에서 요소를 선택하면 속성이 표시됩니다.' : 'Select an item on the canvas to edit its properties.'}</p>}
           </div>
-        )}
+        </aside>
       </div>
-    </div>
-  );
-}
-
-export function BodyLayoutEditorInline({ post, lang, onSaved, onExit }: BodyLayoutEditorProps) {
-  return (
-    <div className="ble-inline-wrap">
-      <BodyLayoutEditor post={post} lang={lang} onSaved={onSaved} onExit={onExit} />
-    </div>
+    </main>
   );
 }

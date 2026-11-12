@@ -53,7 +53,7 @@ function TextBlock({
         left: `${element.x}%`, top: `${element.y}%`,
         width: `${element.width}%`, height: `${element.height}%`,
         zIndex: element.zIndex,
-        overflow: 'hidden', boxSizing: 'border-box',
+        overflow: element.scroll ? 'auto' : 'hidden', boxSizing: 'border-box',
         fontSize: fontSizePx, fontWeight: style.fontWeight, fontStyle: style.fontStyle,
         textAlign: style.textAlign as React.CSSProperties['textAlign'],
         color: style.color, fontFamily: style.fontFamily || undefined,

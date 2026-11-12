@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles.css';
+import './navigation.css';
 
 async function clearLegacyClientCaches() {
   if (typeof window === 'undefined') return;

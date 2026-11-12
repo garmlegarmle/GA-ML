@@ -12,7 +12,6 @@ export type UiTextKey =
   | 'footer.contact'
   | 'footer.privacy'
   | 'home.category'
-  | 'home.tagList'
   | 'common.all'
   | 'common.loading'
   | 'common.noPosts'
@@ -20,15 +19,12 @@ export type UiTextKey =
   | 'common.descending'
   | 'common.ascending'
   | 'card.placeholder'
-  | 'card.tagFallback'
   | 'card.draft'
   | 'detail.prev'
   | 'detail.next'
   | 'detail.created'
   | 'detail.updated'
   | 'detail.views'
-  | 'detail.related'
-  | 'detail.tagFallback'
   | 'admin.menu'
   | 'admin.actions'
   | 'admin.login'
@@ -40,14 +36,7 @@ export type UiTextKey =
   | 'admin.changePassword'
   | 'admin.currentPassword'
   | 'admin.newPassword'
-  | 'admin.editCurrent'
-  | 'admin.editBodyLayout'
-  | 'admin.write'
-  | 'admin.pageManager'
   | 'admin.logout'
-  | 'layout.editMode'
-  | 'layout.exitEdit'
-  | 'layout.save'
   | 'layout.saving'
   | 'layout.addPage'
   | 'layout.addText'
@@ -61,8 +50,6 @@ export type UiTextKey =
   | 'layout.fontSize'
   | 'layout.textAlign'
   | 'layout.imageUrl'
-  | 'layout.noContent'
-  | 'layout.fallbackNotice'
   | 'layout.addTable'
   | 'layout.addShape'
   | 'layout.fontFamily'
@@ -91,7 +78,6 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'footer.contact': 'Contact',
     'footer.privacy': 'Privacy Policy',
     'home.category': 'Category',
-    'home.tagList': 'Tag list',
     'common.all': 'All',
     'common.loading': 'Loading...',
     'common.noPosts': 'No posts yet.',
@@ -99,15 +85,12 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'common.descending': 'Descending',
     'common.ascending': 'Ascending',
     'card.placeholder': 'Image or number',
-    'card.tagFallback': 'Tag',
     'card.draft': 'draft',
     'detail.prev': '< Previous',
     'detail.next': 'Next >',
     'detail.created': 'Created',
     'detail.updated': 'Updated',
     'detail.views': 'Views',
-    'detail.related': 'Related posts',
-    'detail.tagFallback': 'tag',
     'admin.menu': 'Admin menu',
     'admin.actions': 'Admin actions',
     'admin.login': 'admin login',
@@ -119,19 +102,12 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'admin.changePassword': 'change password',
     'admin.currentPassword': 'Current password',
     'admin.newPassword': 'New password',
-    'admin.editCurrent': 'edit current post',
-    'admin.editBodyLayout': 'edit body layout',
-    'admin.write': 'write post',
-    'admin.pageManager': 'page manager',
     'admin.logout': 'logout',
-    'layout.editMode': 'Layout Edit Mode',
-    'layout.exitEdit': 'Exit Edit',
-    'layout.save': 'Save Layout',
     'layout.saving': 'Saving...',
-    'layout.addPage': '+ Page',
+    'layout.addPage': '+ Sheet',
     'layout.addText': '+ Text',
     'layout.addImage': '+ Image',
-    'layout.deletePage': 'Delete Page',
+    'layout.deletePage': 'Remove sheet',
     'layout.deleteElement': 'Delete',
     'layout.duplicate': 'Duplicate',
     'layout.bringForward': 'Forward',
@@ -140,8 +116,6 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'layout.fontSize': 'Font size (pt)',
     'layout.textAlign': 'Align',
     'layout.imageUrl': 'Image URL',
-    'layout.noContent': 'No layout content yet. Click Edit Body Layout to start.',
-    'layout.fallbackNotice': 'Existing content imported as initial text block.',
     'layout.addTable': '+ Table',
     'layout.addShape': '+ Shape',
     'layout.fontFamily': 'Font',
@@ -169,7 +143,6 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'footer.contact': '문의',
     'footer.privacy': '개인정보 처리방침',
     'home.category': '카테고리',
-    'home.tagList': '태그 목록',
     'common.all': '전체',
     'common.loading': '불러오는 중...',
     'common.noPosts': '게시글이 없습니다.',
@@ -177,15 +150,12 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'common.descending': '내림차순',
     'common.ascending': '오름차순',
     'card.placeholder': '이미지 혹은 숫자',
-    'card.tagFallback': '태그',
     'card.draft': '임시저장',
     'detail.prev': '< 이전글',
     'detail.next': '다음글 >',
     'detail.created': '작성일',
     'detail.updated': '수정일',
     'detail.views': '조회수',
-    'detail.related': '관련 글',
-    'detail.tagFallback': '태그',
     'admin.menu': '관리자 메뉴',
     'admin.actions': '관리자 동작',
     'admin.login': '관리자 로그인',
@@ -197,19 +167,12 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'admin.changePassword': '비밀번호 변경',
     'admin.currentPassword': '현재 비밀번호',
     'admin.newPassword': '새 비밀번호',
-    'admin.editCurrent': '현재 글 수정',
-    'admin.editBodyLayout': '본문 레이아웃 편집',
-    'admin.write': '글쓰기',
-    'admin.pageManager': '페이지 관리',
     'admin.logout': '로그아웃',
-    'layout.editMode': '레이아웃 편집 모드',
-    'layout.exitEdit': '편집 종료',
-    'layout.save': '레이아웃 저장',
     'layout.saving': '저장 중...',
-    'layout.addPage': '+ 페이지',
+    'layout.addPage': '+ 용지',
     'layout.addText': '+ 텍스트',
     'layout.addImage': '+ 이미지',
-    'layout.deletePage': '페이지 삭제',
+    'layout.deletePage': '용지 삭제',
     'layout.deleteElement': '삭제',
     'layout.duplicate': '복제',
     'layout.bringForward': '앞으로',
@@ -218,8 +181,6 @@ const UI_TEXT: Record<SiteLang, Record<UiTextKey, string>> = {
     'layout.fontSize': '글자 크기 (pt)',
     'layout.textAlign': '정렬',
     'layout.imageUrl': '이미지 URL',
-    'layout.noContent': '레이아웃 내용이 없습니다. 본문 레이아웃 편집을 시작하세요.',
-    'layout.fallbackNotice': '기존 본문이 초기 텍스트 박스로 변환되었습니다.',
     'layout.addTable': '+ 표',
     'layout.addShape': '+ 도형',
     'layout.fontFamily': '폰트',
