@@ -226,11 +226,13 @@ function FloatingTextToolbar({ editingId }: FloatingTextToolbarProps) {
 function TextContent({
   element,
   isEditing,
-  onChange
+  onChange,
+  label
 }: {
   element: BodyTextElement;
   isEditing: boolean;
   onChange: (html: string) => void;
+  label: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const { style } = element;
@@ -260,6 +262,9 @@ function TextContent({
       ref={ref}
       data-el-id={element.id}
       contentEditable={isEditing || undefined}
+      role={isEditing ? 'textbox' : undefined}
+      aria-multiline={isEditing || undefined}
+      aria-label={isEditing ? label : undefined}
       suppressContentEditableWarning
       style={{
         width: '100%', height: '100%', padding: '4px', boxSizing: 'border-box',
@@ -287,7 +292,8 @@ function TableCell({
   style: tableStyle,
   borderColor,
   onCellChange,
-  onCellClick
+  onCellClick,
+  onTab
 }: {
   cell: BodyTableCell;
   rowIndex: number;
@@ -298,6 +304,7 @@ function TableCell({
   borderColor?: string;
   onCellChange: (html: string) => void;
   onCellClick: () => void;
+  onTab: (backward: boolean) => boolean;
 }) {
   const ref = useRef<HTMLTableCellElement | null>(null);
   const fontSizePx = tableStyle.fontSizePt ? `${(tableStyle.fontSizePt * 4) / 3}px` : undefined;
@@ -331,7 +338,10 @@ function TableCell({
         cursor: isEditing ? 'text' : 'default'
       }}
       onClick={(e) => { e.stopPropagation(); onCellClick(); }}
-      onBlur={isEditing ? () => { if (ref.current) onCellChange(DOMPurify.sanitize(ref.current.innerHTML || '')); } : undefined}
+      onInput={isEditing ? () => { if (ref.current) onCellChange(DOMPurify.sanitize(ref.current.innerHTML || '')); } : undefined}
+      onKeyDown={(event) => {
+        if (isEditing && event.key === 'Tab' && onTab(event.shiftKey)) event.preventDefault();
+      }}
     />
   );
 }
@@ -351,6 +361,14 @@ function TableContent({
   onCellChange: (row: number, col: number, html: string) => void;
   onSetEditingCell: (pos: [number, number]) => void;
 }) {
+  const coordinates = element.rows.flatMap((row, ri) => row.map((_, ci): [number, number] => [ri, ci]));
+  function nextCell(row: number, column: number, backward: boolean) {
+    const index = coordinates.findIndex(([r, c]) => r === row && c === column);
+    const next = coordinates[index + (backward ? -1 : 1)];
+    if (!next) return false;
+    onSetEditingCell(next);
+    return true;
+  }
   return (
     <div style={{ overflow: 'auto', width: '100%', height: '100%' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
@@ -372,6 +390,7 @@ function TableContent({
                     borderColor={element.borderColor}
                     onCellChange={(html) => onCellChange(ri, ci, html)}
                     onCellClick={() => { if (isEditing) onSetEditingCell([ri, ci]); }}
+                    onTab={(backward) => nextCell(ri, ci, backward)}
                   />
                 );
               })}
@@ -622,9 +641,13 @@ function PageFrame({
 
       <div className="ble-page-frame" ref={frameRef} style={pageStyle} onClick={() => onSelect(null)}>
         <div className="ble-page-frame__inner">
-          {sortedElements.map((el) => {
+          {sortedElements.map((el, index) => {
             const isSelected = selectedId === el.id;
             const isEditing = editingId === el.id;
+            const typeLabel = lang === 'ko'
+              ? { text: '텍스트 상자', image: '이미지 상자', table: '표', shape: '도형' }[el.type]
+              : { text: 'Text frame', image: 'Image frame', table: 'Table', shape: 'Shape' }[el.type];
+            const label = `${typeLabel} ${index + 1}`;
 
             return (
               <div
@@ -641,13 +664,29 @@ function PageFrame({
                   overflow: 'hidden'
                 }}
                 className="ble-element"
+                role="group"
+                aria-label={label}
+                tabIndex={isEditing ? -1 : 0}
+                onFocus={(event) => {
+                  if (event.target === event.currentTarget && selectedId !== el.id) onSelect(el.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSelect(el.id);
+                  if (event.key === 'Enter' && (el.type === 'text' || el.type === 'table')) {
+                    onStartEdit(el.id);
+                    if (el.type === 'table' && el.rows[0]?.length) onSetEditingCell([0, 0]);
+                  }
+                }}
                 onPointerDown={(e) => onElementPointerDown(el, e)}
                 onPointerMove={(e) => onElementPointerMove(el, e)}
                 onPointerUp={(e) => onElementPointerUp(el, e)}
                 onClick={(e) => e.stopPropagation()}
               >
                 {el.type === 'text' && (
-                  <TextContent element={el} isEditing={isEditing}
+                  <TextContent element={el} isEditing={isEditing} label={label}
                     onChange={(html) => onElementChange(el.id, { html })} />
                 )}
                 {el.type === 'table' && (
@@ -916,7 +955,7 @@ function PropertiesPanel({
               value={shapeEl.fillOpacity ?? 25}
               style={{ width: 60 }}
               onChange={(e) => onChange({ fillOpacity: parseInt(e.target.value, 10) } as Partial<BodyElement>)} />
-            <span style={{ color: '#a0aacc', fontSize: 11, minWidth: 28 }}>{shapeEl.fillOpacity ?? 25}%</span>
+            <span style={{ color: 'var(--nav-muted)', fontSize: 11, minWidth: 28 }}>{shapeEl.fillOpacity ?? 25}%</span>
           </div>
           <div className="ble-props-panel__row">
             <label className="ble-props-label">{t(lang, 'layout.stroke')}</label>
@@ -1136,14 +1175,19 @@ export function BodyLayoutEditor({ post, lang, initialMenuId, onSaved, onDeleted
   }
 
   function handleKeyDown(event: React.KeyboardEvent) {
-    if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable=true]')) return;
+    const target = event.target as HTMLElement;
+    if (event.key === 'Escape') {
+      if (editingId) {
+        const frame = target.closest<HTMLElement>('.ble-element');
+        setEditingId(null); setEditingCell(null); setSelectedCell(null);
+        frame?.focus();
+      } else setSelectedId(null);
+      return;
+    }
+    if (target.closest('input, textarea, select, [contenteditable=true]')) return;
     if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId && editingId !== selectedId) {
       event.preventDefault();
       deleteSelectedElement();
-    }
-    if (event.key === 'Escape') {
-      if (editingId) { setEditingId(null); setEditingCell(null); }
-      else setSelectedId(null);
     }
   }
 
@@ -1226,7 +1270,7 @@ export function BodyLayoutEditor({ post, lang, initialMenuId, onSaved, onDeleted
                 onUploadImage={handleUploadImage}
                 lang={lang}
               />
-            ) : <p className="workspace-muted">{ko ? '본문에서 요소를 선택하면 속성이 표시됩니다.' : 'Select an item on the canvas to edit its properties.'}</p>}
+            ) : <p className="workspace-muted">{ko ? '본문에서 요소를 선택하면 속성이 표시됩니다. Tab으로 이동하고 Enter로 텍스트나 표를 편집할 수 있습니다.' : 'Select an item to see its properties. Use Tab to move and Enter to edit text or tables.'}</p>}
           </div>
         </aside>
       </div>

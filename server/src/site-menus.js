@@ -50,7 +50,7 @@ export async function ensureSiteMenus(pool) {
 
 function toMenu(row) {
   return {
-    id: Number(row.id), parentId: row.parent_id ? Number(row.parent_id) : null, label: row.label,
+    id: Number(row.id), parentId: row.projected_parent_id ? Number(row.projected_parent_id) : null, label: row.label,
     kind: row.kind, view: row.view, position: row.position, legacySection: row.legacy_section,
     postId: row.post_id ? Number(row.post_id) : null,
     postPath: row.slug && !row.is_deleted ? `/${row.lang}/${row.section}/${row.slug}/` : null
@@ -71,15 +71,19 @@ export function createSiteMenusRouter(pool, requireAdmin, isAdmin) {
     const admin = req.query.admin === '1' && isAdmin(req);
     const { rows } = await pool.query(
       `WITH RECURSIVE candidates AS (
-         SELECT m.*, p.slug, p.section, p.is_deleted
+         SELECT m.*, p.slug, p.section, p.is_deleted,
+                m.kind = 'board' OR COALESCE(p.status = 'published' AND NOT p.is_deleted, FALSE) AS visible
          FROM site_menus m LEFT JOIN posts p ON p.id = m.post_id
-         WHERE m.lang = $1 AND ($2::boolean OR m.kind = 'board' OR (p.status = 'published' AND NOT p.is_deleted))
+         WHERE m.lang = $1
        ), tree AS (
-         SELECT * FROM candidates WHERE parent_id IS NULL
+         SELECT m.*, NULL::bigint AS public_parent, CASE WHEN visible THEN id END AS public_anchor
+         FROM candidates m WHERE parent_id IS NULL
          UNION ALL
-         SELECT m.* FROM candidates m JOIN tree t ON t.id = m.parent_id
+         SELECT m.*, t.public_anchor, CASE WHEN m.visible THEN m.id ELSE t.public_anchor END
+         FROM candidates m JOIN tree t ON t.id = m.parent_id
        )
-       SELECT * FROM tree ORDER BY position, id`, [lang, admin]
+       SELECT *, CASE WHEN $2::boolean THEN parent_id ELSE public_parent END AS projected_parent_id
+       FROM tree WHERE $2::boolean OR visible ORDER BY position, id`, [lang, admin]
     );
     res.set('Cache-Control', 'no-store');
     jsonOk(res, { ok: true, menus: rows.map(toMenu) });

@@ -141,6 +141,10 @@
 .ble-root--page .ble-toolbar { background: #263129; padding: 10px 16px; }
 .ble-root--page .ble-toolbar__label { margin: 0; color: #fff; font-size: 16px; }
 .ble-root--page .ble-toolbar__group { flex-wrap: wrap; }
+.ble-root--page .ble-toolbar :focus-visible, .ble-root--page .ble-page-label :focus-visible,
+.ble-root--page .ble-bg-panel :focus-visible { outline-color: #f0f6ef; }
+.ble-root--page .ble-element:focus-visible { outline-offset: -2px; }
+.ble-root--page .ble-image-placeholder { color: var(--nav-muted); }
 .ble-root--page .ble-toolbar__error { color: #ffd1c8; }
 .ble-root--page .ble-toolbar .ble-btn--primary { background: #dceadd; border-color: #dceadd; color: #203829; }
 .ble-root--page .ble-toolbar .ble-btn--primary:hover:not(:disabled) { background: #fff; }

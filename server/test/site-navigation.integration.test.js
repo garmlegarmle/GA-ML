@@ -70,8 +70,12 @@ test('메뉴 계층, 페이지 공개 범위와 주소, 삭제 후 콘텐츠 보
     const nested = await menu({ parentId: linked, label: '연결 아래 게시판' });
     assert.equal((await request(path)).status, 404);
     assert.equal((await result(`/posts?lang=ko&menu=${child}&status=all`)).total, 0);
-    assert.equal((await result('/menus?lang=ko&admin=1')).menus.some((item) => item.id === linked || item.id === nested), false);
-    assert.ok((await result('/menus?lang=ko&admin=1', { admin: true })).menus.some((item) => item.id === linked));
+    const anonymousMenus = (await result('/menus?lang=ko&admin=1')).menus;
+    assert.equal(anonymousMenus.some((item) => item.id === linked), false);
+    assert.equal(anonymousMenus.find((item) => item.id === nested).parentId, child);
+    const adminMenus = (await result('/menus?lang=ko&admin=1', { admin: true })).menus;
+    assert.ok(adminMenus.some((item) => item.id === linked));
+    assert.equal(adminMenus.find((item) => item.id === nested).parentId, linked);
     const updated = { title: '검증 페이지 수정', status: 'published', menu_id: child };
     assert.equal((await request(`/posts/${page.id}`, { method: 'PUT', admin: true, body: { ...updated, tags: ['removed'] } })).status, 400);
     const saved = await result(`/posts/${page.id}`, { method: 'PUT', admin: true, body: updated });
@@ -92,7 +96,9 @@ test('메뉴 계층, 페이지 공개 범위와 주소, 삭제 후 콘텐츠 보
     assert.equal((await result('/menus?lang=ko')).menus.find((item) => item.id === linked).parentId, root);
     await result(`/posts/${page.id}`, { method: 'PUT', admin: true, body: { ...updated, status: 'draft', menu_id: null } });
     assert.equal((await request(path)).status, 404);
-    assert.equal((await result('/menus?lang=ko')).menus.some((item) => item.id === linked || item.id === nested), false);
+    const afterDraft = (await result('/menus?lang=ko')).menus;
+    assert.equal(afterDraft.some((item) => item.id === linked), false);
+    assert.equal(afterDraft.find((item) => item.id === nested).parentId, root);
   } finally {
     for (const id of [...menuIds].reverse()) await request(`/menus/${id}`, { method: 'DELETE', admin: true });
     for (const id of postIds) await request(`/posts/${id}`, { method: 'DELETE', admin: true });
