@@ -45,6 +45,7 @@ interface BodyElementBase {
 export interface BodyTextElement extends BodyElementBase {
   type: 'text';
   html: string;
+  scroll?: boolean;
   style: BodyTextStyle;
 }
 
@@ -117,22 +118,39 @@ export interface ToolLayout {
   sections: ToolSection[];
 }
 
-export interface CardData {
+export interface SiteMenu {
+  id: number;
+  parentId: number | null;
+  label: string;
+  kind: 'board' | 'page';
+  view: 'list' | 'icons';
+  position: number;
+  postId: number | null;
+  postPath: string | null;
+  legacySection: SiteSection | null;
+}
+
+export type MenuSettings = Pick<SiteMenu, 'parentId' | 'label' | 'kind' | 'view' | 'position' | 'postId'> & { lang: SiteLang };
+
+export interface PageSettings {
   title: string;
-  category: string;
-  tag: string;
-  rank: string | null;
-  rankNumber: number | null;
-  imageId: number | null;
-  imageUrl: string | null;
-  titleSize: CardTitleSize;
+  status: 'draft' | 'published';
+  menu_id: number | null;
+  body_layout_json?: BodyLayout;
+}
+
+export interface PageSaveResult {
+  ok: true;
+  id: number;
+  slug: string;
+  section: SiteSection;
+  lang: SiteLang;
 }
 
 export interface PostItem {
   id: number;
   slug: string;
   title: string;
-  excerpt: string | null;
   content_md: string;
   content_before_md: string | null;
   content_after_md: string | null;
@@ -146,19 +164,9 @@ export interface PostItem {
   section: SiteSection;
   pair_slug: string | null;
   view_count: number;
-  tags: string[];
-  meta: {
-    title: string | null;
-    description: string | null;
-  };
-  og: {
-    title: string | null;
-    description: string | null;
-    imageUrl: string | null;
-  };
-  schemaType: 'BlogPosting' | 'Service' | null;
+  menuId: number | null;
   cover: { id: number; url: string } | null;
-  card: CardData;
+  card: { rankNumber: number | null; imageUrl: string | null; titleSize: CardTitleSize };
   tool_layout?: ToolLayout | null;
 }
 
@@ -173,7 +181,6 @@ export interface PostListResponse {
 export interface PostDetailResponse {
   ok: true;
   post: PostItem;
-  tags: string[];
   cover: { id: number; url: string } | null;
   media: unknown[];
 }
@@ -191,21 +198,6 @@ export interface UploadResponse {
   keys: Record<string, string>;
   urls: Record<string, string>;
   variants: Array<{ variant: string; key: string; width: number; format: string }>;
-}
-
-export interface TagListResponse {
-  ok: true;
-  items: string[];
-}
-
-export interface TagCountItem {
-  name: string;
-  count: number;
-}
-
-export interface TagCountResponse {
-  ok: true;
-  items: TagCountItem[];
 }
 
 export interface TrendCandle {
@@ -539,33 +531,4 @@ export interface HoldemOnlineSessionResponse {
 export interface HoldemOnlineTablesResponse {
   ok: true;
   tables: HoldemOnlineTableSummary[];
-}
-
-export interface PostSaveSnapshot {
-  id: number;
-  slug: string;
-  title: string;
-  excerpt: string | null;
-  content_md: string;
-  content_before_md: string | null;
-  content_after_md: string | null;
-  layout_blocks: PostLayoutBlock[] | null;
-  body_layout_json: BodyLayout | null;
-  status: 'draft' | 'published';
-  lang: SiteLang;
-  section: SiteSection;
-  updated_at: string;
-  tags: string[];
-  meta: {
-    title: string | null;
-    description: string | null;
-  };
-  og: {
-    title: string | null;
-    description: string | null;
-    imageUrl: string | null;
-  };
-  schemaType: 'BlogPosting' | 'Service' | null;
-  card: CardData;
-  tool_layout?: ToolLayout | null;
 }

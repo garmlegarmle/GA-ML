@@ -5,11 +5,14 @@ import type {
   HoldemOnlineTablesResponse,
   HoldemPlayResponse,
   HoldemStatsResponse,
+  MenuSettings,
+  PageSaveResult,
+  PageSettings,
+  SiteLang,
+  SiteMenu,
   PostDetailResponse,
   PostListResponse,
   SessionResponse,
-  TagCountResponse,
-  TagListResponse,
   TrendAnalysisResponse,
   UploadResponse
 } from '../types';
@@ -68,7 +71,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
 export interface ListPostsParams {
   status?: 'published' | 'draft' | 'all';
-  tag?: string;
+  menu?: number;
+  feed?: boolean;
   q?: string;
   page?: number;
   limit?: number;
@@ -76,15 +80,11 @@ export interface ListPostsParams {
   section?: 'blog' | 'tools' | 'games' | 'pages';
 }
 
-export interface ListTagsParams {
-  lang?: 'en' | 'ko';
-  section?: 'blog' | 'tools' | 'games' | 'pages';
-}
-
 export async function listPosts(params: ListPostsParams): Promise<PostListResponse> {
   const query = new URLSearchParams();
   if (params.status) query.set('status', params.status);
-  if (params.tag) query.set('tag', params.tag);
+  if (params.menu) query.set('menu', String(params.menu));
+  if (params.feed) query.set('feed', '1');
   if (params.q) query.set('q', params.q);
   if (params.page) query.set('page', String(params.page));
   if (params.limit) query.set('limit', String(params.limit));
@@ -106,41 +106,21 @@ export async function listPosts(params: ListPostsParams): Promise<PostListRespon
   };
 }
 
-export async function listTags(params: ListTagsParams = {}): Promise<TagListResponse> {
-  const query = new URLSearchParams();
-  if (params.lang) query.set('lang', params.lang);
-  if (params.section) query.set('section', params.section);
-
-  const suffix = query.toString();
-  const data = await apiFetch<Partial<TagListResponse>>(`/api/tags${suffix ? `?${suffix}` : ''}`);
-
-  return {
-    ok: true,
-    items: Array.isArray(data.items) ? data.items : []
-  };
+export async function listMenus(lang: SiteLang, admin: boolean): Promise<SiteMenu[]> {
+  const query = new URLSearchParams({ lang, admin: admin ? '1' : '0' });
+  return (await apiFetch<{ ok: true; menus: SiteMenu[] }>(`/api/menus?${query}`, { cache: 'no-store' })).menus;
 }
 
-export async function listTagCounts(params: { lang: 'en' | 'ko'; section: 'blog' | 'tools' | 'games' | 'pages' }): Promise<TagCountResponse> {
-  const query = new URLSearchParams({
-    lang: params.lang,
-    section: params.section,
-    counts: '1'
+export async function saveMenu(id: number | null, settings: MenuSettings): Promise<{ ok: true; id: number }> {
+  return apiFetch(`/api/menus${id ? `/${id}` : ''}`, {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings)
   });
+}
 
-  const data = await apiFetch<Partial<TagCountResponse>>(`/api/tags?${query.toString()}`);
-  const items = Array.isArray(data.items)
-    ? data.items
-        .map((item) => ({
-          name: String((item as { name?: string }).name || '').trim(),
-          count: Number((item as { count?: number }).count || 0)
-        }))
-        .filter((item) => Boolean(item.name))
-    : [];
-
-  return {
-    ok: true,
-    items
-  };
+export async function deleteMenu(id: number): Promise<{ ok: true }> {
+  return apiFetch(`/api/menus/${id}`, { method: 'DELETE' });
 }
 
 export async function getPostBySlug(slug: string, lang: 'en' | 'ko', section: string): Promise<PostDetailResponse> {
@@ -154,14 +134,13 @@ export async function getPostBySlug(slug: string, lang: 'en' | 'ko', section: st
   return {
     ok: true,
     post: data.post as PostDetailResponse['post'],
-    tags: Array.isArray(data.tags) ? data.tags : [],
     cover: (data.cover as PostDetailResponse['cover']) || null,
     media: Array.isArray(data.media) ? data.media : []
   };
 }
 
-export async function createPost(body: unknown): Promise<{ ok: true; id: number; slug: string }> {
-  return apiFetch<{ ok: true; id: number; slug: string }>(`/api/posts`, {
+export async function createPost(body: PageSettings & { lang: SiteLang }): Promise<PageSaveResult> {
+  return apiFetch<PageSaveResult>(`/api/posts`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8'
@@ -172,9 +151,9 @@ export async function createPost(body: unknown): Promise<{ ok: true; id: number;
 
 export async function updatePost(
   id: number,
-  body: unknown
-): Promise<{ ok: true; id: number; slug?: string; section?: string; lang?: string; updated_at: string }> {
-  return apiFetch<{ ok: true; id: number; slug?: string; section?: string; lang?: string; updated_at: string }>(
+  body: PageSettings
+): Promise<PageSaveResult> {
+  return apiFetch<PageSaveResult>(
     `/api/posts/${id}`,
     {
       method: 'PUT',
@@ -353,16 +332,4 @@ export async function getHoldemOnlineTables(): Promise<HoldemOnlineTablesRespons
       Pragma: 'no-cache',
     },
   });
-}
-
-export async function deleteTag(
-  tag: string,
-  lang: 'en' | 'ko'
-): Promise<{ ok: true; deleted: { id: number; name: string; slug: string } }> {
-  return apiFetch<{ ok: true; deleted: { id: number; name: string; slug: string } }>(
-    `/api/tags/${encodeURIComponent(tag)}?lang=${encodeURIComponent(lang)}`,
-    {
-      method: 'DELETE'
-    }
-  );
 }

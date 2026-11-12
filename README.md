@@ -12,10 +12,19 @@ The production backend lives under `server/`.
 
 ## Content Source Of Truth
 - Code/layout: GitHub repository
-- Runtime posts/cards/tags: PostgreSQL (`posts`, `tags`, `post_tags`, `app_settings`)
+- 페이지 본문과 메뉴: PostgreSQL (`posts`, `site_menus`, `app_settings`)
 - Uploaded images/files: local VPS storage + metadata in PostgreSQL (`media`, `media_variants`)
 
 The app does not read runtime content from MDX/JSON files at runtime.
+
+## 메뉴와 페이지 관리
+
+- 관리자 메뉴에서 **메뉴 관리**를 열어 메뉴나 하위 메뉴를 만들고, 기존 페이지를 연결하거나 새 게시판을 만든다. 게시판의 표시 방식은 목록 또는 아이콘이다. 메뉴 구조는 한국어와 영어에서 별도로 관리한다.
+- **페이지 만들기** 또는 **페이지 편집**을 누르면 본문 캔버스가 바로 열린다. 오른쪽에서 제목, 공개 상태, 소속 게시판을 수정하고 **페이지 저장**을 누른다. 초안은 공개 게시판과 직접 연결 메뉴에 표시되지 않는다. 그 아래 공개 하위 메뉴는 가장 가까운 공개 상위 메뉴 아래에 표시한다.
+- 메뉴를 삭제하면 하위 메뉴를 한 단계 위로 옮기고 게시판의 페이지 연결만 해제한다. 페이지와 주소는 보존한다.
+- 첫 실행에서 기존 도구·게임·블로그와 소개를 메뉴에 연결한다. 기존 주소와 본문은 유지하며 새 페이지의 주소는 서버가 자동으로 만든다. 태그, 별도 본문 편집, 카드 설정과 SEO 입력 기능은 제거했다. 운영 첫 화면의 기존 카드 이미지와 순서를 유지하기 위해 기존 카드 값은 표시용으로만 읽는다.
+
+로컬 통합 검증은 빈 테스트 데이터베이스에서 API를 시작한 뒤 `GA_ML_TEST_API_URL`(루프백 주소), `GA_ML_TEST_ADMIN_USER`, `GA_ML_TEST_ADMIN_PASSWORD`를 지정하고 `node --test server/test/site-navigation.integration.test.js`를 실행한다.
 
 ## Scripts
 - `npm run dev` - Vite dev server
@@ -55,7 +64,7 @@ Code-level defaults already applied:
 - Security headers are attached to all API responses.
 - Public read endpoints now return cacheable `Cache-Control`:
   - `GET /api/posts` (published/public): short CDN/browser cache
-  - `GET /api/tags`: short CDN/browser cache
+  - `GET /api/menus`: 메뉴 변경을 바로 반영하기 위해 `no-store`
   - `GET /api/media/:id`: medium CDN/browser cache
   - write/admin/auth endpoints stay `no-store`
 - VPS `/api` proxy preserves API cache headers.

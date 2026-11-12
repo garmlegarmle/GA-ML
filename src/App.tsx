@@ -1,18 +1,18 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Navigate, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import DOMPurify from 'dompurify';
-import { marked } from 'marked';
-import { AdminDock } from './components/AdminDock';
+import { renderRichContent, resolveLinearBodySource } from './lib/pageBody';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminPasswordModal } from './components/AdminPasswordModal';
-import { BodyLayoutEditorInline } from './components/BodyLayoutEditor';
 import { BodyLayoutRenderer } from './components/BodyLayoutRenderer';
 import { EntryCard } from './components/EntryCard';
-import { PageManagerModal } from './components/PageManagerModal';
 import { PagedRichColumn, type PagedRichColumnSegment } from './components/PagedRichColumn';
-import { PostEditorModal } from './components/PostEditorModal';
+import { SiteSidebar, NavigationProvider, useSiteNavigation, Breadcrumbs } from './components/SiteNavigation';
+import { BoardRoute, PageManager } from './components/PageBoards';
+import { MenuManager } from './components/MenuManager';
+import { LayoutPageEditor } from './components/LayoutPageEditor';
+import { editHref, menuTrail } from './lib/navigation';
 import { SiteFooter } from './components/SiteFooter';
-import { SiteHeader } from './components/SiteHeader';
 import { trackPageView } from './lib/analytics';
 import { changeAdminPassword, getPostBySlug, getSession, listPosts, login, logout } from './lib/api';
 import {
@@ -21,21 +21,13 @@ import {
   TEXAS_HOLDEM_TOURNAMENT_SLUG,
   TREND_ANALYZER_TOOL_SLUG
 } from './lib/postSlugs';
-import { detectBrowserLang, normalizeLang, normalizeSection, sectionLabel, t } from './lib/site';
-import type { BodyLayout, PostItem, PostLayoutBlock, PostSaveSnapshot, SiteLang, SiteSection } from './types';
+import { detectBrowserLang, normalizeLang, normalizeSection, t } from './lib/site';
+import type { PostItem, SiteLang, SiteSection } from './types';
 
 interface AdminState {
   loading: boolean;
   isAdmin: boolean;
   username: string | null;
-}
-
-interface EditorState {
-  open: boolean;
-  mode: 'create' | 'edit';
-  initialPost: PostItem | null;
-  defaultLang: SiteLang;
-  defaultSection: SiteSection;
 }
 
 interface LanguageToggleState {
@@ -58,47 +50,6 @@ const LazyHandShooterGameContent = lazy(() =>
   import('./components/HandShooterGame').then((module) => ({ default: module.HandShooterGameContent }))
 );
 
-function toPostItem(snapshot: PostSaveSnapshot, existing?: PostItem): PostItem {
-  return {
-    id: snapshot.id,
-    slug: snapshot.slug,
-    title: snapshot.title,
-    excerpt: snapshot.excerpt,
-    content_md: (snapshot.content_md ?? existing?.content_md) || '',
-    content_before_md: snapshot.content_before_md ?? existing?.content_before_md ?? null,
-    content_after_md: snapshot.content_after_md ?? existing?.content_after_md ?? null,
-    layout_blocks: snapshot.layout_blocks ?? existing?.layout_blocks ?? null,
-    body_layout_json: snapshot.body_layout_json ?? existing?.body_layout_json ?? null,
-    status: snapshot.status,
-    published_at: snapshot.status === 'published' ? existing?.published_at || snapshot.updated_at : null,
-    created_at: existing?.created_at || snapshot.updated_at,
-    updated_at: snapshot.updated_at,
-    lang: snapshot.lang,
-    section: snapshot.section,
-    pair_slug: existing?.pair_slug || null,
-    view_count: existing?.view_count || 0,
-    tags: snapshot.tags,
-    meta: snapshot.meta || existing?.meta || { title: null, description: null },
-    og: snapshot.og || existing?.og || { title: null, description: null, imageUrl: null },
-    schemaType: snapshot.schemaType ?? existing?.schemaType ?? null,
-    cover: existing?.cover || null,
-    card: snapshot.card,
-    tool_layout: snapshot.tool_layout ?? existing?.tool_layout ?? null
-  };
-}
-
-function renderRichContent(raw: string | null | undefined): string {
-  if (!raw) return '';
-
-  const value = String(raw || '');
-  if (/<[a-z][\s\S]*>/i.test(value)) {
-    return DOMPurify.sanitize(value);
-  }
-
-  const parsed = marked.parse(value, { async: false }) as string;
-  return DOMPurify.sanitize(parsed);
-}
-
 function resolveColumnSources(post: Pick<PostItem, 'content_md' | 'content_before_md' | 'content_after_md'> | null | undefined) {
   const leftSource = String(post?.content_before_md || '').trim();
   const rightSource = String(post?.content_after_md || '').trim();
@@ -113,87 +64,15 @@ function resolveColumnSources(post: Pick<PostItem, 'content_md' | 'content_befor
   };
 }
 
-function canPaginateLayoutBlocks(blocks: PostLayoutBlock[]): boolean {
-  return blocks.every((block) => block.type === 'text');
-}
-
 function toPagedSegmentsFromHtml(html: string | null | undefined, key: string): PagedRichColumnSegment[] {
   const value = String(html || '').trim();
   return value ? [{ key, html: value }] : [];
-}
-
-function toPagedSegmentsFromBlocks(blocks: PostLayoutBlock[]): PagedRichColumnSegment[] {
-  return blocks.flatMap((block) => {
-    if (block.type !== 'text') return [];
-
-    const html = renderRichContent(block.html);
-    const value = String(html || '').trim();
-    return value ? [{ key: block.id, html: value }] : [];
-  });
-}
-
-function sortLayoutBlocks(blocks: PostLayoutBlock[] | null | undefined, column: 'left' | 'right') {
-  return (Array.isArray(blocks) ? blocks : [])
-    .filter((block) => block.visible !== false && block.column === column)
-    .sort((left, right) => Number(left.order || 0) - Number(right.order || 0));
-}
-
-function sortLayoutBlocksForSingleFlow(blocks: PostLayoutBlock[] | null | undefined) {
-  return (Array.isArray(blocks) ? blocks : [])
-    .filter((block) => block.visible !== false)
-    .sort((left, right) => {
-      if (left.column !== right.column) {
-        return left.column === 'left' ? -1 : 1;
-      }
-      return Number(left.order || 0) - Number(right.order || 0);
-    });
-}
-
-function resolveLinearBodySource(post: Pick<PostItem, 'content_md' | 'content_before_md' | 'content_after_md' | 'layout_blocks'> | null | undefined) {
-  const direct = String(post?.content_md || '').trim();
-  if (direct) return direct;
-
-  const fromBlocks = sortLayoutBlocksForSingleFlow(post?.layout_blocks)
-    .filter((block) => block.type === 'text')
-    .map((block) => String(block.html || '').trim())
-    .filter(Boolean)
-    .join('\n');
-  if (fromBlocks) return fromBlocks;
-
-  const before = String(post?.content_before_md || '').trim();
-  const after = String(post?.content_after_md || '').trim();
-  return [before, after].filter(Boolean).join('\n');
-}
-
-function upsertPost(list: PostItem[], snapshot: PostSaveSnapshot, maxItems?: number): PostItem[] {
-  const index = list.findIndex((post) => post.id === snapshot.id);
-  let next: PostItem[];
-
-  if (index >= 0) {
-    next = [...list];
-    next[index] = toPostItem(snapshot, list[index]);
-  } else {
-    next = [toPostItem(snapshot), ...list];
-  }
-
-  if (typeof maxItems === 'number' && maxItems > 0) {
-    return next.slice(0, maxItems);
-  }
-  return next;
 }
 
 function postDateValue(post: Pick<PostItem, 'published_at' | 'created_at'>): number {
   const raw = post.published_at || post.created_at;
   const value = Date.parse(raw);
   return Number.isFinite(value) ? value : 0;
-}
-
-function sortPostsByNewest(list: PostItem[]): PostItem[] {
-  return [...list].sort((a, b) => {
-    const diff = postDateValue(b) - postDateValue(a);
-    if (diff !== 0) return diff;
-    return b.id - a.id;
-  });
 }
 
 function postRankValue(post: PostItem): number | null {
@@ -217,76 +96,6 @@ function sortPostsByCardRank(list: PostItem[], order: PostSortOrder): PostItem[]
     if (dateDiff !== 0) return dateDiff;
     return b.id - a.id;
   });
-}
-
-function slugifyValue(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-function buildCopyTitle(title: string, lang: SiteLang): string {
-  const suffix = lang === 'ko' ? '복사본' : 'Copy';
-  return `${String(title || '').trim()} ${suffix}`.trim();
-}
-
-function buildCopySlug(sourceSlug: string, existingSlugs: Iterable<string>): string {
-  const used = new Set(Array.from(existingSlugs, (slug) => String(slug || '').trim().toLowerCase()).filter(Boolean));
-  const base = `${slugifyValue(sourceSlug) || 'post'}-copy`;
-  if (!used.has(base)) return base;
-
-  let index = 2;
-  while (used.has(`${base}-${index}`)) {
-    index += 1;
-  }
-  return `${base}-${index}`;
-}
-
-async function listAllSectionSlugs(lang: SiteLang, section: SiteSection): Promise<Set<string>> {
-  const slugs = new Set<string>();
-  const limit = 100;
-  let page = 1;
-  let totalPages = 1;
-
-  while (page <= totalPages) {
-    const response = await listPosts({ lang, section, status: 'all', page, limit });
-    for (const item of response.items || []) {
-      if (item.slug) slugs.add(item.slug);
-    }
-    totalPages = Math.max(1, Math.ceil(Number(response.total || 0) / limit));
-    if (!response.items?.length) break;
-    page += 1;
-  }
-
-  return slugs;
-}
-
-function buildCopySeed(post: PostItem, slug: string): PostItem {
-  const now = new Date().toISOString();
-  const title = buildCopyTitle(post.title, post.lang);
-  const derivedTag = post.tags.join(', ');
-
-  return {
-    ...post,
-    id: 0,
-    slug,
-    title,
-    status: 'draft',
-    published_at: null,
-    created_at: now,
-    updated_at: now,
-    pair_slug: null,
-    view_count: 0,
-    card: {
-      ...post.card,
-      title,
-      tag: derivedTag || 'Tag'
-    }
-  };
 }
 
 const VIEW_COUNT_EXCLUDED_PAGE_SLUGS = new Set(['about', 'contact', 'privacy-policy']);
@@ -366,23 +175,6 @@ function renderTitleWithHiddenLoginTrigger(
   });
 }
 
-function upsertHeadMeta(selector: string, attrName: 'name' | 'property', attrValue: string, content: string): () => void {
-  let element = document.head.querySelector(selector) as HTMLMetaElement | null;
-  const created = !element;
-  if (!element) {
-    element = document.createElement('meta');
-    element.setAttribute(attrName, attrValue);
-    document.head.appendChild(element);
-  }
-  element.setAttribute('content', content);
-
-  return () => {
-    if (created && element?.parentNode) {
-      element.parentNode.removeChild(element);
-    }
-  };
-}
-
 function useAdminSession() {
   const [state, setState] = useState<AdminState>({ loading: true, isAdmin: false, username: null });
 
@@ -406,522 +198,96 @@ function useAdminSession() {
   return { state, refresh };
 }
 
-function SiteShell({
-  lang,
-  active,
-  languageTogglePath,
-  languageToggleState,
-  children
-}: {
+function SiteShell({ lang, activeMenuId, languageTogglePath, languageToggleState, children }: {
   lang: SiteLang;
-  active: 'home' | SiteSection;
+  activeMenuId?: number | null;
   languageTogglePath?: string;
   languageToggleState?: LanguageToggleState | null;
   children: React.ReactNode;
 }) {
   return (
-    <div className="site-shell">
-      <SiteHeader lang={lang} active={active} languageTogglePath={languageTogglePath} languageToggleState={languageToggleState} />
-      <main>{children}</main>
-      <SiteFooter lang={lang} />
+    <div className="site-shell site-shell--sidebar">
+      <SiteSidebar lang={lang} activeMenuId={activeMenuId} languageTogglePath={languageTogglePath} languageToggleState={languageToggleState} />
+      <div className="site-main-column">
+        <main id="main-content" tabIndex={-1}>{children}</main>
+        <SiteFooter lang={lang} />
+      </div>
     </div>
   );
 }
 
 function RootRoute() {
-  const lang = detectBrowserLang();
-  return <Navigate to={`/${lang}/`} replace />;
+  return <Navigate to={`/${detectBrowserLang()}/`} replace />;
 }
 
-function HomePage({
-  admin,
-  requestAdmin,
-  openCreate,
-  openPageManager,
-  openPasswordChange,
-  refreshKey,
-  savedPost
-}: {
-  admin: AdminState;
-  requestAdmin: () => void;
-  openCreate: (section: SiteSection, post?: PostItem, forcedLang?: SiteLang) => void;
-  openPageManager: () => void;
-  openPasswordChange: () => void;
-  refreshKey: number;
-  savedPost: PostSaveSnapshot | null;
-}) {
-  const params = useParams();
-  const lang = normalizeLang(params.lang);
+function HomePage({ lang }: { lang: SiteLang }) {
+  const { menus, admin } = useSiteNavigation();
   const [posts, setPosts] = useState<PostItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState<'all' | 'tools' | 'games' | 'blog'>('all');
-  const [selectedTag, setSelectedTag] = useState('');
-  const [sortOrder, setSortOrder] = useState<PostSortOrder>('desc');
-  const [error, setError] = useState('');
-
+  const [pending, setPending] = useState(true);
+  const [error, setError] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [order, setOrder] = useState<PostSortOrder>('desc');
   useEffect(() => {
-    let canceled = false;
-
+    let current = true;
     async function load() {
-      setLoading(true);
-      setError('');
-      try {
-        const status = admin.isAdmin ? 'all' : 'published';
-        const [blog, tools, games] = await Promise.all([
-          listPosts({ lang, section: 'blog', status, limit: 120 }),
-          listPosts({ lang, section: 'tools', status, limit: 120 }),
-          listPosts({ lang, section: 'games', status, limit: 120 })
-        ]);
-
-        if (canceled) return;
-        const merged = sortPostsByNewest([
-          ...(Array.isArray(blog.items) ? blog.items : []),
-          ...(Array.isArray(tools.items) ? tools.items : []),
-          ...(Array.isArray(games.items) ? games.items : [])
-        ]);
-        setPosts(merged);
-      } catch (err) {
-        if (canceled) return;
-        setPosts([]);
-        setError(err instanceof Error ? err.message : 'Failed to load home feeds');
-      } finally {
-        if (!canceled) {
-          setLoading(false);
-        }
+      const items: PostItem[] = [];
+      let page = 1;
+      while (current) {
+        const response = await listPosts({ lang, feed: true, status: admin ? 'all' : 'published', page, limit: 50 });
+        items.push(...response.items);
+        if (items.length >= response.total || !response.items.length) break;
+        page++;
       }
+      if (current) { setPosts(items); setPending(false); }
     }
+    setPending(true); setError(false); setPosts([]);
+    load().catch(() => { if (current) { setError(true); setPending(false); } });
+    return () => { current = false; };
+  }, [lang, admin]);
 
-    void load();
-    return () => {
-      canceled = true;
-    };
-  }, [admin.isAdmin, lang, refreshKey]);
-
-  useEffect(() => {
-    if (!savedPost) return;
-    if (savedPost.lang !== lang) return;
-    if (!['blog', 'tools', 'games'].includes(savedPost.section)) return;
-
-    setPosts((prev) => {
-      const without = prev.filter((item) => item.id !== savedPost.id);
-      if (!admin.isAdmin && savedPost.status !== 'published') {
-        return without;
-      }
-      return sortPostsByNewest([toPostItem(savedPost), ...without]);
-    });
-  }, [admin.isAdmin, lang, savedPost]);
-
-  useEffect(() => {
-    setSelectedCategory('all');
-    setSelectedTag('');
-  }, [lang]);
-
-  useEffect(() => {
-    setSelectedTag('');
-  }, [selectedCategory]);
-
-  const categoryCounts = useMemo(
-    () => ({
-      all: posts.length,
-      tools: posts.filter((item) => item.section === 'tools').length,
-      games: posts.filter((item) => item.section === 'games').length,
-      blog: posts.filter((item) => item.section === 'blog').length
-    }),
-    [posts]
-  );
-
-  const categoryPosts = useMemo(() => {
-    if (selectedCategory === 'all') return posts;
-    return posts.filter((item) => item.section === selectedCategory);
-  }, [posts, selectedCategory]);
-
-  const tagCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of categoryPosts) {
-      const seen = new Set<string>();
-      for (const rawTag of item.tags || []) {
-        const tag = String(rawTag || '').trim();
-        if (!tag) continue;
-        const key = tag.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        counts.set(tag, (counts.get(tag) || 0) + 1);
-      }
-    }
-
-    return [...counts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
-  }, [categoryPosts]);
-
-  const visiblePosts = useMemo(() => {
-    if (!selectedTag) return categoryPosts;
-    const key = selectedTag.trim().toLowerCase();
-    return categoryPosts.filter((item) =>
-      item.tags.some((tag) => String(tag || '').trim().toLowerCase() === key)
-    );
-  }, [categoryPosts, selectedTag]);
-  const sortedVisiblePosts = useMemo(() => sortPostsByCardRank(visiblePosts, sortOrder), [sortOrder, visiblePosts]);
-
-  const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
+  const paths = new Map(posts.map((post) => {
+    const linked = menus.find((menu) => menu.postId === post.id);
+    return [post.id, menuTrail(menus, post.menuId ?? linked?.id ?? null)];
+  }));
+  const categories = menus.filter((menu) => menu.kind === 'board' && !menuTrail(menus, menu.parentId).some((parent) => parent.kind === 'board'));
+  const current = categories.some((menu) => menu.id === selected) ? selected : null;
+  const visible = sortPostsByCardRank(current === null ? posts : posts.filter((post) =>
+    paths.get(post.id)?.some((menu) => menu.id === current)
+  ), order);
 
   return (
-    <SiteShell lang={lang} active="home">
-      <section className="page-section">
+    <SiteShell lang={lang}>
+      <section className="page-section home-feed">
         <div className="container">
-          <header className="list-head list-head--home-filters">
-            <div className="list-tags-center">
-              <p className="list-tags-title">{t(lang, 'home.category')}</p>
-              <p className="list-tags">
-                {([
-                  { key: 'all', label: t(lang, 'common.all'), count: categoryCounts.all },
-                  { key: 'tools', label: sectionLabel('tools', lang), count: categoryCounts.tools },
-                  { key: 'games', label: sectionLabel('games', lang), count: categoryCounts.games },
-                  { key: 'blog', label: sectionLabel('blog', lang), count: categoryCounts.blog }
-                ] as const).map((item, index) => (
-                  <span key={`home-category-${item.key}`}>
-                    <button
-                      type="button"
-                      className={`tag-filter-btn${selectedCategory === item.key ? ' is-active' : ''}`}
-                      onClick={() => setSelectedCategory(item.key)}
-                    >
-                      {item.label}({item.count})
-                    </button>
-                    {index < 3 ? ' | ' : ''}
-                  </span>
-                ))}
-              </p>
+          <header className="home-feed__filters">
+            <div className="home-feed__categories" aria-label={t(lang, 'home.category')}>
+              <button type="button" aria-pressed={current === null} onClick={() => setSelected(null)}>{t(lang, 'common.all')} ({posts.length})</button>
+              {categories.map((menu) => <button key={menu.id} type="button" aria-pressed={current === menu.id} onClick={() => setSelected(menu.id)}>
+                {menu.label} ({posts.filter((post) => paths.get(post.id)?.some((entry) => entry.id === menu.id)).length})
+              </button>)}
             </div>
-
-            <div className="list-tags-center">
-              <p className="list-tags-title">{t(lang, 'home.tagList')}</p>
-              {tagCounts.length > 0 ? (
-                <p className="list-tags">
-                  <span key="home-tag-all">
-                    <button
-                      type="button"
-                      className={`tag-filter-btn${selectedTag === '' ? ' is-active' : ''}`}
-                      onClick={() => setSelectedTag('')}
-                    >
-                      {t(lang, 'common.all')}({categoryPosts.length})
-                    </button>
-                    {' | '}
-                  </span>
-                  {tagCounts.map((item, index) => (
-                    <span key={`home-tag-${item.name}-${index}`}>
-                      <button
-                        type="button"
-                        className={`tag-filter-btn${selectedTag === item.name ? ' is-active' : ''}`}
-                        onClick={() => setSelectedTag((prev) => (prev === item.name ? '' : item.name))}
-                      >
-                        {item.name}({item.count})
-                      </button>
-                      {index < tagCounts.length - 1 ? ' | ' : ''}
-                    </span>
-                  ))}
-                </p>
-              ) : (
-                <p className="list-tags list-tags--empty">
-                  <button
-                    type="button"
-                    className={`tag-filter-btn${selectedTag === '' ? ' is-active' : ''}`}
-                    onClick={() => setSelectedTag('')}
-                  >
-                    {t(lang, 'common.all')}({categoryPosts.length})
-                  </button>
-                </p>
-              )}
-            </div>
-
-            <div className="list-head__sort">
-              <label className="list-head__sort-label">
-                <span>{t(lang, 'common.sort')}</span>
-                <select
-                  className="list-head__sort-select"
-                  value={sortOrder}
-                  onChange={(event) => setSortOrder(event.target.value as PostSortOrder)}
-                >
-                  <option value="desc">{t(lang, 'common.descending')}</option>
-                  <option value="asc">{t(lang, 'common.ascending')}</option>
-                </select>
-              </label>
-            </div>
+            <label className="list-head__sort-label">
+              <span>{t(lang, 'common.sort')}</span>
+              <select className="list-head__sort-select" value={order} onChange={(event) => setOrder(event.target.value as PostSortOrder)}>
+                <option value="desc">{t(lang, 'common.descending')}</option>
+                <option value="asc">{t(lang, 'common.ascending')}</option>
+              </select>
+            </label>
           </header>
-
-          {loading ? <p>{t(lang, 'common.loading')}</p> : null}
+          {pending && <p role="status">{t(lang, 'common.loading')}</p>}
+          {error && <p role="alert">{lang === 'ko' ? '첫 화면의 페이지를 불러오지 못했습니다.' : 'Could not load the home feed.'}</p>}
           <div className="listing-grid listing-grid--four listing-grid--center">
-            {sortedVisiblePosts.map((post) => (
-              <EntryCard
-                key={post.id}
-                post={post}
-                lang={lang}
-                href={`/${lang}/${post.section}/${post.slug}/`}
-                showDraftBadge={admin.isAdmin}
-              />
-            ))}
+            {visible.map((post) => <EntryCard key={post.id} post={post} lang={lang} category={paths.get(post.id)?.at(-1)?.label} showDraftBadge={admin} />)}
           </div>
-
-          {!loading && sortedVisiblePosts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
+          {!pending && !error && !visible.length && <p className="workspace-muted">{t(lang, 'common.noPosts')}</p>}
         </div>
       </section>
-
-      {error ? (
-        <section className="page-section">
-          <div className="container">
-            <p className="list-tags">{error}</p>
-          </div>
-        </section>
-      ) : null}
-
-      {!admin.loading ? (
-        <AdminDock
-          lang={lang}
-          showLogin={showLogin}
-          isAdmin={admin.isAdmin}
-          onLogin={requestAdmin}
-          onLogout={() => {
-            void logout().then(() => window.location.reload());
-          }}
-          onWrite={() => openCreate(selectedCategory === 'all' ? 'blog' : selectedCategory)}
-          onManagePages={openPageManager}
-          onChangePassword={openPasswordChange}
-        />
-      ) : null}
     </SiteShell>
   );
 }
 
-function SectionListPage({
-  admin,
-  requestAdmin,
-  openCreate,
-  openPageManager,
-  openPasswordChange,
-  refreshKey,
-  savedPost
-}: {
-  admin: AdminState;
-  requestAdmin: () => void;
-  openCreate: (section: SiteSection, post?: PostItem, forcedLang?: SiteLang) => void;
-  openPageManager: () => void;
-  openPasswordChange: () => void;
-  refreshKey: number;
-  savedPost: PostSaveSnapshot | null;
-}) {
-  const params = useParams();
-  const lang = normalizeLang(params.lang);
-  const section = normalizeSection(params.section || '') as SiteSection | null;
-  const isValidSection = Boolean(section);
-
-  const [posts, setPosts] = useState<PostItem[]>([]);
-  const [selectedTag, setSelectedTag] = useState('');
-  const [sortOrder, setSortOrder] = useState<PostSortOrder>('desc');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let canceled = false;
-    setLoading(true);
-    setError('');
-
-    async function load() {
-      if (!isValidSection || !section) {
-        setPosts([]);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const response = await listPosts({
-          lang,
-          section,
-          status: admin.isAdmin ? 'all' : 'published',
-          limit: 120,
-          page: 1
-        });
-        if (canceled) return;
-        setPosts(response.items);
-      } catch (err) {
-        if (canceled) return;
-        setPosts([]);
-        setError(err instanceof Error ? err.message : 'Failed to load posts');
-      } finally {
-        if (!canceled) setLoading(false);
-      }
-    }
-
-    void load();
-    return () => {
-      canceled = true;
-    };
-  }, [admin.isAdmin, isValidSection, lang, refreshKey, section]);
-
-  useEffect(() => {
-    setSelectedTag('');
-  }, [lang, section]);
-
-  useEffect(() => {
-    if (!savedPost) return;
-    if (!section || !isValidSection) return;
-    if (savedPost.lang !== lang || savedPost.section !== section) return;
-    if (savedPost.status !== 'published' && !admin.isAdmin) return;
-    if (
-      selectedTag &&
-      !savedPost.tags.some((tag) => tag.trim().toLowerCase() === selectedTag.trim().toLowerCase())
-    ) {
-      return;
-    }
-
-    setPosts((prev) => upsertPost(prev, savedPost, 120));
-  }, [admin.isAdmin, isValidSection, lang, savedPost, section, selectedTag]);
-
-  const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
-  const sectionTotal = posts.length;
-  const tagCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of posts) {
-      const seen = new Set<string>();
-      for (const rawTag of item.tags || []) {
-        const tag = String(rawTag || '').trim();
-        if (!tag) continue;
-        const key = tag.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        counts.set(tag, (counts.get(tag) || 0) + 1);
-      }
-    }
-
-    return [...counts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
-  }, [posts]);
-  const visiblePosts = useMemo(() => {
-    if (!selectedTag) return posts;
-    const key = selectedTag.trim().toLowerCase();
-    return posts.filter((item) =>
-      item.tags.some((tag) => String(tag || '').trim().toLowerCase() === key)
-    );
-  }, [posts, selectedTag]);
-  const sortedVisiblePosts = useMemo(() => sortPostsByCardRank(visiblePosts, sortOrder), [sortOrder, visiblePosts]);
-
-  if (!isValidSection || !section) {
-    return <Navigate to={`/${lang}/`} replace />;
-  }
-
-  return (
-    <SiteShell lang={lang} active={section}>
-      <section className="page-section">
-        <div className="container">
-          <header className="list-head">
-            <h1>{sectionLabel(section, lang)}</h1>
-            <div className="list-tags-center">
-              <p className="list-tags-title">{t(lang, 'home.tagList')}</p>
-              {tagCounts.length > 0 ? (
-                <p className="list-tags">
-                  <span key="see-all-tag">
-                    <button
-                      type="button"
-                      className={`tag-filter-btn${selectedTag === '' ? ' is-active' : ''}`}
-                      onClick={() => setSelectedTag('')}
-                    >
-                      {t(lang, 'common.all')}({sectionTotal})
-                    </button>
-                    {' | '}
-                  </span>
-                  {tagCounts.map((item, index) => (
-                    <span key={`${item.name}-${index}`}>
-                      <button
-                        type="button"
-                        className={`tag-filter-btn${selectedTag === item.name ? ' is-active' : ''}`}
-                        onClick={() => setSelectedTag((prev) => (prev === item.name ? '' : item.name))}
-                      >
-                        {item.name}({item.count})
-                      </button>
-                      {index < tagCounts.length - 1 ? ' | ' : ''}
-                    </span>
-                  ))}
-                </p>
-              ) : (
-                <p className="list-tags">
-                  <button
-                    type="button"
-                    className={`tag-filter-btn${selectedTag === '' ? ' is-active' : ''}`}
-                    onClick={() => setSelectedTag('')}
-                  >
-                    {t(lang, 'common.all')}({sectionTotal})
-                  </button>
-                </p>
-              )}
-            </div>
-            <div className="list-head__sort">
-              <label className="list-head__sort-label">
-                <span>{t(lang, 'common.sort')}</span>
-                <select
-                  className="list-head__sort-select"
-                  value={sortOrder}
-                  onChange={(event) => setSortOrder(event.target.value as PostSortOrder)}
-                >
-                  <option value="desc">{t(lang, 'common.descending')}</option>
-                  <option value="asc">{t(lang, 'common.ascending')}</option>
-                </select>
-              </label>
-            </div>
-          </header>
-
-          {loading ? <p>{t(lang, 'common.loading')}</p> : null}
-          {error ? <p>{error}</p> : null}
-
-          <div className="listing-grid listing-grid--four listing-grid--center">
-            {sortedVisiblePosts.map((post) => (
-              <EntryCard
-                key={post.id}
-                post={post}
-                lang={lang}
-                href={`/${lang}/${section}/${post.slug}/`}
-                showDraftBadge={admin.isAdmin}
-              />
-            ))}
-          </div>
-
-          {!loading && sortedVisiblePosts.length === 0 ? <p className="list-tags">{t(lang, 'common.noPosts')}</p> : null}
-        </div>
-      </section>
-
-      {!admin.loading ? (
-        <AdminDock
-          lang={lang}
-          showLogin={showLogin}
-          isAdmin={admin.isAdmin}
-          onLogin={requestAdmin}
-          onLogout={() => {
-            void logout().then(() => window.location.reload());
-          }}
-          onWrite={() => openCreate(section)}
-          onManagePages={openPageManager}
-          onChangePassword={openPasswordChange}
-        />
-      ) : null}
-    </SiteShell>
-  );
-}
-
-function DetailPage({
-  admin,
-  requestAdmin,
-  openCreate,
-  openPageManager,
-  openPasswordChange,
-  refreshKey,
-  savedPost
-}: {
-  admin: AdminState;
-  requestAdmin: () => void;
-  openCreate: (section: SiteSection, post?: PostItem, forcedLang?: SiteLang) => void;
-  openPageManager: () => void;
-  openPasswordChange: () => void;
-  refreshKey: number;
-  savedPost: PostSaveSnapshot | null;
-}) {
+function DetailPage() {
+  const { admin, menus, login: requestAdmin } = useSiteNavigation();
   const params = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -933,10 +299,6 @@ function DetailPage({
   const [post, setPost] = useState<PostItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [previousPost, setPreviousPost] = useState<PostItem | null>(null);
-  const [nextPost, setNextPost] = useState<PostItem | null>(null);
-  const [relatedPosts, setRelatedPosts] = useState<PostItem[]>([]);
-  const [layoutEditMode, setLayoutEditMode] = useState(false);
   const languageToggle = useMemo(
     () => buildDetailLanguageToggle(lang, section, slug, post?.pair_slug),
     [lang, post?.pair_slug, section, slug]
@@ -979,120 +341,21 @@ function DetailPage({
     return () => {
       canceled = true;
     };
-  }, [isValidSection, lang, languageSwitchFallback, navigate, refreshKey, section, slug]);
-
-  useEffect(() => {
-    if (!savedPost) return;
-    setPost((prev) => {
-      if (!prev || prev.id !== savedPost.id) return prev;
-      return toPostItem(savedPost, prev);
-    });
-  }, [savedPost]);
-
-  useEffect(() => {
-    if (!post) {
-      setPreviousPost(null);
-      setNextPost(null);
-      setRelatedPosts([]);
-      return;
-    }
-    const currentPost: PostItem = post;
-    if (currentPost.section === 'pages') {
-      setPreviousPost(null);
-      setNextPost(null);
-      setRelatedPosts([]);
-      return;
-    }
-
-    let canceled = false;
-    async function loadNeighborsAndRelated() {
-      try {
-        const status = admin.isAdmin ? 'all' : 'published';
-        const [neighborsResponse, relatedResponse] = await Promise.all([
-          listPosts({
-            lang: currentPost.lang,
-            section: currentPost.section,
-            status,
-            page: 1,
-            limit: 120
-          }),
-          currentPost.tags[0]
-            ? listPosts({
-                lang: currentPost.lang,
-                section: currentPost.section,
-                status,
-                tag: currentPost.tags[0],
-                page: 1,
-                limit: 120
-              })
-            : Promise.resolve({ ok: true, items: [], page: 1, limit: 0, total: 0 })
-        ]);
-
-        if (canceled) return;
-
-        const neighbors = Array.isArray(neighborsResponse.items) ? neighborsResponse.items : [];
-        const currentIndex = neighbors.findIndex((item) => item.id === currentPost.id);
-        setPreviousPost(currentIndex >= 0 ? neighbors[currentIndex + 1] || null : null);
-        setNextPost(currentIndex > 0 ? neighbors[currentIndex - 1] || null : null);
-
-        const related = Array.isArray(relatedResponse.items) ? relatedResponse.items : [];
-        setRelatedPosts(
-          related
-            .filter((item) => item.id !== currentPost.id)
-            .slice(0, 4)
-        );
-      } catch {
-        if (canceled) return;
-        setPreviousPost(null);
-        setNextPost(null);
-        setRelatedPosts([]);
-      }
-    }
-
-    void loadNeighborsAndRelated();
-    return () => {
-      canceled = true;
-    };
-  }, [admin.isAdmin, post?.id, post?.lang, post?.section, post?.tags]);
+  }, [admin, isValidSection, lang, languageSwitchFallback, navigate, section, slug]);
 
   useEffect(() => {
     if (!post) return;
-    const canonical = `${window.location.origin}/${post.lang}/${post.section}/${post.slug}/`;
-    const metaTitle = post.meta?.title?.trim() || post.title;
-    const metaDescription = post.meta?.description?.trim() || post.excerpt || '';
-    const ogTitle = metaTitle;
-    const ogDescription = metaDescription;
-    const ogImage = post.card?.imageUrl || post.cover?.url || '';
-
-    const previousTitle = document.title;
-    document.title = `${metaTitle} | GA-ML`;
-
-    const cleanup = [
-      upsertHeadMeta('meta[name="description"]', 'name', 'description', metaDescription),
-      upsertHeadMeta('meta[property="og:type"]', 'property', 'og:type', 'article'),
-      upsertHeadMeta('meta[property="og:title"]', 'property', 'og:title', ogTitle),
-      upsertHeadMeta('meta[property="og:description"]', 'property', 'og:description', ogDescription),
-      upsertHeadMeta('meta[property="og:url"]', 'property', 'og:url', canonical)
-    ];
-
-    if (ogImage) {
-      cleanup.push(upsertHeadMeta('meta[property="og:image"]', 'property', 'og:image', ogImage));
-    }
-
-    return () => {
-      document.title = previousTitle;
-      cleanup.forEach((fn) => fn());
-    };
-  }, [post]);
+    document.title = `${post.title} | GA-ML`;
+    return () => { document.title = 'GA-ML'; };
+  }, [post?.title]);
 
   const linearBodyHtml = useMemo(
     () => renderRichContent(resolveLinearBodySource(post)),
     [post?.content_after_md, post?.content_before_md, post?.content_md, post?.layout_blocks]
   );
 
-  const showLogin = useMemo(() => new URLSearchParams(window.location.search).get('admin') === '8722', []);
   const enableHiddenPolicyLogin =
-    section === 'pages' && lang === 'en' && slug === 'privacy-policy' && !admin.isAdmin;
+    section === 'pages' && lang === 'en' && slug === 'privacy-policy' && !admin;
   const isStandalonePage = section === 'pages';
   const isChartInterpretationTool = section === 'tools' && slug === CHART_INTERPRETATION_TOOL_SLUG;
   const isTrendAnalyzerTool = section === 'tools' && slug === TREND_ANALYZER_TOOL_SLUG;
@@ -1102,41 +365,12 @@ function DetailPage({
   const columnSources = useMemo(() => resolveColumnSources(post), [post?.content_after_md, post?.content_before_md, post?.content_md]);
   const leftColumnHtml = useMemo(() => renderRichContent(columnSources.leftSource), [columnSources.leftSource]);
   const rightColumnHtml = useMemo(() => renderRichContent(columnSources.rightSource), [columnSources.rightSource]);
-  const hasStructuredToolLayout = Boolean(
-    section === 'tools' && post?.tool_layout?.sections?.some((toolSection) => toolSection.enabled)
-  );
   const usesPagedDetailFlow = Boolean((section === 'blog' || section === 'pages') && linearBodyHtml);
   const pagedSegments = useMemo(
     () => (usesPagedDetailFlow ? toPagedSegmentsFromHtml(linearBodyHtml, `post-${post?.id ?? 'content'}`) : []),
     [linearBodyHtml, post?.id, usesPagedDetailFlow]
   );
   const loadingCopy = t(lang, 'common.loading');
-  const schemaJson = useMemo(() => {
-    if (!post?.schemaType) return '';
-
-    const url = `${window.location.origin}/${post.lang}/${post.section}/${post.slug}/`;
-    if (post.schemaType === 'Service') {
-      return JSON.stringify({
-        '@context': 'https://schema.org',
-        '@type': 'Service',
-        name: post.title,
-        description: post.excerpt || '',
-        url
-      });
-    }
-
-    return JSON.stringify({
-      '@context': 'https://schema.org',
-      '@type': 'BlogPosting',
-      headline: post.title,
-      description: post.excerpt || '',
-      datePublished: post.published_at || post.created_at,
-      dateModified: post.updated_at,
-      inLanguage: post.lang,
-      url
-    });
-  }, [post]);
-
   function renderProgramLoadingFallback() {
     return <div className="detail-program__placeholder">{loadingCopy}</div>;
   }
@@ -1226,31 +460,28 @@ function DetailPage({
     );
   }
 
-  const isLayoutSection = section === 'blog' || section === 'pages';
-
-  function handleLayoutSaved(layout: BodyLayout) {
-    setPost((prev) => prev ? { ...prev, body_layout_json: layout } : prev);
-    setLayoutEditMode(false);
+  function renderProgram() {
+    return isChartInterpretationTool ? (
+      renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
+    ) : isTrendAnalyzerTool ? (
+      renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
+    ) : isHoldemTournamentGame ? (
+      renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
+    ) : isMineCartDuelGame ? (
+      renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
+    ) : section === 'tools' ? renderToolSections() : section === 'games' ? (
+      <section className="detail-program" aria-label="Program area">
+        {post?.cover?.url && <img src={post.cover.url} alt={post.title} loading="lazy" decoding="async" />}
+      </section>
+    ) : null;
   }
 
   function renderDetailBody() {
-    if (layoutEditMode && admin.isAdmin && isLayoutSection && post) {
-      return (
-        <div className="detail-layout__flow">
-          <BodyLayoutEditorInline
-            post={post}
-            lang={lang}
-            onSaved={handleLayoutSaved}
-            onExit={() => setLayoutEditMode(false)}
-          />
-        </div>
-      );
-    }
-
-    if (isLayoutSection && post?.body_layout_json) {
+    if (post?.body_layout_json) {
       return (
         <div className="detail-layout__flow detail-layout__flow--layout-renderer">
           <BodyLayoutRenderer layout={post.body_layout_json} />
+          {renderProgram()}
         </div>
       );
     }
@@ -1266,15 +497,7 @@ function DetailPage({
             <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: leftColumnHtml }} />
           ) : null}
 
-          {isChartInterpretationTool ? (
-            renderEmbeddedProgramSection(<LazyChartInterpretationToolContent lang={lang} embedded />, 'tool', 'Tool area')
-          ) : isTrendAnalyzerTool ? (
-            renderEmbeddedProgramSection(<LazyTrendAnalyzerToolContent lang={lang} embedded />, 'tool', 'Tool area')
-          ) : isHoldemTournamentGame ? (
-            renderEmbeddedProgramSection(<LazyHoldemTournamentGameContent lang={lang} embedded />, 'game', 'Game area')
-          ) : isMineCartDuelGame ? (
-            renderEmbeddedProgramSection(<LazyHandShooterGameContent lang={lang} embedded />, 'game', 'Game area')
-          ) : null}
+          {renderProgram()}
 
           {rightColumnHtml ? (
             <section className="detail-layout__content content-prose" dangerouslySetInnerHTML={{ __html: rightColumnHtml }} />
@@ -1324,315 +547,94 @@ function DetailPage({
   }
 
   if (!isValidSection || !section) return <Navigate to={`/${lang}/`} replace />;
+  const linkedMenus = post ? menus.filter((menu) => menu.postId === post.id) : [];
+  const linkId = Number(new URLSearchParams(location.search).get('menu'));
+  const linked = linkedMenus.find((menu) => menu.id === linkId) ?? (post?.menuId ? undefined : linkedMenus[0]);
+  const categoryId = linked?.id ?? post?.menuId ?? null;
 
   return (
-    <SiteShell
-      lang={lang}
-      active={section}
-      languageTogglePath={languageToggle.path}
-      languageToggleState={languageToggle.state}
-    >
+    <SiteShell lang={lang} activeMenuId={categoryId} languageTogglePath={languageToggle.path} languageToggleState={languageToggle.state}>
       <article className="page-section">
         <div className={`container detail-layout${usesPagedDetailFlow ? ' detail-layout--paged' : ''}`}>
-          {loading ? <p>{t(lang, 'common.loading')}</p> : null}
-          {error ? <p>{error}</p> : null}
-          {!loading && !error && post ? (
-            <>
-              <header className="detail-layout__head">
-                {!isStandalonePage ? (
-                  <>
-                    <div className="detail-layout__pager">
-                      {previousPost ? (
-                        <Link className="detail-layout__pager-link" to={`/${post.lang}/${post.section}/${previousPost.slug}/`}>
-                          {t(lang, 'detail.prev')}
-                        </Link>
-                      ) : (
-                        <span className="detail-layout__pager-link detail-layout__pager-link--placeholder" aria-hidden="true">
-                          {t(lang, 'detail.prev')}
-                        </span>
-                      )}
-                      {nextPost ? (
-                        <Link
-                          className="detail-layout__pager-link detail-layout__pager-link--next"
-                          to={`/${post.lang}/${post.section}/${nextPost.slug}/`}
-                        >
-                          {t(lang, 'detail.next')}
-                        </Link>
-                      ) : (
-                        <span
-                          className="detail-layout__pager-link detail-layout__pager-link--next detail-layout__pager-link--placeholder"
-                          aria-hidden="true"
-                        >
-                          {t(lang, 'detail.next')}
-                        </span>
-                      )}
-                    </div>
-                    <p className="detail-layout__tag">
-                      {Array.isArray(post.tags) && post.tags.length > 0 ? post.tags.join(' | ') : t(lang, 'detail.tagFallback')}
-                    </p>
-                    <p className="detail-layout__date">
-                      {t(lang, 'detail.created')}: {new Date(post.created_at).toLocaleDateString()}
-                      {post.updated_at && post.updated_at !== post.created_at
-                        ? ` | ${t(lang, 'detail.updated')}: ${new Date(post.updated_at).toLocaleDateString()}`
-                        : ''}
-                      {shouldShowViewCount(post) ? ` | ${t(lang, 'detail.views')}: ${formatViewCount(post.view_count, lang)}` : ''}
-                    </p>
-                  </>
-                ) : shouldShowViewCount(post) ? (
-                  <p className="detail-layout__date">
-                    {t(lang, 'detail.views')}: {formatViewCount(post.view_count, lang)}
-                  </p>
-                ) : null}
-                <div className="detail-layout__title-row">
-                  <h1>
-                    {renderTitleWithHiddenLoginTrigger(post.title, enableHiddenPolicyLogin, requestAdmin)}
-                  </h1>
-                </div>
-              </header>
-              {renderDetailBody()}
-              {!isStandalonePage && relatedPosts.length > 0 ? (
-                <section className="detail-related" aria-label={t(lang, 'detail.related')}>
-                  <h2>{`${t(lang, 'detail.related')}: #${post.tags[0]}`}</h2>
-                  <ul>
-                    {relatedPosts.map((item) => (
-                      <li key={`related-${item.id}`}>
-                        <Link to={`/${item.lang}/${item.section}/${item.slug}/`}>{item.title}</Link>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-              {schemaJson ? <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: schemaJson }} /> : null}
-            </>
-          ) : null}
+          {loading && <p role="status">{t(lang, 'common.loading')}</p>}
+          {error && <p role="alert">{error === 'Post not found' ? (lang === 'ko' ? '페이지를 찾을 수 없습니다.' : 'Page not found.') : error}</p>}
+          {!loading && !error && post && <>
+            <Breadcrumbs lang={lang} menuId={categoryId} title={linked ? undefined : post.title} />
+            <header className="detail-layout__head">
+              {!isStandalonePage && <p className="detail-layout__date">
+                {t(lang, 'detail.created')}: {new Date(post.created_at).toLocaleDateString(lang)}
+                {shouldShowViewCount(post) ? ` | ${t(lang, 'detail.views')}: ${formatViewCount(post.view_count, lang)}` : ''}
+              </p>}
+              <div className="detail-layout__title-row detail-layout__title-row--editable">
+                <h1>{renderTitleWithHiddenLoginTrigger(post.title, enableHiddenPolicyLogin, requestAdmin)}</h1>
+                {admin && <Link className="workspace-button" to={editHref(post)}>{lang === 'ko' ? '페이지 편집' : 'Edit page'}</Link>}
+              </div>
+            </header>
+            {renderDetailBody()}
+          </>}
         </div>
       </article>
-
-      {!admin.loading ? (
-        <AdminDock
-          lang={lang}
-          showLogin={showLogin}
-          isAdmin={admin.isAdmin}
-          onLogin={requestAdmin}
-          onLogout={() => {
-            void logout().then(() => window.location.reload());
-          }}
-          onWrite={() => openCreate(section)}
-          onManagePages={openPageManager}
-          onEditCurrent={post ? () => openCreate(section, post) : undefined}
-          onEditBodyLayout={post && admin.isAdmin && isLayoutSection ? () => setLayoutEditMode(true) : undefined}
-          onChangePassword={openPasswordChange}
-        />
-      ) : null}
     </SiteShell>
   );
 }
 
 function AppInner() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { state: admin, refresh } = useAdminSession();
   const hasTrackedInitialPageView = useRef(false);
-
-  const [editorState, setEditorState] = useState<EditorState>({
-    open: false,
-    mode: 'create',
-    initialPost: null,
-    defaultLang: 'en',
-    defaultSection: 'blog'
-  });
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [savedPost, setSavedPost] = useState<PostSaveSnapshot | null>(null);
-  const [pageManagerOpen, setPageManagerOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const currentLang = normalizeLang(location.pathname.split('/')[1]);
 
-  const currentLang = useMemo(() => {
-    const first = location.pathname.split('/').filter(Boolean)[0];
-    return normalizeLang(first);
-  }, [location.pathname]);
-
+  useEffect(() => { document.documentElement.lang = currentLang; }, [currentLang]);
+  useEffect(() => { if (!location.hash) window.scrollTo(0, 0); }, [location.pathname, location.hash]);
   useEffect(() => {
     if (!hasTrackedInitialPageView.current) {
       hasTrackedInitialPageView.current = true;
       return;
     }
-
-    const pagePath = `${location.pathname}${location.search}${location.hash}`;
-    trackPageView(pagePath);
+    trackPageView(`${location.pathname}${location.search}${location.hash}`);
   }, [location.hash, location.pathname, location.search]);
 
-  const requestAdmin = useCallback(() => {
-    setLoginOpen(true);
-  }, []);
-
-  const openCreate = useCallback(
-    (section: SiteSection, post?: PostItem, forcedLang?: SiteLang) => {
-      if (!admin.isAdmin) return;
-
-      if (post) {
-        setEditorState({
-          open: true,
-          mode: 'edit',
-          initialPost: post,
-          defaultLang: post.lang,
-          defaultSection: post.section
-        });
-        return;
-      }
-
-      setEditorState({
-        open: true,
-        mode: 'create',
-        initialPost: null,
-        defaultLang: forcedLang || currentLang,
-        defaultSection: section
-      });
-    },
-    [admin.isAdmin, currentLang]
-  );
-
-  const openPageManager = useCallback(() => {
-    if (!admin.isAdmin) return;
-    setPageManagerOpen(true);
-  }, [admin.isAdmin]);
-
-  const openCopy = useCallback(
-    async (post: PostItem) => {
-      if (!admin.isAdmin) return;
-
-      const existingSlugs = await listAllSectionSlugs(post.lang, post.section);
-      const nextSlug = buildCopySlug(post.slug, existingSlugs);
-      const seed = buildCopySeed(post, nextSlug);
-
-      setPageManagerOpen(false);
-      setEditorState({
-        open: true,
-        mode: 'create',
-        initialPost: seed,
-        defaultLang: post.lang,
-        defaultSection: post.section
-      });
-    },
-    [admin.isAdmin]
-  );
+  const requestAdmin = () => setLoginOpen(true);
+  function adminOnly(content: React.ReactNode) {
+    if (admin.isAdmin) return content;
+    return <SiteShell lang={currentLang}>
+      <section className="workspace">
+        {admin.loading ? <p role="status">{t(currentLang, 'common.loading')}</p> : <>
+          <h1>{currentLang === 'ko' ? '관리자 전용' : 'Admin only'}</h1>
+          <button type="button" onClick={requestAdmin}>{t(currentLang, 'admin.login')}</button>
+        </>}
+      </section>
+    </SiteShell>;
+  }
 
   return (
-    <>
+    <NavigationProvider
+      lang={currentLang} admin={admin.isAdmin} login={requestAdmin}
+      password={() => setPasswordOpen(true)}
+      logout={() => { void logout().then(refresh).catch(() => window.alert(currentLang === 'ko' ? '로그아웃하지 못했습니다.' : 'Could not sign out.')); }}
+    >
       <Routes>
         <Route path="/" element={<RootRoute />} />
-        <Route
-          path="/:lang"
-          element={
-            <HomePage
-              admin={admin}
-              requestAdmin={requestAdmin}
-              openCreate={openCreate}
-              openPageManager={openPageManager}
-              openPasswordChange={() => setPasswordOpen(true)}
-              refreshKey={refreshKey}
-              savedPost={savedPost}
-            />
-          }
-        />
-        <Route
-          path="/:lang/:section"
-          element={
-            <SectionListPage
-              admin={admin}
-              requestAdmin={requestAdmin}
-              openCreate={openCreate}
-              openPageManager={openPageManager}
-              openPasswordChange={() => setPasswordOpen(true)}
-              refreshKey={refreshKey}
-              savedPost={savedPost}
-            />
-          }
-        />
-        <Route
-          path="/:lang/:section/:slug"
-          element={
-            <DetailPage
-              admin={admin}
-              requestAdmin={requestAdmin}
-              openCreate={openCreate}
-              openPageManager={openPageManager}
-              openPasswordChange={() => setPasswordOpen(true)}
-              refreshKey={refreshKey}
-              savedPost={savedPost}
-            />
-          }
-        />
+        <Route path="/:lang" element={<HomePage key={currentLang} lang={currentLang} />} />
+        <Route path="/:lang/menu/:menuId" element={<SiteShell lang={currentLang}><BoardRoute lang={currentLang} /></SiteShell>} />
+        <Route path="/:lang/manage/menus" element={adminOnly(<SiteShell lang={currentLang}><MenuManager key={currentLang} lang={currentLang} /></SiteShell>)} />
+        <Route path="/:lang/manage/pages" element={adminOnly(<SiteShell lang={currentLang}><PageManager key={currentLang} lang={currentLang} /></SiteShell>)} />
+        <Route path="/:lang/edit/new" element={adminOnly(<LayoutPageEditor key={location.pathname} lang={currentLang} />)} />
+        <Route path="/:lang/edit/:section/:slug" element={adminOnly(<LayoutPageEditor key={location.pathname} lang={currentLang} />)} />
+        <Route path="/:lang/:section" element={<SiteShell lang={currentLang}><BoardRoute lang={currentLang} legacy /></SiteShell>} />
+        <Route path="/:lang/:section/:slug" element={<DetailPage key={location.pathname} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-
-      <PostEditorModal
-        open={editorState.open}
-        mode={editorState.mode}
-        initialPost={editorState.initialPost}
-        defaultLang={editorState.defaultLang}
-        defaultSection={editorState.defaultSection}
-        onClose={() => {
-          setEditorState((prev) => ({ ...prev, open: false }));
-        }}
-        onSaved={(snapshot) => {
-          const prev = editorState.initialPost;
-          setEditorState((prev) => ({ ...prev, open: false }));
-          setSavedPost(snapshot);
-          setRefreshKey((prev) => prev + 1);
-
-          if (editorState.mode === 'edit' && prev && prev.id === snapshot.id) {
-            const slugChanged =
-              prev.slug !== snapshot.slug || prev.section !== snapshot.section || prev.lang !== snapshot.lang;
-            if (slugChanged) {
-              navigate(`/${snapshot.lang}/${snapshot.section}/${snapshot.slug}/`, { replace: true });
-            }
-          }
-        }}
-        onDeleted={() => {
-          setEditorState((prev) => ({ ...prev, open: false }));
-          setRefreshKey((prev) => prev + 1);
-        }}
-      />
-
-      <PageManagerModal
-        open={pageManagerOpen}
-        defaultLang={currentLang}
-        onClose={() => setPageManagerOpen(false)}
-        onCreate={(section, lang) => {
-          setPageManagerOpen(false);
-          openCreate(section, undefined, lang);
-        }}
-        onEdit={(post) => {
-          setPageManagerOpen(false);
-          openCreate(post.section, post, post.lang);
-        }}
-        onCopy={openCopy}
-        onChanged={() => {
-          setRefreshKey((prev) => prev + 1);
-        }}
-      />
-
-      <AdminLoginModal
-        open={loginOpen}
-        lang={currentLang}
-        onClose={() => setLoginOpen(false)}
-        onSubmit={async (username, password) => {
-          await login(username, password);
-          await refresh();
-          navigate(`${location.pathname}${location.search}`, { replace: true });
-        }}
-      />
-
-      <AdminPasswordModal
-        open={passwordOpen}
-        lang={currentLang}
-        onClose={() => setPasswordOpen(false)}
-        onSubmit={async (currentPassword, newPassword) => {
-          await changeAdminPassword(currentPassword, newPassword);
-        }}
-      />
-    </>
+      <AdminLoginModal open={loginOpen} lang={currentLang} onClose={() => setLoginOpen(false)} onSubmit={async (username, password) => {
+        await login(username, password);
+        await refresh();
+      }} />
+      <AdminPasswordModal open={passwordOpen} lang={currentLang} onClose={() => setPasswordOpen(false)} onSubmit={async (currentPassword, newPassword) => {
+        await changeAdminPassword(currentPassword, newPassword);
+      }} />
+    </NavigationProvider>
   );
 }
 

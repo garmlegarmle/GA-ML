@@ -10,19 +10,13 @@ import multer from 'multer';
 import { getConfig } from './config.js';
 import {
   clamp,
-  dedupeTags,
   jsonError,
   jsonOk,
   normalizeLang,
   normalizeSection,
-  normalizeStatus,
   nowIso,
-  parseCardRank,
-  parseDateOrNull,
   parseIntSafe,
-  slugify,
-  slugifyTag,
-  toExcerpt
+  slugify
 } from './validators.js';
 import {
   SESSION_COOKIE,
@@ -36,26 +30,18 @@ import {
   verifyPasswordHash
 } from './auth.js';
 import {
-  cleanupUnusedTag,
   createPool,
   ensureSeedProgramPosts,
   ensureSchema,
   ensureSeedPages,
-  getNextPublishedContentCardRank,
   getAppSetting,
   registerGamePlay,
   getMediaById,
   getMediaVariants,
   getGamePlaySummary,
   listGameLeaderboard,
-  getPostTags,
-  getPostTagsMap,
-  listDistinctTags,
-  listTagCountsBySection,
   mapPostRow,
-  normalizeDerivedPostCardFields,
   recordGameLeaderboardEntryForRun,
-  replacePostTags,
   setAppSetting,
   softDeletePost,
   touchViewCount
@@ -73,6 +59,7 @@ import {
 import { createHoldemOnlineManager } from './holdem-online/manager.js';
 import { createMineCartDuelOnlineManager } from './mine-cart-duel-online/manager.js';
 import { ensureMarketDataReady } from './market-data.js';
+import { canAssignMenu, createSiteMenusRouter, ensureSiteMenus, numericId, withMenuWrite } from './site-menus.js';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
@@ -91,10 +78,6 @@ const HOLDEM_MAX_PLAYERS = 9;
 const HOLDEM_HANDS_PER_LEVEL = 8;
 const HOLDEM_RUN_TOKEN_TTL_SECONDS = 4 * 60 * 60;
 const rateLimitStore = new Map();
-const CARD_TITLE_SIZE_VALUES = new Set(['auto', 'default', 'compact', 'tight', 'ultra-tight']);
-const LAYOUT_BLOCK_TYPES = new Set(['text', 'tool']);
-const LAYOUT_BLOCK_COLUMNS = new Set(['left', 'right']);
-const LAYOUT_TOOL_KEYS = new Set(['trend-analyzer', CHART_INTERPRETATION_TOOL_SLUG]);
 const holdemOnlineManager = createHoldemOnlineManager();
 const mineCartDuelOnlineManager = createMineCartDuelOnlineManager();
 
@@ -155,90 +138,23 @@ function hasEmbeddedProgram(section, slug) {
   );
 }
 
-function normalizeLayoutBlocks(value) {
-  if (!Array.isArray(value)) return null;
-
-  const blocks = value
-    .slice(0, 48)
-    .map((item, index) => {
-      if (!item || typeof item !== 'object') return null;
-      const type = String(item.type || '').trim().toLowerCase();
-      const column = String(item.column || '').trim().toLowerCase();
-      const toolKey = String(item.toolKey || '').trim();
-      if (!LAYOUT_BLOCK_TYPES.has(type) || !LAYOUT_BLOCK_COLUMNS.has(column)) return null;
-      if (type === 'tool' && !LAYOUT_TOOL_KEYS.has(toolKey)) return null;
-
-      const html = type === 'text' ? String(item.html || '').trim() : null;
-      const title = String(item.title || '').trim() || null;
-      const visible = item.visible !== false;
-      const order = Number.isFinite(Number(item.order)) ? Number(item.order) : index;
-      const id = String(item.id || `${type}-${column}-${index + 1}`)
-        .trim()
-        .replace(/[^a-z0-9_-]/gi, '')
-        .slice(0, 80);
-
-      return {
-        id: id || `${type}-${column}-${index + 1}`,
-        type,
-        column,
-        order,
-        visible,
-        title,
-        html,
-        toolKey: type === 'tool' ? toolKey : null
-      };
-    })
-    .filter(Boolean);
-
-  if (!blocks.length) return null;
-
-  const nextByColumn = new Map([
-    ['left', 0],
-    ['right', 0]
-  ]);
-
-  return blocks
-    .sort((left, right) => {
-      if (left.column !== right.column) return left.column.localeCompare(right.column);
-      return left.order - right.order;
-    })
-    .map((block) => {
-      const nextOrder = nextByColumn.get(block.column) || 0;
-      nextByColumn.set(block.column, nextOrder + 1);
-      return {
-        ...block,
-        order: nextOrder
-      };
-    });
-}
-
-function parseStoredLayoutBlocks(value) {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(String(value));
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function parseStoredBodyLayoutJson(value) {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(String(value));
-    if (!parsed || typeof parsed !== 'object') return null;
-    if (parsed.version !== 1) return null;
-    if (!Array.isArray(parsed.pages) || !Array.isArray(parsed.elements)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
 function normalizeBodyLayoutJson(value) {
-  if (!value || typeof value !== 'object') return null;
-  if (value.version !== 1) return null;
-  if (!Array.isArray(value.pages) || !Array.isArray(value.elements)) return null;
+  if (value?.version !== 1 || !Array.isArray(value.pages) || value.pages.length < 1 || value.pages.length > 100 ||
+      !Array.isArray(value.elements) || value.elements.length > 1500) return null;
+  const validId = (id) => typeof id === 'string' && id.length > 0 && id.length <= 100;
+  if (value.pages.some((page) => !validId(page?.id))) return null;
+  const pages = new Set(value.pages.map((page) => page.id));
+  const ids = new Set();
+  if (pages.size !== value.pages.length) return null;
+  for (const item of value.elements) {
+    if (!validId(item?.id) || ids.has(item.id) || !pages.has(item.pageId) ||
+        !['text', 'table', 'image', 'shape'].includes(item.type) ||
+        ![item.x, item.y, item.width, item.height, item.zIndex].every(Number.isFinite)) return null;
+    if (item.type === 'text' && (typeof item.html !== 'string' || !item.style || typeof item.style !== 'object')) return null;
+    if (item.type === 'table' && (!item.style || typeof item.style !== 'object' || !Array.isArray(item.rows) ||
+        item.rows.some((row) => !Array.isArray(row) || row.some((cell) => typeof cell?.html !== 'string')))) return null;
+    ids.add(item.id);
+  }
   return value;
 }
 
@@ -343,13 +259,6 @@ function normalizeHoldemPlayerName(value) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_HOLDEM_PLAYER_NAME_LENGTH);
-}
-
-function normalizeCardTitleSize(value, fallback = 'auto') {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase();
-  return CARD_TITLE_SIZE_VALUES.has(normalized) ? normalized : fallback;
 }
 
 function createRunToken() {
@@ -602,7 +511,7 @@ async function bootstrap() {
   await ensureSchema(pool);
   await ensureSeedPages(pool);
   await ensureSeedProgramPosts(pool);
-  await normalizeDerivedPostCardFields(pool);
+  await ensureSiteMenus(pool);
   const currentHash = await getAppSetting(pool, 'admin_password_hash');
   if (!currentHash && config.adminLoginPassword) {
     await setAppSetting(pool, 'admin_password_hash', hashPassword(config.adminLoginPassword));
@@ -616,6 +525,8 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '2mb' }));
+
+app.use('/api/menus', createSiteMenusRouter(pool, requireAdmin, (req) => isAdminRequest(req, config)));
 
 app.get('/health', (_req, res) => {
   jsonOk(res, { ok: true, service: 'utility-box-api' });
@@ -763,10 +674,9 @@ app.get('/api/posts', async (req, res, next) => {
     const statusFilter = isAdmin && statusRaw === 'all' ? 'all' : isAdmin && statusRaw === 'draft' ? 'draft' : 'published';
     const lang = normalizeLang(req.query.lang || 'en');
     const sectionRaw = req.query.section ? normalizeSection(req.query.section) : null;
-    const tagFilterRaw = String(req.query.tag || '').trim();
-    const tagFilter = tagFilterRaw.toLowerCase();
-    const tagFilterSlug = slugifyTag(tagFilterRaw);
-    const q = String(req.query.q || '').trim();
+    const q = String(req.query.q || '').trim().slice(0, 160);
+    const menuId = numericId(req.query.menu);
+    if (req.query.menu !== undefined && !menuId) return jsonError(res, 400, 'Invalid menu');
     const page = clamp(parseIntSafe(req.query.page, 1) || 1, 1, 10000);
     const limit = clamp(parseIntSafe(req.query.limit, 12) || 12, 1, 50);
     const offset = (page - 1) * limit;
@@ -782,21 +692,16 @@ app.get('/api/posts', async (req, res, next) => {
       binds.push(statusFilter);
       where.push(`p.status = $${binds.length}`);
     }
-    if (q) {
-      const pattern = `%${q}%`;
-      binds.push(pattern, pattern, pattern);
-      const base = binds.length - 2;
-      where.push(`(p.title ILIKE $${base} OR p.excerpt ILIKE $${base + 1} OR p.content_md ILIKE $${base + 2})`);
+    if (menuId) {
+      binds.push(menuId);
+      where.push(`p.menu_id = $${binds.length}`);
     }
-    if (tagFilter) {
-      binds.push(tagFilterSlug || tagFilter, tagFilter);
-      const base = binds.length - 1;
-      where.push(`EXISTS (
-        SELECT 1 FROM post_tags fpt
-        JOIN tags ft ON ft.id = fpt.tag_id
-        WHERE fpt.post_id = p.id
-          AND (LOWER(ft.slug) = $${base} OR LOWER(ft.name) = $${base + 1})
-      )`);
+    if (req.query.feed === '1') {
+      where.push("(p.menu_id IS NOT NULL OR p.section IN ('blog', 'tools', 'games'))");
+    }
+    if (q) {
+      binds.push(`%${q}%`);
+      where.push(`p.title ILIKE $${binds.length}`);
     }
 
     const whereSql = `WHERE ${where.join(' AND ')}`;
@@ -810,8 +715,7 @@ app.get('/api/posts', async (req, res, next) => {
       listBinds
     );
 
-    const tagMap = await getPostTagsMap(pool, rows.rows.map((row) => Number(row.id)));
-    const items = rows.rows.map((row) => mapPostRow(row, tagMap.get(Number(row.id)) || [], req, publicBaseUrl));
+    const items = rows.rows.map((row) => mapPostRow(row, req, publicBaseUrl));
     Object.entries(cacheHeadersForList(isAdmin, statusFilter, Boolean(q))).forEach(([k, v]) => res.setHeader(k, v));
     jsonOk(res, {
       ok: true,
@@ -845,7 +749,6 @@ app.get('/api/posts/:slug', async (req, res, next) => {
     );
     const row = rows.rows[0];
     if (!row) return jsonError(res, 404, 'Post not found');
-    const tags = await getPostTags(pool, Number(row.id));
     let updatedViewCount = Number(row.view_count || 0);
     if (!isAdmin && row.status === 'published' && shouldTrackViewCount(row)) {
       const viewCookieName = `ub_post_view_${row.id}`;
@@ -856,177 +759,67 @@ app.get('/api/posts/:slug', async (req, res, next) => {
       }
     }
     res.setHeader('Cache-Control', 'no-store');
-    const post = mapPostRow({ ...row, view_count: updatedViewCount }, tags, req, publicBaseUrl);
-    jsonOk(res, { ok: true, post, tags, cover: post.cover, media: [] });
+    const post = mapPostRow({ ...row, view_count: updatedViewCount }, req, publicBaseUrl);
+    jsonOk(res, { ok: true, post, cover: post.cover, media: [] });
   } catch (error) {
     next(error);
   }
 });
 
-app.post('/api/posts', async (req, res, next) => {
-  try {
-    if (!requireAdmin(req, res)) return;
-    const payload = req.body || {};
-    const title = String(payload.title || '').trim();
-    const content = String(payload.content_md || '').trim();
-    const contentBefore = String(payload.content_before_md || '').trim();
-    const contentAfter = String(payload.content_after_md || '').trim();
-    const layoutBlocks = normalizeLayoutBlocks(payload.layout_blocks);
-    const hasLayoutBlocks = Array.isArray(layoutBlocks) && layoutBlocks.length > 0;
-    const bodyLayoutJson = normalizeBodyLayoutJson(payload.body_layout_json);
-    const hasBodyLayout = Boolean(bodyLayoutJson);
-    if (!title) return jsonError(res, 400, 'title is required');
-    const lang = normalizeLang(payload.lang || 'en');
-    const section = normalizeSection(payload.section || 'blog');
-    const slug = slugify(String(payload.slug || title));
-    if (!slug) return jsonError(res, 400, 'slug is invalid');
-    const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
-    if (!normalizedCombinedContent && !hasLayoutBlocks && !hasBodyLayout) return jsonError(res, 400, 'content is required');
-    const status = normalizeStatus(payload.status || 'draft');
-    const tags = dedupeTags(payload.tags || []);
-    const excerpt = String(payload.excerpt || '').trim() || (normalizedCombinedContent ? toExcerpt(normalizedCombinedContent) : '');
-    const publishedAt = status === 'published' ? parseDateOrNull(payload.published_at) || nowIso() : null;
-    const pairSlug = payload.pair_slug ? slugify(String(payload.pair_slug)) : null;
-    const cardCategory = String(payload.card?.category || section).trim() || section;
-    const cardTitle = title;
-    const cardTag = tags.join(', ') || null;
-    const cardRank = parseCardRank(payload.card?.rank) || (status === 'published' ? await getNextPublishedContentCardRank(pool, lang) : null);
-    const cardImageId = parseIntSafe(payload.card?.image_id, null);
-    const cardTitleSize = normalizeCardTitleSize(payload.card?.title_size, 'auto');
-    const metaTitle = String(payload.meta?.title || '').trim() || null;
-    const metaDescription = String(payload.meta?.description || '').trim() || null;
-    const ogTitle = metaTitle || title;
-    const ogDescription = metaDescription || excerpt || null;
-    const schemaTypeRaw = String(payload.schema_type || '').trim();
-    const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
-    const toolLayoutRaw = payload.tool_layout;
-    const toolLayout = toolLayoutRaw && typeof toolLayoutRaw === 'object'
-      ? JSON.stringify(toolLayoutRaw)
-      : (typeof toolLayoutRaw === 'string' && toolLayoutRaw.trim() ? toolLayoutRaw.trim() : null);
+function readPageSettings(payload, creating) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const fields = creating ? ['title', 'status', 'lang', 'menu_id', 'body_layout_json'] : ['title', 'status', 'menu_id', 'body_layout_json'];
+  if (Object.keys(payload).some((key) => !fields.includes(key))) return null;
+  const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+  const { status, lang } = payload;
+  const menuId = payload.menu_id;
+  const layout = normalizeBodyLayoutJson(payload.body_layout_json);
+  if (!title || title.length > 160 || !['draft', 'published'].includes(status) ||
+      (creating && (!['ko', 'en'].includes(lang) || !layout)) ||
+      (menuId !== null && !numericId(menuId)) || (payload.body_layout_json !== undefined && !layout)) return null;
+  return { title, status, lang, menuId, layout: layout ? JSON.stringify(layout) : null };
+}
 
-    const existing = await pool.query(
-      'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE LIMIT 1',
-      [slug, lang, section]
+app.post('/api/posts', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const page = readPageSettings(req.body, true);
+  if (!page) return jsonError(res, 400, 'Invalid page settings');
+  const slug = `page-${crypto.randomUUID()}`;
+  const row = await withMenuWrite(pool, async (db) => {
+    if (!await canAssignMenu(db, page.menuId, page.lang)) return null;
+    const { rows: [created] } = await db.query(
+      `INSERT INTO posts (slug, title, content_md, status, published_at, lang, section, menu_id, body_layout_json)
+       VALUES ($1, $2, '', $3, CASE WHEN $3 = 'published' THEN NOW() END, $4, 'pages', $5, $6)
+       RETURNING id, slug, section, lang`,
+      [slug, page.title, page.status, page.lang, page.menuId, page.layout]
     );
-    if (existing.rows[0]) return jsonError(res, 409, 'Post with same slug/lang/section already exists');
-
-    const insert = await pool.query(
-      `INSERT INTO posts (
-        slug, title, excerpt, content_md, content_before_md, content_after_md, layout_blocks_json, status, cover_image_id, published_at,
-        lang, section, pair_slug, created_at, updated_at,
-        card_title, card_category, card_tag, card_rank, card_image_id, card_title_size,
-        meta_title, meta_description, og_title, og_description, og_image_url, schema_type,
-        tool_layout, body_layout_json
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28
-      ) RETURNING id`,
-      [
-        slug, title, excerpt, content || normalizedCombinedContent || '', contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
-        status, null, publishedAt, lang, section, pairSlug, nowIso(), nowIso(),
-        cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize, metaTitle, metaDescription,
-        ogTitle, ogDescription, null, schemaType, toolLayout, bodyLayoutJson ? JSON.stringify(bodyLayoutJson) : null
-      ]
-    );
-    const postId = Number(insert.rows[0].id);
-    if (tags.length) await replacePostTags(pool, postId, tags);
-    jsonOk(res, { ok: true, id: postId, slug });
-  } catch (error) {
-    next(error);
-  }
+    return created;
+  });
+  if (!row) return jsonError(res, 400, 'Invalid board for this language');
+  jsonOk(res, { ok: true, ...row, id: Number(row.id) });
 });
 
-app.put('/api/posts/:id', async (req, res, next) => {
-  try {
-    if (!requireAdmin(req, res)) return;
-    const postId = parseIntSafe(req.params.id);
-    if (!postId) return jsonError(res, 400, 'Invalid post id');
-    const currentResult = await pool.query('SELECT * FROM posts WHERE id = $1 AND is_deleted = FALSE LIMIT 1', [postId]);
-    const current = currentResult.rows[0];
-    if (!current) return jsonError(res, 404, 'Post not found');
-
-    const payload = req.body || {};
-    const title = payload.title !== undefined ? String(payload.title || '').trim() : current.title;
-    const content = payload.content_md !== undefined ? String(payload.content_md || '').trim() : current.content_md;
-    const layoutBlocks =
-      payload.layout_blocks !== undefined
-        ? normalizeLayoutBlocks(payload.layout_blocks)
-        : normalizeLayoutBlocks(parseStoredLayoutBlocks(current.layout_blocks_json));
-    const hasLayoutBlocks = Array.isArray(layoutBlocks) && layoutBlocks.length > 0;
-    const bodyLayoutJson = payload.body_layout_json !== undefined
-      ? normalizeBodyLayoutJson(payload.body_layout_json)
-      : parseStoredBodyLayoutJson(current.body_layout_json);
-    const hasBodyLayout = Boolean(bodyLayoutJson);
-    if (!title) return jsonError(res, 400, 'title is required');
-    const lang = payload.lang !== undefined ? normalizeLang(payload.lang) : current.lang;
-    const section = payload.section !== undefined ? normalizeSection(payload.section) : current.section;
-    const slug = payload.slug !== undefined ? slugify(String(payload.slug || title)) : current.slug;
-    if (!slug) return jsonError(res, 400, 'slug is invalid');
-    const contentBefore = payload.content_before_md !== undefined ? String(payload.content_before_md || '').trim() : current.content_before_md || '';
-    const contentAfter = payload.content_after_md !== undefined ? String(payload.content_after_md || '').trim() : current.content_after_md || '';
-    const normalizedCombinedContent = [contentBefore, contentAfter].filter(Boolean).join('\n').trim() || content;
-    if (!normalizedCombinedContent && !hasLayoutBlocks && !hasBodyLayout) return jsonError(res, 400, 'content is required');
-    const status = payload.status !== undefined ? normalizeStatus(payload.status) : current.status;
-    const tags = payload.tags !== undefined ? dedupeTags(payload.tags || []) : await getPostTags(pool, postId);
-    const excerpt = payload.excerpt !== undefined
-      ? String(payload.excerpt || '').trim() || (normalizedCombinedContent ? toExcerpt(normalizedCombinedContent) : '')
-      : current.excerpt;
-    const publishedAt = payload.published_at !== undefined
-      ? parseDateOrNull(payload.published_at)
-      : status === 'published'
-        ? (current.published_at ? new Date(current.published_at).toISOString() : nowIso())
-        : null;
-    const pairSlug = payload.pair_slug !== undefined ? (payload.pair_slug ? slugify(String(payload.pair_slug)) : null) : current.pair_slug;
-    const cardCategory = payload.card?.category !== undefined ? String(payload.card.category || '').trim() || section : current.card_category || section;
-    const cardTitle = title;
-    const cardTag = tags.join(', ') || null;
-    const cardRank = payload.card?.rank !== undefined ? parseCardRank(payload.card.rank) : current.card_rank;
-    const cardImageId = payload.card?.image_id !== undefined ? parseIntSafe(payload.card.image_id, null) : current.card_image_id;
-    const cardTitleSize =
-      payload.card?.title_size !== undefined
-        ? normalizeCardTitleSize(payload.card.title_size, 'auto')
-        : normalizeCardTitleSize(current.card_title_size, 'auto');
-    const metaTitle = payload.meta?.title !== undefined ? String(payload.meta.title || '').trim() || null : current.meta_title;
-    const metaDescription = payload.meta?.description !== undefined ? String(payload.meta.description || '').trim() || null : current.meta_description;
-    const ogTitle = metaTitle || title;
-    const ogDescription = metaDescription || excerpt || null;
-    const schemaTypeRaw = payload.schema_type !== undefined ? String(payload.schema_type || '').trim() : current.schema_type || '';
-    const schemaType = schemaTypeRaw === 'Service' || schemaTypeRaw === 'BlogPosting' ? schemaTypeRaw : null;
-    const toolLayoutRaw = payload.tool_layout;
-    const toolLayout = payload.tool_layout !== undefined
-      ? (toolLayoutRaw && typeof toolLayoutRaw === 'object'
-          ? JSON.stringify(toolLayoutRaw)
-          : (typeof toolLayoutRaw === 'string' && toolLayoutRaw.trim() ? toolLayoutRaw.trim() : null))
-      : current.tool_layout || null;
-
-    const existing = await pool.query(
-      'SELECT id FROM posts WHERE slug = $1 AND lang = $2 AND section = $3 AND is_deleted = FALSE AND id != $4 LIMIT 1',
-      [slug, lang, section, postId]
+app.put('/api/posts/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const id = numericId(req.params.id);
+  const page = readPageSettings(req.body, false);
+  if (!id || !page) return jsonError(res, 400, 'Invalid page settings');
+  const result = await withMenuWrite(pool, async (db) => {
+    const { rows: [current] } = await db.query('SELECT lang FROM posts WHERE id = $1 AND NOT is_deleted', [id]);
+    if (!current) return [404, 'Post not found'];
+    if (!await canAssignMenu(db, page.menuId, current.lang)) return [400, 'Invalid board for this language'];
+    const { rows: [updated] } = await db.query(
+      `UPDATE posts SET title = $1, status = $2, menu_id = $3,
+         body_layout_json = COALESCE($4, body_layout_json),
+         published_at = CASE WHEN $2 = 'published' THEN COALESCE(published_at, NOW()) END,
+         updated_at = NOW()
+       WHERE id = $5 AND NOT is_deleted RETURNING id, slug, section, lang`,
+      [page.title, page.status, page.menuId, page.layout, id]
     );
-    if (existing.rows[0]) return jsonError(res, 409, 'Another post with same slug/lang/section exists');
-
-    await pool.query(
-      `UPDATE posts SET
-         slug=$1, title=$2, excerpt=$3, content_md=$4, content_before_md=$5, content_after_md=$6, layout_blocks_json=$7, status=$8, cover_image_id=$9,
-         published_at=$10, lang=$11, section=$12, pair_slug=$13, updated_at=$14,
-         card_title=$15, card_category=$16, card_tag=$17, card_rank=$18, card_image_id=$19, card_title_size=$20,
-         meta_title=$21, meta_description=$22, og_title=$23, og_description=$24, og_image_url=$25, schema_type=$26,
-         tool_layout=$27, body_layout_json=$28
-       WHERE id = $29`,
-      [
-        slug, title, excerpt, content || normalizedCombinedContent || '', contentBefore || null, contentAfter || null, layoutBlocks ? JSON.stringify(layoutBlocks) : null,
-        status, current.cover_image_id, publishedAt, lang, section, pairSlug, nowIso(),
-        cardTitle, cardCategory, cardTag, cardRank, cardImageId, cardTitleSize,
-        metaTitle, metaDescription, ogTitle, ogDescription, null, schemaType, toolLayout,
-        bodyLayoutJson ? JSON.stringify(bodyLayoutJson) : null, postId
-      ]
-    );
-    if (payload.tags !== undefined) {
-      await replacePostTags(pool, postId, tags);
-    }
-    jsonOk(res, { ok: true, id: postId, slug, section, lang, updated_at: nowIso() });
-  } catch (error) {
-    next(error);
-  }
+    return updated ? [200, updated] : [404, 'Post not found'];
+  });
+  if (result[0] !== 200) return jsonError(res, ...result);
+  jsonOk(res, { ok: true, ...result[1], id });
 });
 
 app.delete('/api/posts/:id', async (req, res, next) => {
@@ -1037,30 +830,6 @@ app.delete('/api/posts/:id', async (req, res, next) => {
     const result = await softDeletePost(pool, postId);
     if (!result.rowCount) return jsonError(res, 404, 'Post not found');
     jsonOk(res, { ok: true });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get('/api/tags', async (req, res, next) => {
-  try {
-    const lang = normalizeLang(req.query.lang || 'en');
-    const section = req.query.section ? normalizeSection(req.query.section) : undefined;
-    const includeCounts = String(req.query.counts || '').trim() === '1';
-    const isAdmin = isAdminRequest(req, config);
-    const publishedOnly = !isAdmin;
-
-    if (includeCounts && section) {
-      const items = await listTagCountsBySection(pool, { lang, section, publishedOnly });
-      if (publishedOnly) res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=900, stale-while-revalidate=1800');
-      else res.setHeader('Cache-Control', 'no-store');
-      return jsonOk(res, { ok: true, items });
-    }
-
-    const items = await listDistinctTags(pool, { lang, publishedOnly });
-    if (publishedOnly) res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=900, stale-while-revalidate=1800');
-    else res.setHeader('Cache-Control', 'no-store');
-    jsonOk(res, { ok: true, items });
   } catch (error) {
     next(error);
   }
@@ -1283,28 +1052,6 @@ app.post(
     }
   }
 );
-
-app.delete('/api/tags/:tag', async (req, res, next) => {
-  try {
-    if (!requireAdmin(req, res)) return;
-    const targetSlug = slugify(decodeURIComponent(req.params.tag || ''));
-    if (!targetSlug) return jsonError(res, 400, 'Invalid tag');
-    const lang = normalizeLang(req.query.lang || 'en');
-    const tagResult = await pool.query('SELECT id, name, slug FROM tags WHERE slug = $1 LIMIT 1', [targetSlug]);
-    const tag = tagResult.rows[0];
-    if (!tag) return jsonError(res, 404, 'Tag not found');
-    await pool.query(
-      `DELETE FROM post_tags
-       WHERE tag_id = $1
-         AND post_id IN (SELECT id FROM posts WHERE lang = $2 AND is_deleted = FALSE)`,
-      [tag.id, lang]
-    );
-    await cleanupUnusedTag(pool, Number(tag.id));
-    jsonOk(res, { ok: true, deleted: { id: Number(tag.id), name: tag.name, slug: tag.slug } });
-  } catch (error) {
-    next(error);
-  }
-});
 
 app.post('/api/upload', upload.single('file'), async (req, res, next) => {
   try {

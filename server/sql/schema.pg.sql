@@ -189,3 +189,21 @@ CREATE INDEX IF NOT EXISTS idx_us_equity_daily_trade_date
 
 CREATE INDEX IF NOT EXISTS idx_kr_equity_daily_trade_date
   ON kr_equity_daily(trade_date DESC);
+
+CREATE TABLE IF NOT EXISTS site_menus (
+  id BIGSERIAL PRIMARY KEY,
+  lang TEXT NOT NULL CHECK (lang IN ('ko', 'en')),
+  label TEXT NOT NULL CHECK (char_length(label) BETWEEN 1 AND 80),
+  parent_id BIGINT REFERENCES site_menus(id),
+  kind TEXT NOT NULL CHECK (kind IN ('board', 'page')),
+  post_id BIGINT REFERENCES posts(id),
+  view TEXT NOT NULL DEFAULT 'list' CHECK (view IN ('list', 'icons')),
+  position INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0),
+  legacy_section TEXT,
+  CHECK ((kind = 'page') = (post_id IS NOT NULL)),
+  UNIQUE (lang, legacy_section)
+);
+
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS menu_id BIGINT REFERENCES site_menus(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_menu_status ON posts(menu_id, status) WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_site_menus_lang_parent ON site_menus(lang, parent_id, position);
